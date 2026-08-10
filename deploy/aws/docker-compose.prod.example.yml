@@ -1,0 +1,11 @@
+# Copy to the EC2 host as docker-compose.prod.yml alongside docker-compose.yml
+services:
+  web:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file: .env
+    volumes:
+      - /data/school-management/instance:/app/instance
+      - /data/school-management/uploads:/app/static/uploads
+    restart: always

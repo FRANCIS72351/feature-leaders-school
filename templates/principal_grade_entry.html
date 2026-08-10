@@ -1,0 +1,167 @@
+{% extends 'base.html' %}
+{% block title %}Principal Grade Review{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/grading_hub.css') }}">
+
+<style>
+    body { background-color: #f6f1ea; color: #2b2623; }
+    .principal-grade-entry { max-width: 1100px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+    .text-cyan { color: #253b52 !important; }
+    .text-emerald { color: #10b981 !important; }
+    .text-amber { color: #c82828 !important; }
+    .glow-title { font-weight: 700; color: #1f1b18; text-shadow: none; }
+    .form-cyber {
+        background-color: #ffffff !important;
+        border: 1px solid rgba(16, 24, 32, 0.2) !important;
+        color: #2b2623 !important;
+        border-radius: 8px !important;
+    }
+    .form-cyber:focus { border-color: rgba(200, 40, 40, 0.45) !important; box-shadow: 0 0 0 0.2rem rgba(200, 40, 40, 0.12) !important; }
+    .pge-banner {
+        background: linear-gradient(135deg, rgba(37, 59, 82, 0.95), rgba(64, 92, 122, 0.92));
+        border: 1px solid rgba(16, 24, 32, 0.24);
+        border-radius: 14px;
+        padding: 1.25rem 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+    .pge-class-card {
+        display: block;
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(248, 240, 232, 0.65));
+        border: 1px solid rgba(16, 24, 32, 0.2);
+        border-radius: 14px;
+        padding: 1.1rem 1.25rem;
+        text-decoration: none !important;
+        color: #2b2623;
+        height: 100%;
+        transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    .pge-class-card::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #c82828, #253b52);
+        opacity: 0.6;
+    }
+    .pge-class-card:hover {
+        transform: translateY(-3px);
+        border-color: rgba(16, 24, 32, 0.35);
+        box-shadow: 0 12px 28px rgba(16, 24, 32, 0.12);
+    }
+    .pge-stat-pill {
+        font-size: 0.68rem;
+        padding: 0.2rem 0.55rem;
+        border-radius: 999px;
+        border: 1px solid rgba(16, 24, 32, 0.16);
+        background: rgba(248, 240, 232, 0.5);
+        color: #2b2623;
+    }
+    .faculty-chip {
+        font-size: 0.72rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 6px;
+        background: rgba(248, 240, 232, 0.55);
+        border: 1px solid rgba(16, 24, 32, 0.14);
+        color: #5f534b;
+    }
+    .principal-grade-entry .bg-dark {
+        background: #f7fbff !important;
+        color: #2b2623 !important;
+        border-color: rgba(16, 24, 32, 0.18) !important;
+    }
+    .principal-grade-entry .text-white,
+    .principal-grade-entry .small.text-white {
+        color: #2b2623 !important;
+    }
+</style>
+
+<div class="principal-grade-entry principal-terminal">
+    <div class="mb-4">
+        <a href="{{ url_for('principal_dashboard') }}" class="small text-decoration-none text-cyan d-inline-block mb-2">
+            <i class="fas fa-arrow-left me-1"></i>Principal Dashboard
+        </a>
+        <h1 class="h4 glow-title mb-1">
+            <i class="fas fa-shield-halved text-cyan me-2"></i>Principal Grade Review
+        </h1>
+        <p class="text-white small mb-0" style="opacity:0.8;">
+            Backup period-grade review when a teacher is unavailable · Same published result used on student grade sheets
+        </p>
+    </div>
+
+    {% if active_year %}
+    <div class="alert bg-dark border border-cyan border-opacity-25 text-white mb-3 py-2 px-3 rounded-3 d-flex align-items-center" role="status">
+        <i class="fas fa-calendar-check text-cyan me-2"></i>
+        <span>Academic Year: <strong class="text-cyan">{{ active_year.name }}</strong></span>
+        <span class="badge bg-success bg-opacity-10 text-emerald border border-success border-opacity-25 ms-2 small">Active</span>
+    </div>
+    {% endif %}
+
+    <div class="pge-banner text-white mb-4">
+        <div class="d-flex align-items-start gap-3">
+            <div class="flex-shrink-0 p-2 rounded-3" style="background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.25);">
+                <i class="fas fa-user-shield text-amber fa-lg"></i>
+            </div>
+            <div>
+                <strong class="d-block mb-1 text-amber">Executive Backup Workflow</strong>
+                <p class="small mb-0" style="opacity:0.9;">
+                    Select a class to review draft standings and publish final period grades.
+                    Publication is attributed to you as principal; assigned teachers remain on record.
+                    Use only when the classroom teacher cannot complete the period workflow on time.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <form method="get" class="d-flex flex-column flex-sm-row gap-2 mb-4">
+        <input type="text" name="search_class" class="form-control form-cyber py-2"
+               placeholder="Filter by class name, stream, or grade level…" value="{{ search_class or '' }}">
+        <button type="submit" class="btn btn-primary px-4"><i class="fas fa-filter me-1"></i>Filter</button>
+        {% if search_class %}
+        <a href="{{ url_for('principal_grade_entry') }}" class="btn btn-outline-secondary"><i class="fas fa-times"></i></a>
+        {% endif %}
+    </form>
+
+    <div class="row g-3">
+        {% for card in class_cards %}
+        <div class="col-md-6 col-lg-4">
+            <a href="{{ url_for('principal_class_grading', class_id=card.klass.id) }}" class="pge-class-card">
+                <div class="mb-2">
+                    <div class="text-cyan small fw-semibold text-uppercase" style="font-size:0.68rem; letter-spacing:0.04em;">
+                        Grade {{ card.klass.grade_level }}
+                    </div>
+                    <div class="fw-bold text-white fs-6">{{ card.klass.name }}</div>
+                    {% if card.klass.stream %}
+                    <div class="small text-white" style="opacity:0.82;">{{ card.klass.stream }} Stream</div>
+                    {% endif %}
+                </div>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    <span class="pge-stat-pill"><i class="fas fa-users text-cyan me-1"></i>{{ card.student_count }} students</span>
+                    <span class="pge-stat-pill"><i class="fas fa-book text-emerald me-1"></i>{{ card.subject_count }} subjects</span>
+                    <span class="pge-stat-pill"><i class="fas fa-chalkboard-teacher text-amber me-1"></i>{{ card.teacher_count }} teachers</span>
+                </div>
+                {% if card.allocations %}
+                <div class="d-flex flex-wrap gap-1 mb-2">
+                    {% for alloc in card.allocations[:4] %}
+                    <span class="faculty-chip" title="{{ alloc.teacher_name }}">{{ alloc.subject }}</span>
+                    {% endfor %}
+                    {% if card.allocations|length > 4 %}
+                    <span class="faculty-chip">+{{ card.allocations|length - 4 }} more</span>
+                    {% endif %}
+                </div>
+                {% endif %}
+                <div class="small text-cyan fw-semibold mt-2">
+                    <i class="fas fa-pen-to-square me-1"></i>Open grade review
+                </div>
+            </a>
+        </div>
+        {% else %}
+        <div class="col-12 text-center py-5 text-cyan small">
+            <i class="fas fa-folder-open opacity-25 me-1.5"></i>
+            {% if search_class %}No classes match your filter.{% else %}No classes are configured yet.{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

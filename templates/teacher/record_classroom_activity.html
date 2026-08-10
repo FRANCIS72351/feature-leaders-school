@@ -1,0 +1,160 @@
+{% extends 'base.html' %}
+{% block title %}Create Activity — {{ klass.name }}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/grading_hub.css') }}">
+<div class="container my-4 teacher-terminal record-classroom-activity-page">
+
+    <div class="record-activity-header mb-4">
+        {% if return_to == 'grading_hub' %}
+        <a href="{{ url_for('class_grading_hub', class_id=klass.id, subject=prefill_subject or none, period=prefill_period or 1, hub_tab='activities') }}"
+           class="text-white-50 small text-decoration-none d-inline-block mb-2">
+            <i class="bi bi-arrow-left me-1"></i>Back to Grading Hub
+        </a>
+        {% else %}
+        <a href="{{ url_for('teacher_dashboard', tab='activities', activity_class_id=klass.id) }}"
+           class="text-white-50 small text-decoration-none d-inline-block mb-2">
+            <i class="bi bi-arrow-left me-1"></i>Back to Class Activities
+        </a>
+        {% endif %}
+
+        {% if active_year %}
+        <div class="alert bg-dark border border-cyan border-opacity-25 text-white mb-3 py-2 px-3 rounded-3 d-flex align-items-center" role="status">
+            <i class="bi bi-calendar-check text-cyan me-2"></i>
+            <span>Academic Year: <strong class="text-cyan">{{ active_year.name }}</strong></span>
+        </div>
+        {% endif %}
+
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+            <div>
+                <h1 class="h4 fw-bold text-white mb-1">
+                    <i class="bi bi-journal-plus text-cyan me-2"></i>Create Activity
+                    <span class="text-muted fw-normal fs-6">(optional)</span>
+                </h1>
+                <p class="text-muted small mb-0">
+                    {{ klass.name }} · Grade {{ klass.grade_level }}{% if klass.stream %} · {{ klass.stream }}{% endif %}
+                </p>
+            </div>
+            <span class="badge activity-delivery-badge classroom">
+                <i class="bi bi-easel me-1"></i>Classroom Activity
+            </span>
+        </div>
+    </div>
+
+    <a href="{{ url_for('manual_activity_grades', class_id=klass.id, subject=prefill_subject or none, period=prefill_period or 1) }}"
+       class="activity-skip-banner text-decoration-none mb-4">
+        <span class="skip-banner-icon"><i class="bi bi-lightning-charge-fill"></i></span>
+        <span class="skip-banner-body">
+            <strong class="text-white d-block">Skip this — Enter Activity Grades directly</strong>
+            <span class="small text-muted">No setup required. Pick subject &amp; period, score students immediately.</span>
+        </span>
+        <span class="skip-banner-action">Enter grades <i class="bi bi-arrow-right ms-1"></i></span>
+    </a>
+
+    <div class="classroom-workflow-banner mb-4">
+        <strong class="text-white d-block mb-2">When to create an activity</strong>
+        <p class="small text-blue mb-2">
+            Use this form when you want a <strong>named record</strong> — blackboard content, verbal instructions, or a shared Google Drive link.
+            If you only need to enter scores, use <strong>Enter Activity Grades</strong> instead.
+        </p>
+        <ol class="workflow-steps">
+            <li><span class="step-num">1</span> <strong>Create the activity</strong> — title, subject, period, and instructions</li>
+            <li><span class="step-num">2</span> <strong>Enter activity grades</strong> — score each student on this activity</li>
+            <li><span class="step-num">3</span> Scores roll up into draft period CA on the MoE grade sheet</li>
+        </ol>
+        <p class="small text-muted mb-0 mt-2">
+            For worksheets students submit online, use <strong>Drop activity files</strong> on the Activities tab instead.
+            MoE CA + exam totals are entered separately on the <strong>Period Grade Sheet</strong>.
+        </p>
+    </div>
+
+    <div class="card dashboard-card border-0 shadow-sm">
+        <div class="card-header">
+            <h2 class="h6 mb-0 text-white"><i class="bi bi-journal-plus me-2 text-cyan"></i>Activity Details</h2>
+        </div>
+        <div class="card-body p-4">
+            {% if form.errors %}
+            <div class="alert alert-danger border-0 mb-4" role="alert">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                Please correct the errors below before creating the activity.
+            </div>
+            {% endif %}
+            <form method="POST" action="{{ url_for('record_classroom_activity', class_id=klass.id, return_to=return_to, subject=prefill_subject, period=prefill_period) }}" novalidate>
+                {{ form.hidden_tag() }}
+
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <label for="rca_title" class="form-label text-blue">{{ form.title.label.text }}</label>
+                        {{ form.title(class="form-control custom-input", id="rca_title") }}
+                        {% for err in form.title.errors %}
+                        <div class="text-danger small">{{ err }}</div>
+                        {% endfor %}
+                    </div>
+                    <div class="col-md-4">
+                        <label for="rca_type" class="form-label text-blue">{{ form.evaluation_type.label.text }}</label>
+                        {{ form.evaluation_type(class="form-select custom-select", id="rca_type") }}
+                    </div>
+
+                    <div class="col-md-4">
+                        <label for="rca_subject" class="form-label text-blue">{{ form.subject_name.label.text }}</label>
+                        {{ form.subject_name(class="form-select custom-select", id="rca_subject") }}
+                        {% for err in form.subject_name.errors %}
+                        <div class="text-danger small">{{ err }}</div>
+                        {% endfor %}
+                    </div>
+                    <div class="col-md-4">
+                        <label for="rca_period" class="form-label text-blue">{{ form.marking_period.label.text }}</label>
+                        {{ form.marking_period(class="form-select custom-select", id="rca_period") }}
+                        {% for err in form.marking_period.errors %}
+                        <div class="text-danger small">{{ err }}</div>
+                        {% endfor %}
+                    </div>
+                    <div class="col-md-2">
+                        <label for="rca_max" class="form-label text-blue">{{ form.max_score.label.text }}</label>
+                        {{ form.max_score(class="form-control custom-input", id="rca_max") }}
+                        {% for err in form.max_score.errors %}
+                        <div class="text-danger small">{{ err }}</div>
+                        {% endfor %}
+                    </div>
+                    <div class="col-md-2">
+                        <label for="rca_due" class="form-label text-blue">{{ form.due_date.label.text }}</label>
+                        {{ form.due_date(class="form-control custom-input", id="rca_due") }}
+                    </div>
+
+                    <div class="col-12">
+                        <label for="rca_notes" class="form-label text-blue">
+                            {{ form.classroom_notes.label.text }}
+                            <span class="text-muted fw-normal">— blackboard content, instructions given in class</span>
+                        </label>
+                        {{ form.classroom_notes(class="form-control custom-input", id="rca_notes") }}
+                    </div>
+
+                    <div class="col-12">
+                        <label for="rca_link" class="form-label text-blue">
+                            {{ form.external_url.label.text }}
+                            <span class="text-muted fw-normal">(optional)</span>
+                        </label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-dark border-secondary text-cyan"><i class="bi bi-google"></i></span>
+                            {{ form.external_url(class="form-control custom-input", id="rca_link") }}
+                        </div>
+                        {% for err in form.external_url.errors %}
+                        <div class="text-danger small">{{ err }}</div>
+                        {% endfor %}
+                        <div class="form-text text-blue small">Paste a Google Drive, Docs, or Classroom link you shared with students.</div>
+                    </div>
+                </div>
+
+                <div class="d-flex flex-wrap gap-2 mt-4 pt-3 border-top border-secondary border-opacity-25">
+                    {{ form.submit(class="btn btn-cyber-primary") }}
+                    <a href="{{ url_for('manual_activity_grades', class_id=klass.id, subject=prefill_subject or none, period=prefill_period or 1) }}"
+                       class="btn btn-cyber-sm">
+                        <i class="bi bi-lightning-charge me-1"></i>Enter Activity Grades Instead
+                    </a>
+                    <a href="{{ url_for('teacher_dashboard', tab='activities', activity_class_id=klass.id) }}"
+                       class="btn btn-outline-light btn-sm">Back to Activities</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

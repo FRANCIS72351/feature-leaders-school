@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Manage About Page Leaders{% endblock %}
+{% block content %}
+<div class="container mt-5 mb-5">
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4">
+    <div>
+      <h2 class="fw-bold text-primary mb-1">About Page Leadership</h2>
+      <p class="text-muted small mb-0">Update the leader profiles shown on the public About page.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('about') }}" class="btn btn-outline-secondary btn-sm" target="_blank">
+        <i class="fas fa-external-link-alt me-1"></i>Preview About Page
+      </a>
+      <a href="{{ url_for('add_leader') }}" class="btn btn-primary btn-sm">
+        <i class="fas fa-user-plus me-1"></i>Add Leader
+      </a>
+    </div>
+  </div>
+
+  {% if leaders %}
+  <div class="table-responsive shadow-sm rounded-3 border">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Photo</th>
+          <th>Name</th>
+          <th>Role</th>
+          <th>Category</th>
+          <th>Contact</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for leader in leaders %}
+        <tr>
+          <td>
+            {% if leader.photo_static_path %}
+              <img src="{{ url_for('static', filename=leader.photo_static_path) }}" width="60" height="60" class="rounded-circle object-fit-cover" alt="{{ leader.name }}">
+            {% else %}
+              <span class="text-muted small">No photo</span>
+            {% endif %}
+          </td>
+          <td class="fw-semibold">{{ leader.name }}</td>
+          <td>{{ leader.role }}</td>
+          <td>{{ leader.category.name if leader.category else '—' }}</td>
+          <td>{{ leader.contact or '—' }}</td>
+          <td class="text-end">
+            <a href="{{ url_for('edit_leader', leader_id=leader.id) }}" class="btn btn-sm btn-outline-primary">Edit</a>
+            <form method="POST" action="{{ url_for('delete_leader', leader_id=leader.id) }}" class="d-inline-block">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove this leader from the About page?');">
+                Delete
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <div class="text-center py-5 border rounded-4 bg-light">
+      <p class="text-muted mb-3">No leaders on the About page yet.</p>
+      <a href="{{ url_for('add_leader') }}" class="btn btn-primary">Add the first leader profile</a>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

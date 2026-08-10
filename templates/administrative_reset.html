@@ -1,0 +1,267 @@
+{% extends 'base.html' %}
+{% block title %}Credential Override Pipeline{% endblock %}
+{% block content %}
+
+<style>
+    .text-cyan { color: #0ea5e9 !important; }
+    .text-rose { color: #dc2626 !important; }
+    .text-yellow { color: #b45309 !important; }
+    .th-name { color: #0369a1 !important; }
+    .glow-title { font-weight: 700; color: #0f172a; text-shadow: none; }
+    .sec-card { background: #ffffff; border: 1px solid #dbe7f3; border-radius: 14px; box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08); }
+    .form-cyber { background: #ffffff !important; border: 1px solid #cfe0ef !important; color: #0f172a !important; border-radius: 8px !important; padding: 10px 12px; }
+    .form-cyber:focus { border-color: #0ea5e9 !important; box-shadow: 0 0 0 0.2rem rgba(14, 165, 233, 0.2) !important; outline: none; }
+    .clearance-badge { background: rgba(220,38,38,.05); border: 1px solid rgba(220,38,38,.15); color: #b91c1c; padding: 10px 14px; border-radius: 8px; font-size: .82rem; }
+    .role-pill { border: 1px solid #cfe0ef; color: #5f7892; background: #f8fbff; border-radius: 999px; padding: .45rem .95rem; font-size: .82rem; text-decoration: none; white-space: nowrap; }
+    .role-pill.active, .role-pill:hover { border-color: #0ea5e9; color: #0369a1; background: #edf5fc; }
+    .folder-card { background: #ffffff; border: 1px solid #dbe7f3; border-radius: 12px; transition: .2s; text-decoration: none; color: inherit; display: block; }
+    .folder-card:hover { border-color: #0ea5e9; transform: translateY(-2px); }
+    .cyber-table th { color: #5f7892; font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; }
+    .cyber-table td { color: #1f2937; vertical-align: middle; }
+    .row-selected { background: #edf5fc !important; }
+    .sticky-panel { position: sticky; top: 1rem; }
+</style>
+
+<div class="container-fluid py-4 px-3 px-lg-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline-secondary text-dark rounded-3">
+                <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+            </a>
+            <h3 class="glow-title mt-3 mb-1">Credential Override Pipeline</h3>
+            <p class="text-muted small mb-0">Browse by role, pick an account, and set a new password.</p>
+        </div>
+        <span class="badge bg-dark border border-secondary text-white-50 px-3 py-2">Authority: {{ current_user.role|upper }}</span>
+    </div>
+
+    <div class="alert alert-success border border-success border-opacity-25 mb-4 py-3 small" role="note">
+        <i class="fas fa-circle-info me-2"></i>
+        <strong>How it works:</strong> Select an account → enter the same new password twice (6+ characters) → click
+        <strong>Reset Password</strong>. You will return to your dashboard with a success message. That user can log in right away.
+    </div>
+
+    <div class="clearance-badge mb-4">
+        <i class="fas fa-shield-halved me-2"></i>
+        {% if current_user.role.lower() == 'admin' %}
+            <strong>Administrator:</strong> You may reset any system account.
+        {% else %}
+            <strong>Principal:</strong> You may reset staff and student accounts. Admin accounts and your own login are protected.
+        {% endif %}
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 mb-4 pb-1" style="overflow-x:auto;">
+        {% for group in role_groups %}
+        <a href="{{ url_for('administrative_password_reset', role=group.key) }}"
+           class="role-pill {% if selected_role == group.key %}active{% endif %}">
+            <i class="fas {{ group.icon }} me-1"></i>{{ group.label }}
+        </a>
+        {% endfor %}
+    </div>
+
+    <div class="row g-4">
+        <div class="col-xl-8">
+            <div class="card sec-card p-0 overflow-hidden">
+                <div class="card-header bg-transparent border-secondary border-opacity-25 d-flex flex-wrap justify-content-between align-items-center gap-2 py-3 px-4">
+                    <div>
+                        <h5 class="text-dark mb-0">
+                            {% if selected_group.browse == 'class_folders' and not selected_class %}
+                                <i class="fas fa-folder-tree text-cyan me-2"></i>Student Class Folders
+                            {% elif selected_group.browse == 'class_folders' and selected_class %}
+                                <i class="fas fa-users text-cyan me-2"></i>{{ selected_class.name }} Roster
+                            {% else %}
+                                <i class="fas fa-id-card text-cyan me-2"></i>{{ selected_group.label }} Accounts
+                            {% endif %}
+                        </h5>
+                        <p class="text-muted small mb-0 mt-1">
+                            {% if selected_group.browse == 'class_folders' and not selected_class %}
+                                Open a class folder to find a student portal account.
+                            {% elif selected_group.browse == 'class_folders' %}
+                                Select a student with a portal login to reset their password.
+                            {% else %}
+                                Search and select a {{ selected_group.label|lower }} account.
+                            {% endif %}
+                        </p>
+                    </div>
+                    <form method="get" class="d-flex gap-2" action="{{ url_for('administrative_password_reset') }}">
+                        <input type="hidden" name="role" value="{{ selected_role }}">
+                        {% if class_id %}<input type="hidden" name="class_id" value="{{ class_id }}">{% endif %}
+                        <input type="search" name="q" value="{{ search_q }}" class="form-control form-cyber form-control-sm" placeholder="Search name, ID, or email..." style="min-width:220px;">
+                        <button type="submit" class="btn btn-sm btn-outline-info">Search</button>
+                    </form>
+                </div>
+
+                <div class="card-body p-0">
+                    {% if selected_group.browse == 'class_folders' and not selected_class %}
+                    <div class="p-4">
+                        <div class="row g-3">
+                            {% for folder in class_folders %}
+                            <div class="col-md-6 col-lg-4">
+                                <a href="{{ url_for('administrative_password_reset', role='student', class_id=folder.klass.id) }}" class="folder-card p-3 h-100">
+                                    <div class="d-flex align-items-start justify-content-between mb-2">
+                                        <i class="fas fa-folder-open fa-lg text-cyan"></i>
+                                        <span class="badge bg-secondary">Grade {{ folder.klass.grade_level }}</span>
+                                    </div>
+                                    <div class="fw-bold text-dark">{{ folder.klass.name }}</div>
+                                    <div class="small text-muted mt-1">
+                                        {% if folder.klass.stream %}{{ folder.klass.stream }} &middot; {% endif %}
+                                        {{ folder.student_count }} student{{ 's' if folder.student_count != 1 else '' }}
+                                    </div>
+                                    <div class="small text-cyan mt-2">{{ folder.portal_count }} with portal login</div>
+                                </a>
+                            </div>
+                            {% else %}
+                            <div class="text-center text-muted py-5">No classes found.</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    {% elif selected_group.browse == 'class_folders' and selected_class %}
+                    <div class="px-4 pt-3">
+                        <a href="{{ url_for('administrative_password_reset', role='student') }}" class="small text-decoration-none text-cyan">
+                            <i class="fas fa-arrow-left me-1"></i>All class folders
+                        </a>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table cyber-table mb-0 align-middle">
+                            <thead>
+                                <tr>
+                                    <th class="ps-4 th-name">Student</th>
+                                    <th>Student ID</th>
+                                    <th>Portal Email</th>
+                                    <th class="pe-4 text-end">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in class_students %}
+                                <tr class="{% if row.user and target_user_id == row.user.id %}row-selected{% endif %}">
+                                    <td class="ps-4 fw-semibold text-yellow">{{ row.student.full_name }}</td>
+                                    <td>{{ row.student.student_id }}</td>
+                                    <td>
+                                        {% if row.user %}
+                                            <span class="text-cyan">{{ row.user.email }}</span>
+                                        {% else %}
+                                            <span class="badge bg-dark border border-secondary text-muted">No portal account</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="pe-4 text-end">
+                                        {% if row.can_reset %}
+                                        <a href="{{ url_for('administrative_password_reset', role='student', class_id=class_id, q=search_q or none, target_user_id=row.user.id) }}"
+                                           class="btn btn-sm btn-outline-warning">Select</a>
+                                        {% elif row.user %}
+                                        <span class="small text-muted">Protected</span>
+                                        {% else %}
+                                        <span class="small text-muted">&mdash;</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr><td colspan="4" class="text-center text-muted py-5">No students match your search.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {% else %}
+                    <div class="table-responsive">
+                        <table class="table cyber-table mb-0 align-middle">
+                            <thead>
+                                <tr>
+                                    <th class="ps-4 th-name">Name</th>
+                                    <th>Email</th>
+                                    <th>Role</th>
+                                    <th class="pe-4 text-end">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in role_users %}
+                                <tr class="{% if target_user_id == row.user.id %}row-selected{% endif %}">
+                                    <td class="ps-4 fw-semibold text-yellow">
+                                        {{ row.user.full_name }}
+                                        {% if row.teacher and row.teacher.subject %}
+                                            <div class="small text-muted fw-normal">{{ row.teacher.subject }}</div>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-cyan">{{ row.user.email }}</td>
+                                    <td>{{ row.user.role|upper }}</td>
+                                    <td class="pe-4 text-end">
+                                        <a href="{{ url_for('administrative_password_reset', role=selected_role, q=search_q or none, target_user_id=row.user.id) }}"
+                                           class="btn btn-sm btn-outline-warning">Select</a>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr><td colspan="4" class="text-center text-muted py-5">No {{ selected_group.label|lower }} accounts match your search.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-4">
+            <div class="card sec-card p-4 sticky-panel">
+                <h5 class="text-dark mb-1"><i class="fas fa-key text-rose me-2"></i>Reset Password</h5>
+                <p class="text-muted small mb-4">Set a new login password for the selected account.</p>
+
+                {% if selected_target %}
+                <div class="mb-4 p-3 rounded-3" style="background:#f8fbff;border:1px solid #dbe7f3;">
+                    <div class="small text-muted">Target account</div>
+                    <div class="fw-bold text-yellow">{{ selected_target.full_name }}</div>
+                    <div class="small text-cyan">{{ selected_target.email }}</div>
+                    <div class="badge bg-dark border border-secondary mt-2">{{ selected_target.role|upper }}</div>
+                </div>
+
+                <form method="POST" id="overrideResetForm" action="{{ url_for('administrative_password_reset') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="target_user_id" value="{{ selected_target.id }}">
+                    <input type="hidden" name="return_role" value="{{ selected_role }}">
+                    {% if class_id %}<input type="hidden" name="return_class_id" value="{{ class_id }}">{% endif %}
+                    {% if search_q %}<input type="hidden" name="return_q" value="{{ search_q }}">{% endif %}
+
+                    <div class="mb-3">
+                        <label class="form-label text-muted small" for="reset_new_password">New password</label>
+                        <input type="password" name="new_password" id="reset_new_password" class="form-control form-cyber" required minlength="6" autocomplete="new-password">
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label text-muted small" for="reset_confirm_password">Confirm password</label>
+                        <input type="password" name="confirm_password" id="reset_confirm_password" class="form-control form-cyber" required minlength="6" autocomplete="new-password">
+                        <div class="form-text text-muted small mt-2">Minimum 6 characters. The user must sign in with this password immediately.</div>
+                    </div>
+                    <button type="submit" class="btn btn-danger w-100 py-2 rounded-3">
+                        <i class="fas fa-bolt me-2"></i>Reset Password
+                    </button>
+                </form>
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-hand-pointer fa-2x mb-3 opacity-50"></i>
+                    <p class="mb-0 small">Choose a role above, browse accounts, then click <strong class="text-dark">Select</strong>.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('overrideResetForm')?.addEventListener('submit', function(e) {
+    const passEl = document.getElementById('reset_new_password');
+    const confirmEl = document.getElementById('reset_confirm_password');
+    const pass = (passEl?.value || '').trim();
+    const confirmPass = (confirmEl?.value || '').trim();
+    if (pass.length < 6) {
+        e.preventDefault();
+        alert('Password must be at least 6 characters.');
+        return false;
+    }
+    if (pass !== confirmPass) {
+        e.preventDefault();
+        alert('Passwords do not match. Type the same password in both fields.');
+        return false;
+    }
+    if (passEl) passEl.value = pass;
+    if (confirmEl) confirmEl.value = confirmPass;
+});
+</script>
+
+{% endblock %}

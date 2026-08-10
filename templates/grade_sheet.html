@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grade Sheet — {{ data.student_name }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --moe-blue: #002d62;
+            --moe-blue-light: #f0f4f8;
+            --moe-accent: #d9534f;
+            --text-main: #1a202c;
+            --text-muted: #4a5568;
+            --border-color: #cbd5e1;
+            --published: #059669;
+        }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: #f1f5f9;
+            color: var(--text-main);
+            margin: 0;
+            padding: 24px 16px 48px;
+        }
+        .top-bar {
+            max-width: 980px;
+            margin: 0 auto 16px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+        .top-bar a.back-link {
+            color: #1e40af;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        .year-form {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0;
+        }
+        .year-form label { font-size: 0.85rem; color: var(--text-muted); }
+        .year-form select {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 0.9rem;
+        }
+        .status-banner {
+            max-width: 980px;
+            margin: 0 auto 16px;
+            padding: 12px 16px;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .status-banner.published {
+            background: #ecfdf5;
+            border: 1px solid #a7f3d0;
+            color: #065f46;
+        }
+        .status-banner.empty {
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            color: #92400e;
+        }
+        .action-bar {
+            max-width: 980px;
+            margin: 0 auto 16px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .btn-action {
+            background: var(--moe-blue);
+            color: #fff;
+            border: none;
+            padding: 9px 20px;
+            font-size: 0.88rem;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-action.outline {
+            background: #fff;
+            color: var(--moe-blue);
+            border: 1px solid var(--border-color);
+        }
+        .grade-sheet-card {
+            background: #fff;
+            padding: 44px;
+            max-width: 980px;
+            margin: auto;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.04);
+            border: 1px solid #e2e8f0;
+        }
+        .moe-header {
+            text-align: center;
+            margin-bottom: 28px;
+            border-bottom: 2px solid var(--moe-blue);
+            padding-bottom: 20px;
+        }
+        .moe-header h2 { font-size: 1.45rem; font-weight: 800; color: var(--moe-blue); margin: 4px 0; }
+        .moe-header h3 { font-size: 1rem; font-weight: 600; color: var(--moe-accent); margin: 4px 0; }
+        .title-badge {
+            display: inline-block;
+            background: var(--moe-blue-light);
+            color: var(--moe-blue);
+            font-weight: 700;
+            font-size: 0.82rem;
+            padding: 6px 14px;
+            border-radius: 20px;
+            margin-top: 12px;
+        }
+        .title-badge .pub-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--published);
+            margin-right: 6px;
+        }
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-top: 20px;
+            background: #f8fafc;
+            padding: 14px 18px;
+            border-radius: 10px;
+            border: 1px solid #edf2f7;
+            text-align: left;
+        }
+        .meta-item { font-size: 0.86rem; color: var(--text-muted); }
+        .meta-item strong { color: var(--text-main); }
+        .transcript-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 24px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .transcript-table th {
+            background: var(--moe-blue);
+            color: #fff;
+            font-size: 0.78rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            padding: 10px 6px;
+            border: 1px solid rgba(255,255,255,0.12);
+        }
+        .transcript-table td {
+            border: 1px solid var(--border-color);
+            font-size: 0.88rem;
+            text-align: center;
+            padding: 8px 6px;
+        }
+        .subject-name {
+            text-align: left;
+            padding-left: 14px !important;
+            font-weight: 600;
+            background: #fafafa;
+        }
+        .grade-cell { font-family: 'Courier New', monospace; font-weight: 600; }
+        .final-avg-cell {
+            font-family: 'Courier New', monospace;
+            font-weight: 700;
+            color: var(--moe-blue);
+            background: var(--moe-blue-light);
+        }
+        .empty-state {
+            text-align: center;
+            padding: 48px 24px;
+            color: var(--text-muted);
+        }
+        .footer-signatures {
+            margin-top: 48px;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+        .signature-block { text-align: center; width: 200px; }
+        .signature-line { border-top: 1.5px solid var(--text-main); margin-bottom: 8px; }
+        .signature-title { font-size: 0.82rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; }
+
+        .senior-sheet {
+            border: 1px solid #111827;
+            padding: 14px 14px 10px;
+            border-radius: 4px;
+        }
+        .senior-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .senior-header .senior-logo {
+            width: 56px;
+            height: 56px;
+            object-fit: contain;
+        }
+        .senior-header-center {
+            flex: 1;
+            text-align: center;
+        }
+        .senior-school-title {
+            font-size: 1.12rem;
+            margin: 0;
+            color: #b91c1c;
+            font-weight: 800;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+        }
+        .senior-school-sub {
+            margin: 2px 0;
+            font-size: 0.75rem;
+            color: #0f172a;
+            font-weight: 600;
+        }
+        .senior-contact {
+            margin: 1px 0;
+            font-size: 0.72rem;
+            color: #334155;
+            font-weight: 600;
+        }
+        .senior-report-title {
+            margin: 5px 0 0;
+            font-size: 0.9rem;
+            color: #0f172a;
+            text-transform: uppercase;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+        }
+        .senior-meta-table,
+        .senior-grade-table,
+        .senior-grade-legend {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            margin-top: 6px;
+            border: 1px solid #1e293b;
+        }
+        .senior-meta-table td,
+        .senior-grade-table th,
+        .senior-grade-table td,
+        .senior-grade-legend th,
+        .senior-grade-legend td {
+            border: 1px solid #1e293b;
+            padding: 4px 5px;
+            font-size: 0.72rem;
+            color: #0f172a;
+            vertical-align: middle;
+        }
+        .senior-meta-label {
+            width: 14%;
+            font-weight: 700;
+            text-transform: uppercase;
+            background: #f8fafc;
+        }
+        .senior-meta-value { font-weight: 700; }
+        .senior-grade-table thead th {
+            background: #f1f5f9;
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 0.68rem;
+        }
+        .senior-subject {
+            text-align: left;
+            font-weight: 700;
+            background: #fff;
+        }
+        .senior-promo-row {
+            background: #fff7ed;
+            font-weight: 700;
+            text-align: center;
+            text-transform: uppercase;
+        }
+        .senior-motto {
+            margin-top: 6px;
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: #0f172a;
+            text-transform: uppercase;
+        }
+        .senior-motto .motto-text { color: #b91c1c; }
+        @media print {
+            body { background: none; padding: 0; }
+            .top-bar, .status-banner, .action-bar .outline { display: none !important; }
+            .grade-sheet-card { box-shadow: none; border: none; padding: 0; }
+        }
+    </style>
+</head>
+<body>
+    {% set level_text = ((data.class_name or '') ~ ' ' ~ (student.grade_level if student and student.grade_level is not none else ''))|lower %}
+    {% set senior_high = ('10' in level_text) or ('11' in level_text) or ('12' in level_text) %}
+    {% set lower_division = ('kindergarten' in level_text) or ('k-i' in level_text) or ('k-ii' in level_text) or ('k i' in level_text) or ('k ii' in level_text) or ('kg' in level_text) %}
+    {% set elementary_division = ('elementary' in level_text) or ('grade 1' in level_text) or ('grade 2' in level_text) or ('grade 3' in level_text) or ('grade 4' in level_text) or ('grade 5' in level_text) or ('grade 6' in level_text) %}
+    {% set junior_high = ('junior high' in level_text) or ('grade 7' in level_text) or ('grade 8' in level_text) or ('grade 9' in level_text) %}
+    {% set paper_layout = senior_high or junior_high or lower_division or elementary_division %}
+    {% set division_sheet_title = 'Senior High Grade Sheet' if senior_high else ('Junior High Grade Sheet' if junior_high else ('Kindergarten Division Grade Sheet' if lower_division else 'Elementary Division Grade Sheet')) %}
+    {% set division_record_title = 'Senior High Academic Performance Record' if senior_high else ('Junior High Academic Performance Record' if junior_high else ('Kindergarten Division Academic Performance Record' if lower_division else 'Elementary Division Academic Performance Record')) %}
+    {% set promotion_statement = data.promotion.label if data.promotion and data.promotion.label else 'Pending promotion decision' %}
+    {% set promotion_target = promotion_statement %}
+    {% if 'PROMOTED TO:' in promotion_statement|upper %}
+        {% set promotion_target = promotion_statement.split(':', 1)[1].strip() %}
+    {% endif %}
+    {% if not promotion_target %}
+        {% set promotion_target = 'Pending Promotion Decision' %}
+    {% endif %}
+
+    <div class="top-bar">
+        <a href="{{ url_for('student_dashboard', tab='grades', academic_year_id=display_year.id if display_year else none) }}" class="back-link">
+            <i class="fas fa-arrow-left me-1"></i> Back to Dashboard
+        </a>
+        <form method="GET" action="{{ url_for('student_grade_sheet') }}" class="year-form">
+            <label for="academic_year_id">Academic Year</label>
+            <select name="academic_year_id" id="academic_year_id" onchange="this.form.submit()">
+                {% for year in past_years %}
+                <option value="{{ year.id }}" {% if display_year and year.id == display_year.id %}selected{% endif %}>{{ year.name }}</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+
+    {% if has_published %}
+    <div class="status-banner published">
+        <i class="fas fa-check-circle"></i>
+        <span><strong>Published Grade Sheet</strong> — {{ published_count }} official grade record{{ 's' if published_count != 1 else '' }} for {{ data.academic_year or 'this year' }}.</span>
+    </div>
+    {% else %}
+    <div class="status-banner empty">
+        <i class="fas fa-hourglass-half"></i>
+        <span>No published grades yet for {{ data.academic_year or 'this academic year' }}. Your teacher will publish period grades when ready. Check <strong>My Grades</strong> for draft standing.</span>
+    </div>
+    {% endif %}
+
+    <div class="action-bar">
+        <a class="btn-action outline" href="{{ url_for('student_dashboard', tab='activities', academic_year_id=display_year.id if display_year else none) }}">
+            <i class="fas fa-list"></i> Activities Record
+        </a>
+        {% if has_published %}
+        <a class="btn-action" href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}">
+            <i class="fas fa-file-invoice"></i> Full Report Card
+        </a>
+        <button class="btn-action" type="button" onclick="window.print()">
+            <i class="fas fa-print"></i> Print
+        </button>
+        {% endif %}
+    </div>
+
+    <div class="grade-sheet-card">
+        {% if paper_layout %}
+        <div class="senior-sheet">
+            <div class="senior-header">
+                <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="senior-logo">
+                <div class="senior-header-center">
+                    <p class="senior-school-title">Future Leaders Preparatory Academy</p>
+                    <p class="senior-school-sub">Center Street, South Beach</p>
+                    <p class="senior-school-sub">Monrovia, Liberia</p>
+                    <p class="senior-contact">Telephone: 0777-287-456 / 0770-203-098 / 0881-164-147</p>
+                    <p class="senior-contact">Email: flpacardinals@gmail.com</p>
+                    <p class="senior-report-title">{{ division_sheet_title }}</p>
+                </div>
+                <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="senior-logo">
+            </div>
+
+            <table class="senior-meta-table">
+                <tr>
+                    <td class="senior-meta-label">Name</td>
+                    <td class="senior-meta-value">{{ data.student_name }}</td>
+                    <td class="senior-meta-label">Academic Year</td>
+                    <td class="senior-meta-value">{{ data.academic_year or (display_year.name if display_year else '') }}</td>
+                </tr>
+                <tr>
+                    <td class="senior-meta-label">Class</td>
+                    <td class="senior-meta-value">{{ data.class_name or '—' }}</td>
+                    <td class="senior-meta-label">Gender</td>
+                    <td class="senior-meta-value">{{ student.gender or '-' }}</td>
+                </tr>
+                <tr>
+                    <td class="senior-meta-label">Promotion Statement</td>
+                    <td class="senior-meta-value" colspan="3">{{ promotion_statement }}</td>
+                </tr>
+            </table>
+
+            {% if data.subjects %}
+            <table class="senior-grade-table">
+                <thead>
+                    <tr>
+                        <th colspan="13" class="senior-promo-row">PROMOTED TO: {{ promotion_target|upper }}</th>
+                    </tr>
+                    <tr>
+                        <th>Subjects</th>
+                        <th>Period 1</th>
+                        <th>Period 2</th>
+                        <th>Period 3</th>
+                        <th>Exam</th>
+                        <th>Sem. Ave</th>
+                        <th>Period 4</th>
+                        <th>Period 5</th>
+                        <th>Period 6</th>
+                        <th>Exam</th>
+                        <th>Sem. Ave</th>
+                        <th>Yrly Ave</th>
+                        <th>Remarks</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for subject in data.subjects %}
+                        {% set score = (subject.final_avg|float) if subject.final_avg not in [None, '', '-', '—'] else None %}
+                        <tr>
+                            <td class="senior-subject">{{ subject.name }}</td>
+                            <td>{{ subject.p1 or '-' }}</td>
+                            <td>{{ subject.p2 or '-' }}</td>
+                            <td>{{ subject.p3 or '-' }}</td>
+                            <td>{{ subject.exam or '-' }}</td>
+                            <td>{{ subject.avg or '-' }}</td>
+                            <td>{{ subject.p4 or '-' }}</td>
+                            <td>{{ subject.p5 or '-' }}</td>
+                            <td>{{ subject.p6 or '-' }}</td>
+                            <td>{{ subject.final_exam or '-' }}</td>
+                            <td>{{ subject.final_avg or '-' }}</td>
+                            <td>{{ subject.final_avg or '-' }}</td>
+                            <td>
+                                {% if score is not none %}
+                                    {% if score >= 90 %}Excellent
+                                    {% elif score >= 80 %}Good
+                                    {% elif score >= 70 %}Fair
+                                    {% else %}Failure
+                                    {% endif %}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty-state" style="padding: 20px 12px; border: 1px solid #1e293b; margin-top: 8px;">
+                <p class="mb-0 fw-semibold">Grade sheet not available yet</p>
+                <p class="small">Published grades will appear here after your teacher publishes period scores.</p>
+            </div>
+            {% endif %}
+
+            <table class="senior-grade-legend">
+                <thead>
+                    <tr>
+                        <th style="width:45%;">Grading Method</th>
+                        <th>Numerical Value</th>
+                        <th>Alphabetical Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>Excellent</td><td>90 - 100</td><td>A</td></tr>
+                    <tr><td>Good</td><td>80 - 89</td><td>B</td></tr>
+                    <tr><td>Fair</td><td>70 - 79</td><td>C</td></tr>
+                    <tr><td>Failure</td><td>Below 70</td><td>D</td></tr>
+                </tbody>
+            </table>
+
+            <div class="senior-motto">
+                <span>Class Sponsor</span>
+                <span class="motto-text">MOTTO: "HONOR, EXCELLENCE, ACADEMIC, DISCIPLINE AND SUCCESS"</span>
+                <span>Principal</span>
+            </div>
+        </div>
+        {% else %}
+        <div class="moe-header">
+            <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School" width="70">
+            <h2>STANDARD SCHOOL MANAGEMENT</h2>
+            <h3>MINISTRY OF EDUCATION</h3>
+            <div class="title-badge">
+                {% if has_published %}<span class="pub-dot"></span>{% endif %}
+                OFFICIAL GRADE SHEET
+            </div>
+            <div class="meta-grid">
+                <div class="meta-item">STUDENT: <strong>{{ data.student_name }}</strong></div>
+                <div class="meta-item">ID: <strong>{{ data.student_id }}</strong></div>
+                {% if data.academic_year %}
+                <div class="meta-item">ACADEMIC YEAR: <strong>{{ data.academic_year }}</strong></div>
+                {% endif %}
+                <div class="meta-item">CLASS: <strong>{{ data.class_name or '—' }}</strong></div>
+            </div>
+        </div>
+
+        {% if data.subjects %}
+        <table class="transcript-table">
+            <thead>
+                <tr>
+                    <th rowspan="2">Subject</th>
+                    <th colspan="4">1st Semester</th>
+                    <th rowspan="2">Sem Avg</th>
+                    <th colspan="4">2nd Semester</th>
+                    <th rowspan="2">Final Avg</th>
+                </tr>
+                <tr>
+                    <th>P1</th><th>P2</th><th>P3</th><th>Exam</th>
+                    <th>P4</th><th>P5</th><th>P6</th><th>F. Exam</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for subject in data.subjects %}
+                <tr>
+                    <td class="subject-name">{{ subject.name }}</td>
+                    <td class="grade-cell">{{ subject.p1 or '—' }}</td>
+                    <td class="grade-cell">{{ subject.p2 or '—' }}</td>
+                    <td class="grade-cell">{{ subject.p3 or '—' }}</td>
+                    <td class="grade-cell">{{ subject.exam or '—' }}</td>
+                    <td class="grade-cell fw-bold">{{ subject.avg or '—' }}</td>
+                    <td class="grade-cell">{{ subject.p4 or '—' }}</td>
+                    <td class="grade-cell">{{ subject.p5 or '—' }}</td>
+                    <td class="grade-cell">{{ subject.p6 or '—' }}</td>
+                    <td class="grade-cell">{{ subject.final_exam or '—' }}</td>
+                    <td class="final-avg-cell">{{ subject.final_avg or '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <i class="fas fa-clipboard-list fa-3x mb-3 d-block opacity-50"></i>
+            <p class="mb-0 fw-semibold">Grade sheet not available yet</p>
+            <p class="small">Published grades will appear here after your teacher publishes period scores.</p>
+        </div>
+        {% endif %}
+
+        <div class="footer-signatures">
+            <div class="signature-block">
+                <div class="signature-line"></div>
+                <div class="signature-title">Teacher's Signature</div>
+            </div>
+            <div class="signature-block">
+                <div class="signature-line"></div>
+                <div class="signature-title">Principal's Signature</div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>

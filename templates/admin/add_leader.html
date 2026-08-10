@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Add Leader Profile{% endblock %}
+{% block content %}
+<div class="container mt-5 mb-5">
+  <h2 class="fw-bold text-primary mb-1">Add Leader Profile</h2>
+  <p class="text-muted small mb-4">This profile will appear in the Leadership section on the About page.</p>
+
+  <form method="POST" enctype="multipart/form-data" class="p-4 bg-light rounded-3 shadow-sm">
+    {{ form.hidden_tag() }}
+
+    <div class="mb-3">
+      {{ form.name.label(class="form-label fw-semibold") }}
+      {{ form.name(class="form-control", placeholder="e.g., Dr. Jane Doe") }}
+    </div>
+
+    <div class="mb-3">
+      {{ form.role.label(class="form-label fw-semibold") }}
+      {{ form.role(class="form-control", placeholder="e.g., Principal") }}
+    </div>
+
+    <div class="mb-3">
+      {{ form.bio.label(class="form-label fw-semibold") }}
+      {{ form.bio(class="form-control", rows="4", placeholder="Short biography shown on the About page") }}
+    </div>
+
+    <div class="mb-3">
+      {{ form.contact.label(class="form-label fw-semibold") }}
+      {{ form.contact(class="form-control", placeholder="Email or contact link") }}
+    </div>
+
+    <div class="mb-3">
+      {{ form.category.label(class="form-label fw-semibold") }}
+      {{ form.category(class="form-control", placeholder="e.g., Administration, Board of Directors, Faculty") }}
+      <div class="form-text">Type the section heading shown on the About page. Matching names group leaders together.</div>
+    </div>
+
+    <div class="mb-3">
+      {{ form.photo.label(class="form-label fw-semibold") }}
+      {{ form.photo(class="form-control") }}
+      <div class="form-text">JPG or PNG. Shown on the About page leader card.</div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">{{ form.submit.label.text }}</button>
+    <a href="{{ url_for('manage_leaders') }}" class="btn btn-secondary ms-2">Cancel</a>
+  </form>
+</div>
+{% endblock %}

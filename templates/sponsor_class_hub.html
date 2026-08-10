@@ -1,0 +1,409 @@
+{% extends 'base.html' %}
+{% block title %}{{ role_title }} — {{ klass.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 sponsor-hub">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+        <div>
+            <a href="{{ url_for('teacher_dashboard') }}" class="text-blue small text-decoration-none">
+                <i class="bi bi-arrow-left me-1"></i>Teacher Dashboard
+            </a>
+            <h2 class="text-white fw-bold mt-2 mb-1">
+                <i class="bi bi-shield-check text-warning me-2"></i>{{ role_title }} Command Center
+            </h2>
+            <p class="text-blue mb-2 small">
+                {{ klass.name }} · Grade {{ klass.grade_level }}{% if klass.stream %} · {{ klass.stream }}{% endif %}
+            </p>
+            {% if active_year %}
+            <span class="badge att-session-badge">
+                <i class="bi bi-mortarboard me-1"></i>Current Session: {{ active_year.name }}
+            </span>
+            {% endif %}
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('grade_entry_class', class_id=klass.id) }}" class="btn btn-cyber-sm">
+                <i class="bi bi-pencil-square me-1"></i>Grade Review
+            </a>
+            <a href="{{ url_for('teacher_dashboard', tab='grades', grade_class_id=klass.id) }}" class="btn btn-cyber-sm">
+                <i class="bi bi-pencil-square me-1"></i>Period Grade Review
+            </a>
+            <a href="{{ url_for('teacher_class_folder', class_id=klass.id) }}" class="btn btn-outline-light btn-sm">
+                <i class="bi bi-folder2-open me-1"></i>Class Folder
+            </a>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="kpi-card">
+                <div class="kpi-label">Students</div>
+                <div class="kpi-value">{{ kpis.total_students }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="kpi-card kpi-present">
+                <div class="kpi-label">Present Today</div>
+                <div class="kpi-value">{{ kpis.present_today }}</div>
+                <div class="kpi-sub">{{ kpis.late_today }} late · {{ kpis.absent_today }} absent</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="kpi-card kpi-risk">
+                <div class="kpi-label">Needs Attention</div>
+                <div class="kpi-value">{{ kpis.at_risk }}</div>
+                <div class="kpi-sub">Attendance · conduct · academics</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="kpi-card kpi-fee">
+                <div class="kpi-label">Fee Alerts</div>
+                <div class="kpi-value">{{ kpis.fee_alerts }}</div>
+                <div class="kpi-sub">{{ kpis.open_activities }} open activities</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="hub-card mb-4">
+                <div class="hub-card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <h5 class="mb-0 text-white"><i class="bi bi-calendar-check me-2 text-cyan"></i>Daily Attendance Roll</h5>
+                    <form method="GET" action="{{ url_for('sponsor_class_hub', class_id=klass.id) }}" class="d-flex gap-2 align-items-center">
+                        <label class="text-blue small mb-0 fw-semibold" for="sponsorAttDate">Session Date</label>
+                        <input type="date" id="sponsorAttDate" name="date" value="{{ attendance_date }}" class="form-control form-control-sm form-cyber" style="max-width: 11rem;" onchange="this.form.submit()">
+                    </form>
+                </div>
+                <div class="hub-card-body p-0">
+                    <form method="POST" action="{{ url_for('sponsor_save_attendance', class_id=klass.id) }}" id="sponsorAttendanceForm">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="attendance_date" value="{{ attendance_date }}">
+                        <div class="px-3 py-2 d-flex flex-wrap gap-2 align-items-center justify-content-between border-bottom border-cyber-dim">
+                            <span class="text-blue small">Quick mark entire class:</span>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button type="button" class="btn btn-sm att-quick-btn" data-mark-all="present"><i class="bi bi-check-circle me-1"></i>All Present</button>
+                                <button type="button" class="btn btn-sm att-quick-btn" data-mark-all="late"><i class="bi bi-clock me-1"></i>All Late</button>
+                                <button type="button" class="btn btn-sm att-quick-btn" data-mark-all="absent"><i class="bi bi-x-circle me-1"></i>All Absent</button>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table hub-table mb-0">
+                                <thead>
+                                    <tr>
+                                        <th class="ps-4">Student</th>
+                                        <th>Status</th>
+                                        <th>30-day Rate</th>
+                                        <th class="pe-4">Note</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in roster %}
+                                    <tr class="att-row">
+                                        <td class="ps-4">
+                                            <div class="fw-semibold text-white">{{ row.student.full_name }}</div>
+                                            {% if not row.is_marked %}
+                                            <span class="badge bg-dark border border-secondary text-secondary att-unmarked-badge">Not saved</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <div class="att-status-group" role="group">
+                                                {% for value, label, icon in [
+                                                    ('present', 'Present', 'check-circle'),
+                                                    ('late', 'Late', 'clock'),
+                                                    ('absent', 'Absent', 'x-circle'),
+                                                    ('excused', 'Excused', 'shield-check')
+                                                ] %}
+                                                <label class="att-status-chip att-chip-{{ value }} {% if row.attendance_status == value %}active{% endif %}">
+                                                    <input type="radio" name="attendance_{{ row.student.id }}" value="{{ value }}" {% if row.attendance_status == value %}checked{% endif %} class="att-status-input">
+                                                    <i class="bi bi-{{ icon }}"></i>
+                                                    <span>{{ label }}</span>
+                                                </label>
+                                                {% endfor %}
+                                            </div>
+                                        </td>
+                                        <td class="text-blue">
+                                            {% if row.attendance_rate is not none %}{{ row.attendance_rate }}%{% else %}—{% endif %}
+                                        </td>
+                                        <td class="pe-4">
+                                            <input type="text" name="notes_{{ row.student.id }}" value="{{ row.notes or '' }}" class="form-control form-control-sm form-cyber" placeholder="Optional">
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="4" class="text-center text-blue py-4">No students in this class for the active year.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% if roster %}
+                        <div class="p-3 border-top border-cyber-dim d-flex flex-wrap justify-content-between align-items-center gap-2">
+                            <span class="text-blue small"><i class="bi bi-info-circle me-1"></i>Changes apply to <strong class="text-white">{{ attendance_date }}</strong> only.</span>
+                            <button type="submit" class="btn btn-cyber-primary btn-sm">
+                                <i class="bi bi-save me-1"></i>Save Attendance
+                            </button>
+                        </div>
+                        {% endif %}
+                    </form>
+                </div>
+            </div>
+
+            <div class="hub-card mb-4">
+                <div class="hub-card-header">
+                    <h5 class="mb-0 text-white"><i class="bi bi-people me-2 text-cyan"></i>Student Welfare Matrix</h5>
+                </div>
+                <div class="hub-card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table hub-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th class="ps-4">Student</th>
+                                    <th>Parent Contact</th>
+                                    <th>Avg Score</th>
+                                    <th>Conduct</th>
+                                    <th>Fee Balance</th>
+                                    <th class="pe-4">Flags</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in roster %}
+                                <tr>
+                                    <td class="ps-4">
+                                        <div class="fw-semibold text-white">{{ row.student.full_name }}</div>
+                                        <small class="text-blue">{{ row.student.student_id }}</small>
+                                    </td>
+                                    <td class="text-blue small">
+                                        {% if row.parent_email %}
+                                        <a href="mailto:{{ row.parent_email }}" class="text-cyan">{{ row.parent_email }}</a>
+                                        {% else %}<span class="text-muted">No email on file</span>{% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        {% if row.avg_score is not none %}
+                                        <span class="{% if row.avg_score >= 70 %}text-success{% else %}text-warning{% endif %} fw-bold">{{ row.avg_score }}</span>
+                                        {% else %}—{% endif %}
+                                    </td>
+                                    <td class="text-center text-blue">{{ row.incidents }}</td>
+                                    <td class="text-center {% if row.tuition_balance > 0 %}text-warning{% else %}text-success{% endif %}">
+                                        ${{ '%.2f'|format(row.tuition_balance) }}
+                                    </td>
+                                    <td class="pe-4">
+                                        {% for flag in row.flags %}
+                                        <span class="badge bg-dark border border-warning text-warning me-1 mb-1">{{ flag }}</span>
+                                        {% else %}
+                                        <span class="badge bg-dark border border-success text-success">On track</span>
+                                        {% endfor %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="hub-card mb-4">
+                <div class="hub-card-header">
+                    <h6 class="mb-0 text-white"><i class="bi bi-list-check me-2 text-warning"></i>Sponsor Responsibilities</h6>
+                </div>
+                <div class="hub-card-body">
+                    {% for item in responsibilities %}
+                    <div class="resp-item mb-3">
+                        <div class="fw-semibold text-cyan small"><i class="bi {{ item.icon }} me-1"></i>{{ item.title }}</div>
+                        <div class="text-blue small">{{ item.detail }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="hub-card mb-4">
+                <div class="hub-card-header"><h6 class="mb-0 text-white"><i class="bi bi-heart-pulse me-2"></i>Welfare Note</h6></div>
+                <div class="hub-card-body">
+                    <form method="POST" action="{{ url_for('sponsor_welfare_note', class_id=klass.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="mb-2">
+                            <select name="student_id" class="form-select form-select-sm form-cyber">
+                                <option value="">Whole class</option>
+                                {% for s in students %}
+                                <option value="{{ s.id }}">{{ s.full_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <select name="note_type" class="form-select form-select-sm form-cyber">
+                                <option value="welfare">Welfare check</option>
+                                <option value="parent_contact">Parent contact</option>
+                                <option value="academic">Academic concern</option>
+                                <option value="health">Health / wellbeing</option>
+                            </select>
+                        </div>
+                        <textarea name="content" class="form-control form-cyber mb-2" rows="3" placeholder="Observation or follow-up..." required></textarea>
+                        <button type="submit" class="btn btn-cyber-primary btn-sm w-100">Save Note</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="hub-card mb-4">
+                <div class="hub-card-header"><h6 class="mb-0 text-white"><i class="bi bi-shield-exclamation me-2"></i>Log Conduct Incident</h6></div>
+                <div class="hub-card-body">
+                    <form method="POST" action="{{ url_for('sponsor_log_incident', class_id=klass.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <select name="student_id" class="form-select form-select-sm form-cyber mb-2" required>
+                            <option value="" disabled selected>Select student</option>
+                            {% for s in students %}
+                            <option value="{{ s.id }}">{{ s.full_name }}</option>
+                            {% endfor %}
+                        </select>
+                        <input type="text" name="offense" class="form-control form-cyber form-control-sm mb-2" placeholder="Offense (e.g. Chronic tardiness)" required>
+                        <input type="text" name="action_taken" class="form-control form-cyber form-control-sm mb-2" placeholder="Action taken (optional)">
+                        <textarea name="notes" class="form-control form-cyber mb-2" rows="2" placeholder="Details for Dean review"></textarea>
+                        <button type="submit" class="btn btn-warning btn-sm w-100 text-dark fw-semibold">Submit to Dean Record</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="hub-card mb-4">
+                <div class="hub-card-header"><h6 class="mb-0 text-white"><i class="bi bi-megaphone me-2"></i>Class Announcement</h6></div>
+                <div class="hub-card-body">
+                    <form method="POST" action="{{ url_for('sponsor_class_announce', class_id=klass.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="text" name="title" class="form-control form-cyber form-control-sm mb-2" placeholder="Title" required>
+                        <textarea name="content" class="form-control form-cyber mb-2" rows="3" placeholder="Message for class / parents" required></textarea>
+                        <select name="audience" class="form-select form-select-sm form-cyber mb-2">
+                            <option value="students">Students</option>
+                            <option value="parents">Parents</option>
+                            <option value="both">Students & Parents</option>
+                        </select>
+                        <button type="submit" class="btn btn-cyber-primary btn-sm w-100">Post Notice</button>
+                    </form>
+                </div>
+            </div>
+
+            {% if welfare_notes %}
+            <div class="hub-card mb-4">
+                <div class="hub-card-header"><h6 class="mb-0 text-white">Recent Welfare Notes</h6></div>
+                <div class="hub-card-body">
+                    {% for note in welfare_notes %}
+                    <div class="note-item mb-3 pb-3 border-bottom border-secondary border-opacity-25">
+                        <div class="small text-warning text-uppercase">{{ note.note_type|replace('_', ' ') }}</div>
+                        <div class="text-white small">{{ note.content }}</div>
+                        <div class="text-blue text-xs mt-1">
+                            {% if note.student %}{{ note.student.full_name }} · {% endif %}
+                            {{ note.created_at.strftime('%b %d, %Y') }}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% if class_notices %}
+            <div class="hub-card mb-4">
+                <div class="hub-card-header"><h6 class="mb-0 text-white">Class Notices</h6></div>
+                <div class="hub-card-body">
+                    {% for notice in class_notices %}
+                    <div class="note-item mb-3">
+                        <div class="fw-semibold text-cyan">{{ notice.title }}</div>
+                        <div class="text-blue small">{{ notice.content }}</div>
+                        <div class="text-muted text-xs">{{ notice.created_at.strftime('%b %d, %Y') }} · {{ notice.audience }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% if recent_incidents %}
+            <div class="hub-card">
+                <div class="hub-card-header"><h6 class="mb-0 text-white">Recent Conduct Records</h6></div>
+                <div class="hub-card-body">
+                    {% for inc in recent_incidents %}
+                    <div class="note-item mb-2 small">
+                        <span class="text-white">{{ inc.student.full_name if inc.student else 'Student' }}</span>
+                        <span class="text-warning"> — {{ inc.offense }}</span>
+                        <div class="text-blue">{{ inc.action_taken }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<style>
+    body { background: #0b0f19; }
+    .sponsor-hub .text-blue { color: #38bdf8 !important; }
+    .sponsor-hub .text-cyan { color: #00f2ff !important; }
+    .hub-card, .kpi-card {
+        background: rgba(13, 13, 33, 0.9);
+        border: 1px solid rgba(0, 242, 255, 0.18);
+        border-radius: 12px;
+        color: #e2e8f0;
+    }
+    .hub-card-header {
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid rgba(0, 242, 255, 0.12);
+    }
+    .hub-card-body { padding: 1rem 1.25rem; }
+    .kpi-card { padding: 1rem 1.25rem; }
+    .kpi-label { font-size: 0.72rem; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.04em; }
+    .kpi-value { font-size: 1.75rem; font-weight: 700; color: #fff; }
+    .kpi-sub { font-size: 0.72rem; color: #64748b; }
+    .kpi-present .kpi-value { color: #4ade80; }
+    .kpi-risk .kpi-value { color: #fbbf24; }
+    .kpi-fee .kpi-value { color: #f472b6; }
+    .hub-table th { color: #00f2ff; font-size: 0.75rem; text-transform: uppercase; border-color: rgba(0,242,255,0.1); }
+    .hub-table td { border-color: rgba(0,242,255,0.08); vertical-align: middle; }
+    .form-cyber { background: #070a12 !important; border: 1px solid #374151 !important; color: #fff !important; }
+    .border-cyber-dim { border-color: rgba(0,242,255,0.12) !important; }
+    .btn-cyber-primary { background: linear-gradient(135deg, #00f2ff, #0ea5e9); border: none; color: #0b0f19; font-weight: 600; }
+    .btn-cyber-sm { background: rgba(0,242,255,0.12); border: 1px solid rgba(0,242,255,0.35); color: #00f2ff; font-size: 0.85rem; }
+    .att-session-badge {
+        background: rgba(0, 242, 255, 0.12);
+        border: 1px solid rgba(0, 242, 255, 0.35);
+        color: #00f2ff;
+        font-size: 0.78rem;
+        font-weight: 600;
+        padding: 0.4rem 0.75rem;
+    }
+    .att-status-group { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .att-status-chip {
+        display: inline-flex; align-items: center; gap: 0.25rem;
+        padding: 0.25rem 0.5rem; border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        background: rgba(15, 23, 42, 0.8); color: #94a3b8;
+        font-size: 0.72rem; cursor: pointer; user-select: none;
+    }
+    .att-status-chip input { position: absolute; opacity: 0; pointer-events: none; }
+    .att-status-chip.active.att-chip-present { border-color: #4ade80; color: #4ade80; background: rgba(74, 222, 128, 0.12); }
+    .att-status-chip.active.att-chip-late { border-color: #fbbf24; color: #fbbf24; background: rgba(251, 191, 36, 0.12); }
+    .att-status-chip.active.att-chip-absent { border-color: #f87171; color: #f87171; background: rgba(248, 113, 113, 0.12); }
+    .att-status-chip.active.att-chip-excused { border-color: #38bdf8; color: #38bdf8; background: rgba(56, 189, 248, 0.12); }
+    .att-quick-btn { border: 1px solid rgba(148, 163, 184, 0.35); background: rgba(15, 23, 42, 0.8); color: #cbd5e1; }
+    .att-unmarked-badge { font-size: 0.65rem; }
+    .text-xs { font-size: 0.7rem; }
+</style>
+<script>
+(function () {
+    const form = document.getElementById('sponsorAttendanceForm');
+    if (!form) return;
+    function setChipActive(input) {
+        const group = input.closest('.att-status-group');
+        if (!group) return;
+        group.querySelectorAll('.att-status-chip').forEach(function (chip) {
+            chip.classList.toggle('active', chip.contains(input) && input.checked);
+        });
+    }
+    form.querySelectorAll('.att-status-input').forEach(function (input) {
+        input.addEventListener('change', function () { setChipActive(input); });
+    });
+    form.querySelectorAll('[data-mark-all]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const value = btn.getAttribute('data-mark-all');
+            form.querySelectorAll('.att-status-input[value="' + value + '"]').forEach(function (input) {
+                input.checked = true;
+                setChipActive(input);
+            });
+        });
+    });
+})();
+</script>
+{% endblock %}

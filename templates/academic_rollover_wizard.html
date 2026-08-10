@@ -1,0 +1,819 @@
+{% extends 'base.html' %}
+{% block title %}Academic Year Rollover Wizard{% endblock %}
+{% block content %}
+
+<style>
+    body { background-color: #f8fbff; color: #1f2937; font-family: 'Inter', system-ui, sans-serif; }
+    .rollover-terminal { color: #ffffff; }
+    .rollover-terminal .text-muted { color: rgba(255,255,255,0.65) !important; }
+    .text-cyan { color: #00f2ff !important; }
+    .text-emerald { color: #10b981 !important; }
+    .text-amber { color: #f59e0b !important; }
+    .text-rose { color: #f43f5e !important; }
+    .text-blue { color: #38bdf8 !important; }
+
+    .wizard-steps { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+    .wizard-step-btn {
+        flex: 1; min-width: 110px; border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(255,255,255,0.04); color: #fff; border-radius: 0.5rem;
+        padding: 0.65rem 0.75rem; font-size: 0.78rem; text-align: center; cursor: pointer;
+        transition: all 0.2s;
+    }
+    .wizard-step-btn.active { border-color: #00f2ff; background: rgba(0,242,255,0.12); color: #00f2ff; }
+    .wizard-step-btn.done { border-color: #10b981; color: #10b981; }
+
+    .sec-card {
+        background: rgba(17,24,39,0.85); border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 0.75rem; padding: 1.5rem;
+    }
+    .form-cyber {
+        background: rgba(0,0,0,0.35) !important; border: 1px solid rgba(255,255,255,0.15) !important;
+        color: #fff !important; border-radius: 0.5rem;
+    }
+    .form-cyber:focus { border-color: #00f2ff !important; box-shadow: 0 0 0 0.15rem rgba(0,242,255,0.15); }
+    select.form-cyber option { background: #ffffff; color: #0f172a; }
+
+    .stat-pill {
+        background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 0.5rem; padding: 0.75rem 1rem;
+    }
+    .wizard-pane { display: none; }
+    .wizard-pane.active { display: block; }
+
+    .table-cyber { color: #fff; }
+    .table-cyber th { color: #00f2ff !important; border-color: rgba(255,255,255,0.08); white-space: nowrap; }
+    .table-cyber td { border-color: rgba(255,255,255,0.08); color: #fff; vertical-align: middle; }
+
+    .promotion-step .form-check-label,
+    .promotion-step .table-cyber th,
+    .promotion-step .table-cyber td,
+    .promotion-step .table-cyber td.fw-semibold {
+        color: #38bdf8 !important;
+    }
+    .promotion-step .promotion-select,
+    .promotion-step .promotion-select.form-cyber { color: #38bdf8 !important; }
+    .promotion-step select.promotion-select option { background-color: #ffffff; color: #0c7db8; }
+
+    .fee-toolbar {
+        background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 0.5rem; padding: 0.75rem 1rem;
+    }
+    .fee-summary-bar {
+        background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.25);
+        border-radius: 0.5rem; padding: 0.75rem 1rem;
+    }
+    .class-fee-row.hidden-by-filter { display: none; }
+    .class-fee-row.hidden-by-page { display: none; }
+
+    /* Step 3: Classes & Registration Fees — scoped table/section polish */
+    .fees-step .fees-section-header {
+        border-bottom: 1px solid rgba(16, 185, 129, 0.25);
+        padding-bottom: 1rem;
+        margin-bottom: 1.25rem;
+    }
+    .fees-step .fees-section-header h5 {
+        font-size: 1.15rem;
+        letter-spacing: 0.02em;
+        margin-bottom: 0.35rem !important;
+    }
+    .fees-step .fees-section-desc {
+        color: rgba(226, 232, 240, 0.88) !important;
+        font-size: 0.875rem;
+        line-height: 1.55;
+        max-width: 52rem;
+        margin-bottom: 0 !important;
+    }
+    .fees-step .fee-toolbar {
+        background: rgba(15, 23, 42, 0.65);
+        border: 1px solid rgba(55, 65, 81, 0.85);
+    }
+    .fees-step .fee-summary-bar {
+        font-size: 0.8125rem;
+        color: #e2e8f0;
+    }
+    .fees-step .fee-summary-bar strong { color: #10b981; }
+    .fees-step .class-fee-table-wrap {
+        border: 1px solid #374151 !important;
+        border-radius: 0.75rem;
+        overflow: hidden;
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+    }
+    .fees-step .class-fee-table {
+        color: #e2e8f0 !important;
+        font-size: 0.9rem;
+        margin-bottom: 0;
+    }
+    .fees-step .class-fee-table thead {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+    }
+    .fees-step .class-fee-table thead th {
+        background-color: #1f2937 !important;
+        color: #10b981 !important;
+        border-color: #374151 !important;
+        font-weight: 700;
+        font-size: 0.72rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.85rem 0.75rem;
+        white-space: nowrap;
+        vertical-align: middle;
+    }
+    .fees-step .class-fee-table thead th.fee-col-header {
+        color: #fbbf24 !important;
+    }
+    .fees-step .class-fee-table tbody td {
+        background-color: transparent !important;
+        border-color: #1f2937 !important;
+        padding: 0.8rem 0.75rem;
+        color: #f1f5f9 !important;
+        vertical-align: middle;
+    }
+    .fees-step .class-fee-table tbody tr {
+        transition: background-color 0.18s ease;
+    }
+    .fees-step .class-fee-table tbody tr:nth-child(even) {
+        background-color: rgba(255, 255, 255, 0.02);
+    }
+    .fees-step .class-fee-table tbody tr:hover {
+        background-color: rgba(16, 185, 129, 0.06) !important;
+    }
+    .fees-step .class-fee-table .class-name-cell {
+        color: #ffffff !important;
+        font-weight: 600;
+        font-size: 0.92rem;
+    }
+    .fees-step .class-fee-table .grade-cell {
+        color: #38bdf8 !important;
+        font-weight: 500;
+        font-size: 0.85rem;
+    }
+    .fees-step .class-fee-table .stream-cell {
+        color: #94a3b8 !important;
+        font-size: 0.85rem;
+    }
+    .fees-step .class-fee-table .students-cell {
+        font-variant-numeric: tabular-nums;
+    }
+    .fees-step .class-fee-table .student-count-badge {
+        display: inline-block;
+        min-width: 2rem;
+        padding: 0.2rem 0.55rem;
+        background: rgba(0, 242, 255, 0.08);
+        border: 1px solid rgba(0, 242, 255, 0.22);
+        border-radius: 0.375rem;
+        color: #00f2ff;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-align: center;
+    }
+    .fees-step .class-fee-table .reg-fee-input {
+        background-color: #ffffff !important;
+        border: 1px solid rgba(16, 185, 129, 0.45) !important;
+        color: #fbbf24 !important;
+        font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
+        font-size: 0.9rem;
+        font-weight: 600;
+        min-width: 7.5rem;
+        padding: 0.45rem 0.65rem;
+        text-align: right;
+        border-radius: 0.5rem !important;
+        box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+    }
+    .fees-step .class-fee-table .reg-fee-input::placeholder {
+        color: rgba(251, 191, 36, 0.45) !important;
+    }
+    .fees-step .class-fee-table .reg-fee-input:focus {
+        border-color: #10b981 !important;
+        box-shadow: 0 0 0 0.2rem rgba(16, 185, 129, 0.2), inset 0 1px 2px rgba(0, 0, 0, 0.35) !important;
+        color: #fde68a !important;
+    }
+    .fees-step .class-fee-table .form-check-input {
+        width: 1.1rem;
+        height: 1.1rem;
+        border-color: rgba(16, 185, 129, 0.5);
+        cursor: pointer;
+    }
+    .fees-step .class-fee-table .form-check-input:checked {
+        background-color: #10b981;
+        border-color: #10b981;
+    }
+    .fees-step .class-fee-table .fee-input-wrap {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+    }
+    .fees-step .class-fee-table .fee-currency {
+        color: #10b981;
+        font-weight: 700;
+        font-size: 0.85rem;
+        flex-shrink: 0;
+    }
+
+    .btn-wizard { border-radius: 0.5rem; font-weight: 600; padding: 0.55rem 1.25rem; }
+    .target-panel { display: none; }
+    .target-panel.show { display: block; }
+    .rollover-terminal,
+    .rollover-terminal p,
+    .rollover-terminal span,
+    .rollover-terminal small,
+    .rollover-terminal label,
+    .rollover-terminal td,
+    .rollover-terminal div {
+        color: #1f2937 !important;
+    }
+    .rollover-terminal .text-muted { color: #5f7892 !important; }
+    .rollover-terminal .text-cyan { color: #0ea5e9 !important; }
+    .rollover-terminal .text-emerald { color: #059669 !important; }
+    .rollover-terminal .text-amber { color: #d97706 !important; }
+    .rollover-terminal .text-rose { color: #dc2626 !important; }
+    .rollover-terminal .text-blue { color: #0c7db8 !important; }
+    .rollover-terminal .sec-card,
+    .rollover-terminal .stat-pill,
+    .rollover-terminal .fee-toolbar,
+    .rollover-terminal .fee-summary-bar,
+    .rollover-terminal .enroll-section,
+    .rollover-terminal .wizard-step-btn,
+    .rollover-terminal .class-fee-table-wrap {
+        background: #ffffff !important;
+        border-color: #dbe7f3 !important;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+    }
+    .rollover-terminal .form-cyber,
+    .rollover-terminal .reg-fee-input {
+        background: #ffffff !important;
+        border-color: #cfe0ef !important;
+        color: #0f172a !important;
+    }
+    .rollover-terminal .form-cyber:focus,
+    .rollover-terminal .reg-fee-input:focus {
+        border-color: #0ea5e9 !important;
+        box-shadow: 0 0 0 0.2rem rgba(14, 165, 233, 0.2) !important;
+    }
+    .rollover-terminal .table-cyber,
+    .rollover-terminal .class-fee-table {
+        color: #1f2937 !important;
+    }
+    .rollover-terminal .table-cyber th,
+    .rollover-terminal .class-fee-table thead th {
+        background: #f3f8fd !important;
+        color: #0369a1 !important;
+        border-color: #dbe7f3 !important;
+    }
+    .rollover-terminal .table-cyber td,
+    .rollover-terminal .class-fee-table tbody td {
+        background: #ffffff !important;
+        border-color: #e5edf6 !important;
+        color: #1f2937 !important;
+    }
+</style>
+
+<div class="container-fluid px-4 py-4 rollover-terminal">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start gap-3 mb-4">
+        <div>
+            <h2 class="fw-bold text-white mb-1"><i class="fas fa-arrows-rotate text-cyan me-2"></i>Academic Year Rollover Wizard</h2>
+            <p class="text-muted mb-0">Configure the new academic year, class promotions, per-class registration fees, and re-enroll students in one guided flow.</p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ url_for('academic_rollover') }}" class="btn btn-outline-warning text-white btn-wizard btn-sm">
+                <i class="fas fa-bolt me-1"></i> Quick Rollover
+            </a>
+            <a href="{{ url_for('academic_years') }}" class="btn btn-outline-secondary text-white btn-wizard btn-sm">
+                <i class="fas fa-arrow-left me-1"></i> Academic Years
+            </a>
+        </div>
+    </div>
+
+    <div class="wizard-steps">
+        <button type="button" class="wizard-step-btn active" data-step="1">1. Year Setup</button>
+        <button type="button" class="wizard-step-btn" data-step="2">2. Promotion</button>
+        <button type="button" class="wizard-step-btn" data-step="3">3. Classes &amp; Fees</button>
+        <button type="button" class="wizard-step-btn" data-step="4">4. Preview</button>
+        <button type="button" class="wizard-step-btn" data-step="5">5. Execute</button>
+    </div>
+
+    <form method="POST" id="rolloverForm">
+        {{ form.hidden_tag() }}
+
+        {# Step 1: Year setup (current + target) #}
+        <div class="wizard-pane active" data-pane="1">
+            <div class="sec-card mb-3">
+                <h5 class="text-white fw-bold mb-3"><i class="fas fa-calendar-check text-cyan me-2"></i>Current Academic State</h5>
+                <div class="row g-3 mb-4">
+                    <div class="col-md-3">
+                        <div class="stat-pill">
+                            <div class="text-muted small">Active Year</div>
+                            <div class="fw-bold text-cyan">{{ active_year.name if active_year else 'None set' }}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-pill">
+                            <div class="text-muted small">Students in Active Year</div>
+                            <div class="fw-bold">{{ stats.active_students }}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-pill">
+                            <div class="text-muted small">Classes</div>
+                            <div class="fw-bold">{{ stats.active_classes }}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-pill">
+                            <div class="text-muted small">Inactive Years</div>
+                            <div class="fw-bold">{{ stats.inactive_years }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                {% if preview.counts %}
+                <div class="mb-4">
+                    <h6 class="text-white fw-semibold mb-2">Estimated impact (default promotion rules)</h6>
+                    <div class="d-flex flex-wrap gap-2">
+                        <span class="badge bg-emerald bg-opacity-10 text-emerald border border-emerald border-opacity-25 px-3 py-2">{{ preview.counts.promote }} promote</span>
+                        <span class="badge bg-amber bg-opacity-10 text-amber border border-amber border-opacity-25 px-3 py-2">{{ preview.counts.repeat }} repeat</span>
+                        <span class="badge bg-rose bg-opacity-10 text-rose border border-rose border-opacity-25 px-3 py-2">{{ preview.counts.graduate }} graduate</span>
+                        {% if preview.counts.unassigned %}
+                        <span class="badge bg-secondary bg-opacity-10 text-white border border-secondary px-3 py-2">{{ preview.counts.unassigned }} unassigned</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="form-check form-switch mb-4">
+                    {{ form.end_current_year(class_='form-check-input', id='end_current_year') }}
+                    <label class="form-check-label text-white" for="end_current_year">End the current active year before activating the target year</label>
+                </div>
+
+                <hr class="border-secondary border-opacity-25 my-4">
+
+                <h5 class="text-white fw-bold mb-3"><i class="fas fa-folder-plus text-emerald me-2"></i>Target Academic Year</h5>
+                <div class="mb-3">
+                    {{ form.target_mode.label(class_='form-label text-white') }}
+                    {{ form.target_mode(class_='form-select form-cyber', id='target_mode') }}
+                </div>
+                <div id="panel_existing" class="target-panel">
+                    {{ form.target_year_id.label(class_='form-label text-white') }}
+                    {{ form.target_year_id(class_='form-select form-cyber mb-2') }}
+                    <p class="text-muted small mb-0">Activate a previously created year for the new session.</p>
+                </div>
+                <div id="panel_new" class="target-panel show">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            {{ form.new_year_name.label(class_='form-label text-white') }}
+                            {{ form.new_year_name(class_='form-control form-cyber', placeholder='2026-2027') }}
+                        </div>
+                        <div class="col-md-4">
+                            {{ form.new_year_start.label(class_='form-label text-white') }}
+                            {{ form.new_year_start(class_='form-control form-cyber') }}
+                        </div>
+                        <div class="col-md-4">
+                            {{ form.new_year_end.label(class_='form-label text-white') }}
+                            {{ form.new_year_end(class_='form-control form-cyber') }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="text-end">
+                <button type="button" class="btn btn-primary btn-wizard next-step" data-next="2">Continue <i class="fas fa-arrow-right ms-1"></i></button>
+            </div>
+        </div>
+
+        {# Step 2: Promotion #}
+        <div class="wizard-pane promotion-step" data-pane="2">
+            <div class="sec-card mb-3">
+                <div class="d-flex flex-column flex-md-row justify-content-between align-items-start gap-2 mb-3">
+                    <div>
+                        <h5 class="text-white fw-bold mb-1"><i class="fas fa-stairs text-amber me-2"></i>Class Promotion Map</h5>
+                        <p class="text-blue small mb-0">Assign where each class moves for the new year. Final-year classes default to Graduate.</p>
+                    </div>
+                    <div class="form-check form-switch">
+                        {{ form.apply_promotions(class_='form-check-input', id='apply_promotions') }}
+                        <label class="form-check-label text-blue" for="apply_promotions">Apply promotions</label>
+                    </div>
+                </div>
+                <div class="table-responsive rounded-3 border border-secondary border-opacity-25" style="max-height: 420px; overflow-y: auto;">
+                    <table class="table table-cyber align-middle mb-0">
+                        <thead class="sticky-top" style="background:#f3f8fd;">
+                            <tr>
+                                <th>Current Class</th>
+                                <th>Grade</th>
+                                <th>Stream</th>
+                                <th>Students</th>
+                                <th>Move To</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for klass in classes %}
+                            {% set default_target = promotion_defaults.get(klass.id, 'repeat') %}
+                            <tr>
+                                <td class="fw-semibold">{{ klass.name }}</td>
+                                <td>Grade {{ klass.grade_level }}</td>
+                                <td>{{ klass.stream or '—' }}</td>
+                                <td>{{ klass.student_count }}</td>
+                                <td>
+                                    <select name="promotion_{{ klass.id }}" class="form-select form-cyber form-select-sm promotion-select">
+                                        <option value="repeat" {% if default_target == 'repeat' %}selected{% endif %}>Repeat same class</option>
+                                        <option value="graduate" {% if default_target == 'graduate' %}selected{% endif %}>Graduate (leave school)</option>
+                                        {% for target in classes %}
+                                        <option value="{{ target.id }}" {% if default_target == target.id %}selected{% endif %}>
+                                            {{ target.name }} (Grade {{ target.grade_level }})
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="5" class="text-center text-muted py-4">No classes configured. Create classes before running rollover.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-secondary text-white btn-wizard prev-step" data-prev="1"><i class="fas fa-arrow-left me-1"></i> Back</button>
+                <button type="button" class="btn btn-primary btn-wizard next-step" data-next="3">Continue <i class="fas fa-arrow-right ms-1"></i></button>
+            </div>
+        </div>
+
+        {# Step 3: Classes & registration fees #}
+        <div class="wizard-pane fees-step" data-pane="3">
+            <div class="sec-card mb-3">
+                <div class="fees-section-header">
+                    <h5 class="text-white fw-bold mb-1"><i class="fas fa-receipt text-emerald me-2"></i>Classes &amp; Registration Fees</h5>
+                    <p class="fees-section-desc mb-0">
+                        Select which classes apply for the new academic year and set the registration fee for each class.
+                        Fees are saved to the year schedule and can be posted to the business income ledger during rollover.
+                    </p>
+                </div>
+
+                <div class="fee-toolbar d-flex flex-column flex-lg-row gap-2 align-items-lg-center mb-3">
+                    <div class="flex-grow-1">
+                        <input type="search" id="classSearch" class="form-control form-cyber" placeholder="Search by class name, grade, or stream…">
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <label class="text-muted small mb-0">Bulk fee:</label>
+                        <input type="text" id="bulkFeeAmount" class="form-control form-cyber form-control-sm" style="width:120px;" placeholder="0.00">
+                        <button type="button" class="btn btn-sm btn-outline-info text-white" id="applyBulkFee">Apply to selected</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary text-white" id="selectAllClasses">Select all</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary text-white" id="clearAllClasses">Clear all</button>
+                    </div>
+                </div>
+
+                <div class="fee-summary-bar d-flex flex-wrap gap-3 mb-3 small">
+                    <span><strong id="summarySelected">0</strong> classes selected</span>
+                    <span><strong id="summaryWithFee">0</strong> with fee &gt; $0</span>
+                    <span>Showing <strong id="summaryShowing">0</strong> of {{ classes|length }}</span>
+                </div>
+
+                <div class="table-responsive class-fee-table-wrap" style="max-height: 480px; overflow-y: auto;">
+                    <table class="table table-cyber class-fee-table align-middle mb-0" id="classFeeTable">
+                        <thead>
+                            <tr>
+                                <th style="width:48px;" scope="col">
+                                    <input type="checkbox" class="form-check-input" id="toggleAllVisible" title="Toggle visible rows" aria-label="Toggle all visible classes">
+                                </th>
+                                <th scope="col">Class</th>
+                                <th scope="col">Grade</th>
+                                <th scope="col">Stream</th>
+                                <th scope="col" class="text-center">Students</th>
+                                <th scope="col" class="fee-col-header text-end" style="min-width:160px;">Registration Fee</th>
+                            </tr>
+                        </thead>
+                        <tbody id="classFeeBody">
+                            {% for klass in classes %}
+                            {% set default_fee = default_registration_fees.get(klass.id, 0) %}
+                            <tr class="class-fee-row" data-class-id="{{ klass.id }}"
+                                data-search="{{ klass.name|lower }} grade {{ klass.grade_level }} {{ (klass.stream or '')|lower }}">
+                                <td>
+                                    <input type="checkbox" class="form-check-input class-include" name="include_class_{{ klass.id }}" value="1" checked aria-label="Include {{ klass.name }}">
+                                </td>
+                                <td class="class-name-cell">{{ klass.name }}</td>
+                                <td class="grade-cell">Grade {{ klass.grade_level }}</td>
+                                <td class="stream-cell">{{ klass.stream or '—' }}</td>
+                                <td class="students-cell text-center">
+                                    <span class="student-count-badge">{{ klass.student_count }}</span>
+                                </td>
+                                <td>
+                                    <div class="fee-input-wrap justify-content-end">
+                                        <span class="fee-currency" aria-hidden="true">$</span>
+                                        <input type="text" name="reg_fee_{{ klass.id }}" class="form-control form-cyber reg-fee-input"
+                                               value="{{ '%.2f'|format(default_fee) if default_fee else '' }}" placeholder="0.00" inputmode="decimal"
+                                               aria-label="Registration fee for {{ klass.name }}">
+                                    </div>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="6" class="text-center text-muted py-4">No classes found.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <nav class="d-flex justify-content-between align-items-center mt-3" id="classPagination" aria-label="Class fee pagination">
+                    <button type="button" class="btn btn-sm btn-outline-secondary text-white" id="prevPage" disabled>&laquo; Prev</button>
+                    <span class="text-muted small">Page <strong id="currentPage">1</strong> of <strong id="totalPages">1</strong></span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary text-white" id="nextPage">Next &raquo;</button>
+                </nav>
+
+                <hr class="border-secondary border-opacity-25 my-4">
+
+                <h6 class="text-white fw-semibold mb-3">Enrollment &amp; ledger options</h6>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="form-check mb-2">
+                            {{ form.reset_tuition_cleared(class_='form-check-input', id='reset_tuition') }}
+                            <label class="form-check-label text-white" for="reset_tuition">Reset tuition clearance flags for re-enrolled students</label>
+                        </div>
+                        <div class="form-check mb-2">
+                            {{ form.exclude_graduated(class_='form-check-input', id='exclude_graduated') }}
+                            <label class="form-check-label text-white" for="exclude_graduated">Skip already graduated students</label>
+                        </div>
+                        <div class="form-check mb-2">
+                            {{ form.exclude_withdrawn(class_='form-check-input', id='exclude_withdrawn') }}
+                            <label class="form-check-label text-white" for="exclude_withdrawn">Skip withdrawn students</label>
+                        </div>
+                        <div class="form-check mb-2">
+                            {{ form.exclude_suspended(class_='form-check-input', id='exclude_suspended') }}
+                            <label class="form-check-label text-white" for="exclude_suspended">Skip suspended students</label>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-check form-switch mb-2">
+                            {{ form.charge_registration_fee(class_='form-check-input', id='charge_fee') }}
+                            <label class="form-check-label text-white" for="charge_fee">{{ form.charge_registration_fee.label.text }}</label>
+                        </div>
+                        <p class="text-muted small mb-0" id="chargeFeeHelp">
+                            When enabled, each re-enrolled student in a selected class receives a Term 1 registration payment
+                            mirrored to business income under <strong>Registration Fees</strong>.
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-secondary text-white btn-wizard prev-step" data-prev="2"><i class="fas fa-arrow-left me-1"></i> Back</button>
+                <button type="button" class="btn btn-primary btn-wizard next-step" data-next="4">Preview <i class="fas fa-arrow-right ms-1"></i></button>
+            </div>
+        </div>
+
+        {# Step 4: Preview #}
+        <div class="wizard-pane" data-pane="4">
+            <div class="sec-card mb-3">
+                <h5 class="text-white fw-bold mb-3"><i class="fas fa-eye text-cyan me-2"></i>Review Summary</h5>
+                <div id="reviewSummary" class="text-white small mb-0"></div>
+            </div>
+            <div class="d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-secondary text-white btn-wizard prev-step" data-prev="3"><i class="fas fa-arrow-left me-1"></i> Back</button>
+                <button type="button" class="btn btn-primary btn-wizard next-step" data-next="5">Continue to Execute <i class="fas fa-arrow-right ms-1"></i></button>
+            </div>
+        </div>
+
+        {# Step 5: Execute #}
+        <div class="wizard-pane" data-pane="5">
+            <div class="sec-card mb-3">
+                <h5 class="text-white fw-bold mb-3"><i class="fas fa-shield-check text-rose me-2"></i>Confirm &amp; Execute</h5>
+                <div class="alert alert-warning bg-opacity-10 border border-warning border-opacity-25 text-amber small mb-4">
+                    <i class="fas fa-triangle-exclamation me-1"></i>
+                    This action updates student academic year assignments, class promotions, tuition flags, and optional registration fee ledger entries. Graduated students are not moved to the new year.
+                </div>
+                <div class="form-check mb-3">
+                    {{ form.confirm_rollover(class_='form-check-input', id='confirm_rollover') }}
+                    <label class="form-check-label text-white" for="confirm_rollover">{{ form.confirm_rollover.label.text }}</label>
+                </div>
+                {{ form.submit(class_='btn btn-danger btn-wizard px-4', id='executeBtn') }}
+            </div>
+            <div class="d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-secondary text-white btn-wizard prev-step" data-prev="4"><i class="fas fa-arrow-left me-1"></i> Back</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+(function () {
+    const PAGE_SIZE = 25;
+    const panes = document.querySelectorAll('.wizard-pane');
+    const stepBtns = document.querySelectorAll('.wizard-step-btn');
+    const targetMode = document.getElementById('target_mode');
+    const panelNew = document.getElementById('panel_new');
+    const panelExisting = document.getElementById('panel_existing');
+    const chargeFee = document.getElementById('charge_fee');
+    const reviewSummary = document.getElementById('reviewSummary');
+    const form = document.getElementById('rolloverForm');
+    const classSearch = document.getElementById('classSearch');
+    const classFeeBody = document.getElementById('classFeeBody');
+    const rows = classFeeBody ? Array.from(classFeeBody.querySelectorAll('.class-fee-row')) : [];
+    let currentPage = 1;
+
+    function showStep(n) {
+        panes.forEach(p => p.classList.toggle('active', p.dataset.pane === String(n)));
+        stepBtns.forEach(b => {
+            const step = Number(b.dataset.step);
+            b.classList.toggle('active', step === n);
+            b.classList.toggle('done', step < n);
+        });
+        if (n === 4) buildReview();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function toggleTargetPanels() {
+        const mode = targetMode.value;
+        panelNew.classList.toggle('show', mode === 'new');
+        panelExisting.classList.toggle('show', mode === 'existing');
+    }
+
+    function parseFee(val) {
+        const n = parseFloat(String(val || '').replace(/[^0-9.-]/g, ''));
+        return isNaN(n) ? 0 : n;
+    }
+
+    function formatMoney(n) {
+        return '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function filteredRows() {
+        const q = (classSearch?.value || '').trim().toLowerCase();
+        return rows.filter(row => !q || (row.dataset.search || '').includes(q));
+    }
+
+    function updatePagination() {
+        const visible = filteredRows();
+        const totalPages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+        if (currentPage > totalPages) currentPage = totalPages;
+        visible.forEach((row, idx) => {
+            row.classList.remove('hidden-by-filter', 'hidden-by-page');
+            const page = Math.floor(idx / PAGE_SIZE) + 1;
+            if (page !== currentPage) row.classList.add('hidden-by-page');
+        });
+        rows.forEach(row => {
+            if (!visible.includes(row)) row.classList.add('hidden-by-filter');
+        });
+        const cp = document.getElementById('currentPage');
+        const tp = document.getElementById('totalPages');
+        const ss = document.getElementById('summaryShowing');
+        if (cp) cp.textContent = String(currentPage);
+        if (tp) tp.textContent = String(totalPages);
+        if (ss) ss.textContent = String(visible.length);
+        const prev = document.getElementById('prevPage');
+        const next = document.getElementById('nextPage');
+        if (prev) prev.disabled = currentPage <= 1;
+        if (next) next.disabled = currentPage >= totalPages;
+    }
+
+    function updateFeeSummary() {
+        let selected = 0, withFee = 0;
+        rows.forEach(row => {
+            const cb = row.querySelector('.class-include');
+            const fee = parseFee(row.querySelector('.reg-fee-input')?.value);
+            if (cb?.checked) {
+                selected++;
+                if (fee > 0) withFee++;
+            }
+        });
+        const sel = document.getElementById('summarySelected');
+        const wf = document.getElementById('summaryWithFee');
+        if (sel) sel.textContent = String(selected);
+        if (wf) wf.textContent = String(withFee);
+    }
+
+    function buildReview() {
+        const endYear = document.getElementById('end_current_year').checked ? 'Yes' : 'No';
+        const mode = targetMode.value === 'new' ? 'Create new year' : 'Activate existing year';
+        const yearName = targetMode.value === 'new'
+            ? (document.getElementById('new_year_name')?.value || '(not set)')
+            : (document.getElementById('target_year_id')?.selectedOptions[0]?.text || '(not set)');
+        const promote = document.getElementById('apply_promotions').checked ? 'Yes' : 'No';
+        const resetTuition = document.getElementById('reset_tuition').checked ? 'Yes' : 'No';
+        const postFees = chargeFee.checked ? 'Yes — post to business income' : 'No — save fee schedule only';
+
+        let selected = 0, feeLines = [], totalFee = 0;
+        rows.forEach(row => {
+            const cb = row.querySelector('.class-include');
+            const fee = parseFee(row.querySelector('.reg-fee-input')?.value);
+            const name = row.querySelector('.class-name-cell')?.textContent?.trim() || 'Class';
+            if (cb?.checked) {
+                selected++;
+                if (fee > 0) {
+                    feeLines.push(`<li>${name}: <strong>${formatMoney(fee)}</strong></li>`);
+                    totalFee += fee;
+                }
+            }
+        });
+
+        const feeBlock = feeLines.length
+            ? `<ul class="mb-2 ps-3">${feeLines.slice(0, 12).join('')}${feeLines.length > 12 ? `<li class="text-muted">…and ${feeLines.length - 12} more classes</li>` : ''}</ul>`
+            : '<p class="text-muted mb-2">No per-class registration fees configured.</p>';
+
+        reviewSummary.innerHTML = `
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <h6 class="text-cyan fw-semibold">Year</h6>
+                    <ul class="mb-3 ps-3">
+                        <li>End current year: <strong>${endYear}</strong></li>
+                        <li>Target: <strong>${mode}</strong> — <strong>${yearName}</strong></li>
+                        <li>Students in scope: <strong>{{ stats.active_students }}</strong></li>
+                    </ul>
+                    <h6 class="text-cyan fw-semibold">Promotion &amp; enrollment</h6>
+                    <ul class="mb-0 ps-3">
+                        <li>Apply class promotions: <strong>${promote}</strong></li>
+                        <li>Reset tuition clearance: <strong>${resetTuition}</strong></li>
+                        <li>Post registration to ledger: <strong>${postFees}</strong></li>
+                    </ul>
+                </div>
+                <div class="col-md-6">
+                    <h6 class="text-emerald fw-semibold">Registration fees (${selected} classes selected)</h6>
+                    ${feeBlock}
+                </div>
+            </div>`;
+    }
+
+    document.querySelectorAll('.next-step').forEach(btn => {
+        btn.addEventListener('click', () => showStep(Number(btn.dataset.next)));
+    });
+    document.querySelectorAll('.prev-step').forEach(btn => {
+        btn.addEventListener('click', () => showStep(Number(btn.dataset.prev)));
+    });
+    stepBtns.forEach(btn => {
+        btn.addEventListener('click', () => showStep(Number(btn.dataset.step)));
+    });
+
+    targetMode.addEventListener('change', toggleTargetPanels);
+
+    if (classSearch) {
+        classSearch.addEventListener('input', () => { currentPage = 1; updatePagination(); });
+    }
+    document.getElementById('prevPage')?.addEventListener('click', () => {
+        if (currentPage > 1) { currentPage--; updatePagination(); }
+    });
+    document.getElementById('nextPage')?.addEventListener('click', () => {
+        currentPage++; updatePagination();
+    });
+
+    document.getElementById('selectAllClasses')?.addEventListener('click', () => {
+        filteredRows().forEach(row => { const cb = row.querySelector('.class-include'); if (cb) cb.checked = true; });
+        updateFeeSummary();
+    });
+    document.getElementById('clearAllClasses')?.addEventListener('click', () => {
+        rows.forEach(row => { const cb = row.querySelector('.class-include'); if (cb) cb.checked = false; });
+        updateFeeSummary();
+    });
+    document.getElementById('toggleAllVisible')?.addEventListener('change', function () {
+        const checked = this.checked;
+        filteredRows().forEach(row => {
+            if (!row.classList.contains('hidden-by-page')) {
+                const cb = row.querySelector('.class-include');
+                if (cb) cb.checked = checked;
+            }
+        });
+        updateFeeSummary();
+    });
+    document.getElementById('applyBulkFee')?.addEventListener('click', () => {
+        const val = document.getElementById('bulkFeeAmount')?.value;
+        rows.forEach(row => {
+            const cb = row.querySelector('.class-include');
+            const input = row.querySelector('.reg-fee-input');
+            if (cb?.checked && input) input.value = val || '';
+        });
+        updateFeeSummary();
+    });
+
+    classFeeBody?.addEventListener('change', updateFeeSummary);
+    classFeeBody?.addEventListener('input', updateFeeSummary);
+    chargeFee?.addEventListener('change', () => {
+        document.getElementById('chargeFeeHelp').style.opacity = chargeFee.checked ? '1' : '0.65';
+    });
+
+    form.addEventListener('submit', function (e) {
+        if (!document.getElementById('confirm_rollover').checked) {
+            e.preventDefault();
+            alert('Please confirm the rollover before executing.');
+            showStep(5);
+            return;
+        }
+        if (chargeFee.checked) {
+            let hasFee = false;
+            rows.forEach(row => {
+                const cb = row.querySelector('.class-include');
+                const fee = parseFee(row.querySelector('.reg-fee-input')?.value);
+                if (cb?.checked && fee > 0) hasFee = true;
+            });
+            if (!hasFee) {
+                e.preventDefault();
+                alert('Enable posting requires at least one selected class with a registration fee greater than zero.');
+                showStep(3);
+                return;
+            }
+        }
+        if (!confirm('Execute academic year rollover? This will update student records and fee schedules.')) {
+            e.preventDefault();
+        }
+    });
+
+    toggleTargetPanels();
+    updatePagination();
+    updateFeeSummary();
+})();
+</script>
+
+{% endblock %}

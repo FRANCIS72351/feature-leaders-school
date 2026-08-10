@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}School System{% endblock %}</title>
+    
+    <!-- Google Fonts & Font Awesome Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <link href="https://unpkg.com/aos@2.3.4/dist/aos.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        :root {
+          /* Brand Palette - Calibrated to match LOGO.png */
+          --primary-brand: #c82828;
+          --primary-dark: #a32020;
+          --secondary-brand: #101820;
+          --accent-gold: #d4af37;
+          --accent-sky: #2e4a64;
+          --surface-bg: #f7f1eb;
+          --surface-soft: #fffaf5;
+          --text-main: #211715;
+          --text-muted: #6f625a;
+          --glass-nav: rgba(255, 248, 243, 0.88);
+          --border-soft: rgba(200, 40, 40, 0.12);
+          --shadow-soft: 0 18px 45px rgba(51, 20, 15, 0.08);
+
+          /* Bootstrap CSS Overrides */
+          --bs-primary: #c82828;
+          --bs-primary-rgb: 200, 40, 40;
+          --bs-secondary: #101820;
+          --bs-secondary-rgb: 16, 24, 32;
+          --bs-warning: #d4af37;
+          --bs-warning-rgb: 212, 175, 55;
+
+          /* Typography Setup */
+          --font-body: 'Manrope', system-ui, -apple-system, sans-serif;
+          --font-display: 'Cormorant Garamond', Georgia, serif;
+        }
+
+        body {
+            font-family: var(--font-body) !important;
+            line-height: 1.65;
+            margin: 0;
+            background:
+              radial-gradient(circle at top left, rgba(16, 24, 32, 0.08), transparent 32%),
+              radial-gradient(circle at top right, rgba(212, 175, 55, 0.12), transparent 28%),
+              linear-gradient(180deg, #fffcf9 0%, var(--surface-bg) 100%);
+            color: var(--text-main);
+            overflow-x: hidden;
+            padding-top: 85px; 
+        }
+
+        /* Fixed Glassmorphism Top Navbar Layout */
+        .navbar-custom {
+            background: var(--glass-nav);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-soft);
+            padding: 0.75rem 0;
+            box-shadow: var(--shadow-soft);
+            transition: all 0.3s ease;
+            overflow: hidden;
+        }
+
+        .navbar-custom::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary-brand), var(--accent-gold), var(--secondary-brand));
+        }
+
+        .navbar-brand-custom {
+            font-family: var(--font-display);
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            color: var(--primary-brand) !important;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-transform: uppercase;
+            font-size: 1.15rem;
+            text-decoration: none;
+        }
+
+        .navbar-logo {
+            width: 44px;
+            height: 44px;
+            object-fit: contain;
+            display: block;
+            border-radius: 8px;
+            padding: 2px;
+            background: #ffffff;
+            border: 1px solid rgba(200, 40, 40, 0.15);
+            transition: transform 0.2s ease;
+        }
+
+        .navbar-brand-custom:hover .navbar-logo {
+            transform: scale(1.04);
+        }
+
+        .navbar-brand-text {
+            white-space: nowrap;
+            color: var(--secondary-brand);
+            font-weight: 700;
+        }
+
+        @media (max-width: 991.98px) {
+            .navbar-logo {
+                width: 38px;
+                height: 38px;
+            }
+
+            .navbar-brand-text {
+                display: inline-block;
+                font-size: 0.95rem;
+            }
+        }
+
+        /* Interactive Navigation Links */
+        .navbar-custom .nav-link {
+            color: #51453f !important;
+            font-weight: 600;
+            font-size: 0.92rem;
+            padding: 0.5rem 1rem !important;
+            border-radius: 8px;
+            position: relative;
+            transition: all 0.2s ease;
+        }
+
+        .navbar-custom .nav-link:hover {
+            color: var(--primary-brand) !important;
+            background: rgba(200, 40, 40, 0.06);
+        }
+
+        /* Dropdown Panel Modifications */
+        .dropdown-menu-custom {
+            border: 1px solid var(--border-soft);
+            border-radius: 12px;
+            box-shadow: 0 16px 35px rgba(51, 20, 15, 0.08);
+            padding: 0.5rem;
+            animation: navDropdownFade 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            background: rgba(255, 252, 248, 0.98);
+        }
+
+        .dropdown-item-custom {
+            border-radius: 8px;
+            padding: 0.6rem 1.2rem;
+            font-size: 0.88rem;
+            font-weight: 500;
+            color: #524741;
+            transition: all 0.15s ease;
+        }
+
+        .dropdown-item-custom:hover {
+            background-color: rgba(200, 40, 40, 0.08);
+            color: var(--primary-brand);
+        }
+
+        @keyframes navDropdownFade {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* General UI Control Styling */
+        .btn, .card, .alert, .form-control, .badge {
+            border-radius: 12px !important;
+        }
+
+        h1, h2, h3, h4, h5, h6,
+        .navbar-brand-custom {
+            font-family: var(--font-display) !important;
+            letter-spacing: -0.02em;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-brand);
+            border-color: var(--primary-brand);
+            font-weight: 600;
+            padding: 0.6rem 1.5rem;
+            transition: all 0.2s ease;
+            box-shadow: 0 10px 24px rgba(200, 40, 40, 0.18);
+        }
+
+        .btn-primary:hover {
+            background-color: var(--primary-dark);
+            border-color: var(--primary-dark);
+            transform: translateY(-1px);
+            box-shadow: 0 12px 24px rgba(163, 32, 32, 0.25);
+        }
+
+        /* Dashboard Banner Branding Integration */
+        .dashboard-welcome-banner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 1.25rem;
+            padding: 1rem 1.25rem;
+            border-radius: 16px;
+            background: linear-gradient(135deg, rgba(255, 252, 248, 0.96), rgba(255, 247, 240, 0.95));
+            border: 1px solid rgba(200, 40, 40, 0.18);
+            box-shadow: 0 10px 24px rgba(51, 20, 15, 0.08);
+        }
+
+        .dashboard-welcome-brand {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            min-width: 0;
+        }
+
+        .dashboard-welcome-logo {
+            width: 48px;
+            height: 48px;
+            object-fit: contain;
+            border-radius: 10px;
+            background: #ffffff;
+            border: 1px solid rgba(200, 40, 40, 0.18);
+            padding: 4px;
+            flex-shrink: 0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+        }
+
+        .dashboard-welcome-title {
+            margin: 0;
+            font-size: 1.05rem;
+            line-height: 1.25;
+            color: #1f1b18;
+            font-weight: 700;
+        }
+
+        .dashboard-welcome-sub {
+            margin: 0;
+            font-size: 0.82rem;
+            color: var(--text-muted);
+        }
+
+        .dashboard-welcome-user {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.45rem 0.9rem;
+            border-radius: 999px;
+            background: rgba(200, 40, 40, 0.08);
+            border: 1px solid rgba(200, 40, 40, 0.2);
+            color: var(--primary-dark);
+            font-weight: 700;
+            font-size: 0.9rem;
+            white-space: nowrap;
+        }
+
+        @media (max-width: 767.98px) {
+            .dashboard-welcome-banner {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .dashboard-welcome-user {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+    {% block head %}{% endblock %}
+  </head>
+  <body class="{% if request.endpoint and 'dashboard' in request.endpoint %}dashboard-theme{% endif %}">
+
+    <!-- Primary Custom Navigation Header -->
+    <nav class="navbar navbar-expand-lg fixed-top navbar-custom">
+      <div class="container">
+        <a class="navbar-brand navbar-brand-custom" href="{{ url_for('index') }}">
+          <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="navbar-logo">
+          <span class="navbar-brand-text">Future Leaders School</span>
+        </a>
+        
+        <button class="navbar-toggler border-0 shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar" aria-controls="mainNavbar" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        
+        <div class="collapse navbar-collapse" id="mainNavbar">
+          <ul class="navbar-nav ms-auto align-items-lg-center">
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('index') }}"><i class="fas fa-home fa-sm me-1"></i> Home</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('about') }}">About</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('school_media_gallery') }}"><i class="fas fa-photo-video fa-sm me-1"></i> School Media</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('contact') }}">Contact</a></li>
+            
+            {% if current_user.is_authenticated %}
+              {% set user_role = (current_user.role or '')|lower %}
+              <li class="nav-item dropdown">
+                <a class="nav-link dropdown-toggle font-weight-bold" href="#" id="dashboardDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                  <i class="fas fa-th-large fa-sm me-1 text-primary"></i> Workspaces
+                </a>
+                <ul class="dropdown-menu dropdown-menu-end dropdown-menu-custom border-0" aria-labelledby="dashboardDropdown">
+                  <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('dashboard') }}"><i class="fas fa-user-shield fa-sm me-2"></i>General Dashboard</a></li>
+                  {% if user_role in ["admin", "business"] %}
+                    <li><a class="dropdown-item dropdown-item-custom font-weight-bold text-dark" href="{{ url_for('business_dashboard') }}"><i class="fas fa-coins fa-sm me-2 text-success"></i>Business Office</a></li>
+                  {% endif %}
+                  {% if user_role == "teacher" %}
+                    <li><a class="dropdown-item dropdown-item-custom font-weight-bold text-dark" href="{{ url_for('teacher_dashboard') }}"><i class="fas fa-chalkboard-teacher fa-sm me-2 text-primary"></i>Teacher Dashboard</a></li>
+                  {% endif %}
+                  {% if user_role == "principal" %}
+                    <li><a class="dropdown-item dropdown-item-custom font-weight-bold text-dark" href="{{ url_for('principal_dashboard') }}"><i class="fas fa-crown fa-sm me-2 text-warning"></i>Principal Portal</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('dashboard', view='admin') }}"><i class="fas fa-user-shield fa-sm me-2 text-primary"></i>Admin Dashboard</a></li>
+                  {% endif %}
+                  {% if user_role == "vpa" %}
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('vpa_dashboard') }}"><i class="fas fa-paste fa-sm me-2"></i>VPA Dashboard</a></li>
+                  {% endif %}
+                  {% if user_role == "vpi" %}
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('vpi_dashboard') }}"><i class="fas fa-book fa-sm me-2"></i>VPI Dashboard</a></li>
+                  {% endif %}
+                  {% if user_role == "dean" %}
+                    <li><a class="dropdown-item dropdown-item-custom font-weight-bold text-dark" href="{{ url_for('dean_dashboard') }}"><i class="fas fa-user-shield fa-sm me-2 text-info"></i>Dean Command Center</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('dean_attendance') }}"><i class="fas fa-clipboard-check fa-sm me-2"></i>Attendance &amp; Truancy</a></li>
+                  {% endif %}
+                </ul>
+              </li>
+
+              {% if announcements_link %}
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('announcements') }}"><i class="fas fa-bullhorn fa-sm me-1"></i> Announcements</a></li>
+              {% endif %}
+              
+              {% if can_manage_events %}
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_events_list') }}"><i class="fas fa-calendar-minus fa-sm me-1"></i> Manage Events</a></li>
+              {% endif %}
+              {% if can_manage_school_media %}
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('school_media_manage') }}"><i class="fas fa-cloud-upload-alt fa-sm me-1"></i> Manage Media</a></li>
+              {% endif %}
+              
+              <li class="nav-item"><a class="nav-link" href="{{ url_for('events_list') }}"><i class="fas fa-calendar-alt fa-sm me-1"></i> Events</a></li>
+              <li class="nav-item ms-lg-2"><a class="btn btn-sm btn-outline-danger px-3 rounded-pill mt-2 mt-lg-0 font-weight-bold" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt fa-sm"></i> Logout</a></li>
+            {% else %}
+              <li class="nav-item ms-lg-2"><a class="btn btn-sm btn-primary text-white rounded-pill shadow-sm px-4 mt-2 mt-lg-0" href="{{ url_for('login') }}"><i class="fas fa-sign-in-alt fa-sm me-1"></i> Portal Login</a></li>
+            {% endif %}
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Main Dynamic Content Wrapper -->
+    <div class="container my-4">
+      {% if request.endpoint and 'dashboard' in request.endpoint and current_user.is_authenticated %}
+        <div class="dashboard-welcome-banner" role="region" aria-label="Dashboard welcome message">
+          <div class="dashboard-welcome-brand">
+            <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="dashboard-welcome-logo">
+            <div>
+              <p class="dashboard-welcome-title">Welcome to Your {{ (current_user.role or 'user')|title }} Dashboard</p>
+              <p class="dashboard-welcome-sub">Professional school management workspace</p>
+            </div>
+          </div>
+          <div class="dashboard-welcome-user">
+            <i class="fas fa-user-circle"></i>
+            <span>{{ current_user.full_name or current_user.email }}</span>
+          </div>
+        </div>
+      {% endif %}
+
+      {% block content %}{% endblock %}
+    </div>
+
+    <!-- Bootstrap 5 JavaScript Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/aos@2.3.4/dist/aos.js"></script>
+    <script>
+      AOS.init({ duration: 800, once: true });
+    </script>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

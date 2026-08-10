@@ -1,0 +1,630 @@
+{% extends 'base.html' %}
+
+{% block title %}Student Dashboard{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/grading_hub.css') }}">
+<div class="student-dashboard py-4">
+    <div class="container-fluid student-layout px-3 px-md-4 pro-dashboard">
+
+        <div class="student-header card border-0 shadow-sm mb-4">
+            <div class="card-body d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+                <div>
+                    <h1 class="h5 mb-1 fw-bold text-dark">Student Dashboard</h1>
+                    <p class="text-muted small mb-0">
+                        {% if display_year %}
+                            Academic Year: <strong>{{ display_year.name }}</strong>
+                            {% if display_year.is_active %}<span class="badge bg-primary ms-1">Active</span>{% endif %}
+                        {% else %}
+                            No academic year configured
+                        {% endif %}
+                    </p>
+                </div>
+                <form method="GET" action="{{ url_for('student_dashboard') }}" class="d-flex align-items-center gap-2 m-0">
+                    <input type="hidden" name="tab" value="{{ active_tab }}">
+                    {% if selected_subject %}<input type="hidden" name="subject" value="{{ selected_subject }}">{% endif %}
+                    {% if selected_period %}<input type="hidden" name="period" value="{{ selected_period }}">{% endif %}
+                    <label for="academic_year_id" class="small text-muted mb-0">Year</label>
+                    <select name="academic_year_id" id="academic_year_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                        {% for year in past_years %}
+                        <option value="{{ year.id }}" {% if display_year and year.id == display_year.id %}selected{% endif %}>{{ year.name }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+            </div>
+        </div>
+
+        {% if pending_tasks %}
+        <div class="alert alert-warning border-0 shadow-sm mb-4 d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <div>
+                <i class="fas fa-bell me-2"></i>
+                <strong>{{ pending_tasks|length }}</strong> open task{{ 's' if pending_tasks|length != 1 else '' }} — submit work or check grading status.
+            </div>
+            <a href="{{ url_for('student_dashboard', tab='tasks', academic_year_id=display_year.id if display_year else None) }}" class="btn btn-sm btn-warning fw-semibold">Go to My Tasks</a>
+        </div>
+        {% endif %}
+
+        {% if class_notices %}
+        <div class="card border-0 shadow-sm mb-4 border-start border-4 border-warning">
+            <div class="card-body py-3">
+                <h3 class="h6 fw-bold mb-2"><i class="fas fa-bullhorn text-warning me-2"></i>Class Notices</h3>
+                {% for notice in class_notices %}
+                <div class="mb-2 {% if not loop.last %}pb-2 border-bottom{% endif %}">
+                    <div class="fw-semibold small">{{ notice.title }}</div>
+                    <p class="small text-muted mb-1">{{ notice.content }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="row g-4">
+            <div class="col-lg-4">
+                <div class="card border-0 shadow-sm h-100 student-profile-card">
+                    <div class="card-body p-4">
+                        <div class="text-center pb-3 border-bottom">
+                            <div class="student-avatar mx-auto mb-3">
+                                {% if student and student.photo_url %}
+                                <img src="{{ student.photo_url }}" alt="Photo" class="rounded-circle w-100 h-100 object-fit-cover">
+                                {% else %}
+                                <img src="{{ current_user.photo_url or url_for('static', filename='img/default-avatar.png') }}" alt="Photo" class="rounded-circle w-100 h-100 object-fit-cover">
+                                {% endif %}
+                            </div>
+                            {% if student %}
+                            <h2 class="h5 fw-bold mb-1">{{ student.full_name }}</h2>
+                            <div class="student-id-display mb-2">
+                                <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-3 py-2">
+                                    <i class="fas fa-id-card me-1"></i>Student ID: <strong>{{ student.student_id }}</strong>
+                                </span>
+                            </div>
+                            <p class="text-muted small mb-2">Your student ID is permanent for your entire enrollment.</p>
+                            {% if qr_code_data_uri %}
+                            <div class="student-qr-card mt-3 p-3 rounded-3 border border-secondary border-opacity-25 text-center">
+                                <div class="text-muted small text-uppercase mb-2"><i class="fas fa-qrcode me-1"></i>Digital ID — Scan to Verify</div>
+                                <img src="{{ qr_code_data_uri }}" alt="Student verification QR code" class="img-fluid rounded" style="max-width: 160px; background: #fff; padding: 8px;">
+                                {% if student_verify_url %}
+                                <div class="mt-2">
+                                    <a href="{{ student_verify_url }}" class="small text-cyan" target="_blank" rel="noopener">Open verification page</a>
+                                </div>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                            {% if display_grade_level or klass or class_display_name %}
+                            <div class="student-class-banner d-flex flex-wrap justify-content-center gap-2 mt-2 mb-1">
+                                {% if display_grade_level %}
+                                <span class="badge student-grade-badge">Grade {{ display_grade_level }}</span>
+                                {% endif %}
+                                {% if klass %}
+                                <span class="badge student-class-badge">{{ klass.name }}{% if klass.stream %} · {{ klass.stream }}{% endif %}</span>
+                                {% elif class_display_name and class_is_pending %}
+                                <span class="badge student-class-badge student-class-pending">{{ class_display_name }}</span>
+                                {% elif class_display_name %}
+                                <span class="badge student-class-badge">{{ class_display_name }}</span>
+                                {% endif %}
+                            </div>
+                            {% elif klass %}
+                            <p class="text-muted small mb-0">{{ klass.name }}{% if klass.grade_level %} · Grade {{ klass.grade_level }}{% endif %}</p>
+                            {% endif %}
+                            {% else %}
+                            <h2 class="h5 fw-bold">{{ current_user.full_name }}</h2>
+                            {% endif %}
+                        </div>
+                        <div class="py-3 small">
+                            <div class="mb-1"><i class="far fa-envelope text-muted me-2"></i>{{ current_user.email }}</div>
+                            {% if current_user.telephone_number %}
+                            <div><i class="fas fa-phone text-muted me-2"></i>{{ current_user.telephone_number }}</div>
+                            {% endif %}
+                        </div>
+                        {% if student %}
+                        <div class="d-grid gap-2 pt-2 border-top">
+                            <a class="btn btn-student-primary" href="{{ url_for('student_grade_sheet') }}?academic_year_id={{ display_year.id if display_year else '' }}">
+                                <i class="fas fa-table me-2"></i>Official Grade Sheet
+                            </a>
+                            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}">
+                                <i class="fas fa-file-invoice me-2"></i>Report Card
+                            </a>
+                            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('transcript', student_id=student.id) }}">
+                                <i class="fas fa-graduation-cap me-2"></i>Transcript
+                            </a>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-8">
+                {% if student %}
+
+                <ul class="nav grading-hub-tabs student-grade-tabs mb-3" role="tablist">
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_tab == 'grades' %}active{% endif %}"
+                           href="{{ url_for('student_dashboard', tab='grades', academic_year_id=display_year.id if display_year else None, subject=selected_subject, period=selected_period) }}">
+                            <i class="fas fa-chart-line me-1"></i>My Grades
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_tab == 'activities' %}active{% endif %}"
+                           href="{{ url_for('student_dashboard', tab='activities', academic_year_id=display_year.id if display_year else None, subject=selected_subject, period=selected_period) }}">
+                            <i class="fas fa-clipboard-list me-1"></i>Activities Record
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_tab == 'tasks' %}active{% endif %}"
+                           href="{{ url_for('student_dashboard', tab='tasks', academic_year_id=display_year.id if display_year else None) }}">
+                            <i class="fas fa-tasks me-1"></i>My Tasks
+                            {% if pending_tasks %}<span class="tab-badge bg-warning text-dark">{{ pending_tasks|length }}</span>{% endif %}
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_tab == 'account' %}active{% endif %}"
+                           href="{{ url_for('student_dashboard', tab='account', academic_year_id=display_year.id if display_year else None) }}">
+                            <i class="fas fa-wallet me-1"></i>Account
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_tab == 'attendance' %}active{% endif %}"
+                           href="{{ url_for('student_dashboard', tab='attendance', academic_year_id=display_year.id if display_year else None) }}">
+                            <i class="fas fa-calendar-check me-1"></i>My Attendance
+                        </a>
+                    </li>
+                </ul>
+
+                {% if active_tab == 'grades' %}
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-body py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+                        <div>
+                            <span class="badge bg-success me-1">Published</span>
+                            <span class="small text-muted">Official grade sheet &amp; report card</span>
+                        </div>
+                        <a href="{{ url_for('student_grade_sheet') }}?academic_year_id={{ display_year.id if display_year else '' }}" class="btn btn-sm btn-primary fw-semibold">
+                            <i class="fas fa-table me-1"></i>View Grade Sheet
+                        </a>
+                    </div>
+                </div>
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-white border-bottom py-3">
+                        <h3 class="h6 fw-bold mb-2"><i class="fas fa-chart-line text-primary me-2"></i>Academic Standing</h3>
+                        {% if subjects %}
+                        <div class="student-subject-pills d-flex flex-wrap gap-2 mb-2">
+                            {% for subject in subjects %}
+                            <a href="{{ url_for('student_dashboard', tab='grades', academic_year_id=display_year.id if display_year else None, subject=subject.name, period=selected_period) }}"
+                               class="subject-pill {% if selected_subject == subject.name %}active{% endif %}">{{ subject.name }}</a>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="student-period-pills">
+                            {% for period_num, period_name in grading_periods %}
+                            <a href="{{ url_for('student_dashboard', tab='grades', academic_year_id=display_year.id if display_year else None, subject=selected_subject, period=period_num) }}"
+                               class="period-pill {% if selected_period == period_num %}active{% endif %}">{{ period_name }}</a>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3 mb-4 align-items-center">
+                            <div class="col-sm-6">
+                                <div class="standing-box standing-draft h-100 d-flex gap-3 align-items-center">
+                                    <div class="grade-progress-ring {% if draft_standing %}draft{% else %}empty{% endif %}">
+                                        {% if draft_standing %}{{ draft_standing.grade_letter or '—' }}{% else %}—{% endif %}
+                                    </div>
+                                    <div>
+                                        <div class="standing-label">Draft Standing</div>
+                                        <div class="standing-sub">{{ selected_subject or 'Subject' }} · {{ selected_period | marking_period_label }}</div>
+                                        {% if draft_standing %}
+                                        <div class="standing-score">{{ '%.1f'|format(draft_standing.total or 0) }}<span>/100</span></div>
+                                        <div class="small text-muted">Auto-updated from graded activities · CA {{ draft_standing.ca_score or 0 }} + Exam {{ draft_standing.exam_score or 0 }}</div>
+                                        {% else %}
+                                        <div class="text-muted small mt-1">Updates automatically when your teacher grades activities</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-sm-6">
+                                <div class="standing-box standing-published h-100 d-flex gap-3 align-items-center">
+                                    <div class="grade-progress-ring {% if published_standing %}published{% else %}empty{% endif %}">
+                                        {% if published_standing %}{{ published_standing.grade_letter or '—' }}{% else %}—{% endif %}
+                                    </div>
+                                    <div>
+                                        <div class="standing-label">Official Grade</div>
+                                        <div class="standing-sub">Published final result for this period</div>
+                                        {% if published_standing %}
+                                        <div class="standing-score text-success">{{ '%.1f'|format(published_standing.total or 0) }}<span>/100</span></div>
+                                        <div class="small fw-semibold text-success">Published</div>
+                                        {% else %}
+                                        <div class="text-muted small mt-1">Not published yet by teacher</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h4 class="h6 fw-bold mb-3">Activity Scores <span class="text-muted fw-normal small">— this subject &amp; period</span></h4>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Activity</th>
+                                        <th>Type</th>
+                                        <th class="text-center d-none d-md-table-cell">File</th>
+                                        <th class="text-center">Score</th>
+                                        <th class="text-center">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in activity_feed %}
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold">{{ item.assessment.title }}</div>
+                                            {% if item.assessment.file_name %}
+                                            <a href="{{ url_for('student_download_activity', assessment_id=item.assessment.id) }}" class="small d-md-none"><i class="fas fa-download"></i> Download</a>
+                                            {% endif %}
+                                        </td>
+                                        <td class="small">{{ item.type_label }}</td>
+                                        <td class="text-center d-none d-md-table-cell">
+                                            {% if item.assessment.file_name %}
+                                            <a href="{{ url_for('student_download_activity', assessment_id=item.assessment.id) }}" class="btn btn-sm btn-outline-primary py-0 px-2"><i class="fas fa-download"></i></a>
+                                            {% else %}<span class="text-muted">—</span>{% endif %}
+                                        </td>
+                                        <td class="text-center font-monospace fw-bold">{% if item.score is not none %}{{ item.score }}/{{ item.max_score }}{% else %}—{% endif %}</td>
+                                        <td class="text-center">
+                                            {% if item.status == 'Graded' %}<span class="badge bg-success">Graded</span>
+                                            {% elif item.status == 'Submitted' %}<span class="badge bg-info text-dark">Submitted</span>
+                                            {% else %}<span class="badge bg-secondary">Open</span>{% endif %}
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="5" class="text-center text-muted py-4">No activities for this subject and period yet.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {% if published_grade_summary %}
+                        <h4 class="h6 fw-bold mb-3 mt-4">Published Period Grades <span class="badge bg-success ms-1">Official</span></h4>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Subject</th>
+                                        <th>Period</th>
+                                        <th class="text-center">CA</th>
+                                        <th class="text-center">Exam</th>
+                                        <th class="text-center">Total</th>
+                                        <th class="text-center">Grade</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in published_grade_summary %}
+                                    <tr>
+                                        <td class="fw-semibold">{{ row.subject }}</td>
+                                        <td class="small">{{ row.period_label }}</td>
+                                        <td class="text-center font-monospace">{{ row.ca_score if row.ca_score is not none else '—' }}</td>
+                                        <td class="text-center font-monospace">{{ row.exam_score if row.exam_score is not none else '—' }}</td>
+                                        <td class="text-center font-monospace fw-bold">{{ row.total if row.total is not none else '—' }}</td>
+                                        <td class="text-center"><span class="badge bg-success">{{ row.grade_letter or '—' }}</span></td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if active_tab == 'activities' %}
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-white border-bottom py-3">
+                        <h3 class="h6 fw-bold mb-2"><i class="fas fa-clipboard-list text-primary me-2"></i>Activities Record</h3>
+                        <p class="text-muted small mb-2">All assignments, classroom activities, and scores for {{ display_year.name if display_year else 'this year' }}</p>
+                        {% if subjects %}
+                        <div class="student-subject-pills d-flex flex-wrap gap-2 mb-2">
+                            <a href="{{ url_for('student_dashboard', tab='activities', academic_year_id=display_year.id if display_year else None, period=selected_period) }}"
+                               class="subject-pill {% if not selected_subject %}active{% endif %}">All Subjects</a>
+                            {% for subject in subjects %}
+                            <a href="{{ url_for('student_dashboard', tab='activities', academic_year_id=display_year.id if display_year else None, subject=subject.name, period=selected_period) }}"
+                               class="subject-pill {% if selected_subject == subject.name %}active{% endif %}">{{ subject.name }}</a>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="student-period-pills">
+                            <a href="{{ url_for('student_dashboard', tab='activities', academic_year_id=display_year.id if display_year else None, subject=selected_subject) }}"
+                               class="period-pill {% if not selected_period %}active{% endif %}">All Periods</a>
+                            {% for period_num, period_name in grading_periods %}
+                            <a href="{{ url_for('student_dashboard', tab='activities', academic_year_id=display_year.id if display_year else None, subject=selected_subject, period=period_num) }}"
+                               class="period-pill {% if selected_period == period_num %}active{% endif %}">{{ period_name }}</a>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Activity</th>
+                                        <th>Subject</th>
+                                        <th>Period</th>
+                                        <th>Type</th>
+                                        <th class="text-center">Score</th>
+                                        <th class="text-center">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in full_activity_record %}
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold">{{ item.assessment.title }}</div>
+                                            {% if item.submitted_at %}
+                                            <div class="small text-muted">Submitted {{ item.submitted_at.strftime('%b %d, %Y') }}</div>
+                                            {% endif %}
+                                            {% if item.feedback %}
+                                            <div class="small text-info mt-1"><i class="fas fa-comment-dots me-1"></i>{{ item.feedback[:80] }}{% if item.feedback|length > 80 %}…{% endif %}</div>
+                                            {% endif %}
+                                        </td>
+                                        <td class="small">{{ item.assessment.subject_name }}</td>
+                                        <td class="small">{{ item.period_label }}</td>
+                                        <td class="small">{{ item.type_label }}</td>
+                                        <td class="text-center font-monospace fw-bold">
+                                            {% if item.score is not none %}{{ item.score }}/{{ item.max_score }}{% else %}—{% endif %}
+                                        </td>
+                                        <td class="text-center">
+                                            {% if item.status == 'Graded' %}<span class="badge bg-success">Graded</span>
+                                            {% elif item.status == 'Submitted' %}<span class="badge bg-info text-dark">Submitted</span>
+                                            {% else %}<span class="badge bg-secondary">Open</span>{% endif %}
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="6" class="text-center text-muted py-4">No activities match your filters.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if active_tab == 'tasks' %}
+                <div class="card border-0 shadow-sm mb-4" id="my-tasks">
+                    <div class="card-header bg-white border-bottom py-3">
+                        <h3 class="h6 fw-bold mb-0"><i class="fas fa-tasks text-warning me-2"></i>My Tasks</h3>
+                        <p class="text-muted small mb-0">Download assignments, submit your work, and track grading</p>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            {% for task in pending_tasks %}
+                            {% set activity = task.assessment %}
+                            {% set submission = task.submission %}
+                            <div class="col-md-6">
+                                <div class="task-card h-100 p-3 border rounded-3 {% if task.needs_submit %}border-warning shadow-sm{% endif %}">
+                                    <div class="d-flex justify-content-between align-items-start mb-2 gap-2">
+                                        <h4 class="h6 fw-bold mb-0">{{ activity.title }}</h4>
+                                        <span class="badge {% if task.needs_submit and activity.is_overdue %}bg-danger{% elif task.needs_submit %}bg-warning text-dark{% else %}bg-info text-dark{% endif %} flex-shrink-0">
+                                            {% if task.needs_submit and activity.is_overdue %}Overdue{% elif task.needs_submit %}Submit{% else %}Awaiting grade{% endif %}
+                                        </span>
+                                    </div>
+                                    <p class="small text-muted mb-2">
+                                        {{ activity.subject_name }} · {{ (activity.marking_period or 1) | marking_period_label }} · {{ activity.activity_type or 'Assignment' }}
+                                        {% if activity.due_date %}
+                                        · Due {{ activity.due_date }}
+                                        {% if activity.is_overdue %}<span class="text-danger fw-semibold">(Overdue)</span>{% endif %}
+                                        {% endif %}
+                                    </p>
+                                    {% if activity.description %}<p class="small mb-2 text-secondary">{{ activity.description[:150] }}{% if activity.description|length > 150 %}…{% endif %}</p>{% endif %}
+                                    <div class="task-actions">
+                                        {% if activity.file_name %}
+                                        <a href="{{ url_for('student_download_activity', assessment_id=activity.id) }}" class="btn btn-sm btn-primary w-100 mb-2">
+                                            <i class="fas fa-download me-1"></i>Download Assignment
+                                        </a>
+                                        {% endif %}
+                                        {% if submission %}
+                                        <div class="alert alert-success py-2 px-3 small mb-2">
+                                            <i class="fas fa-check-circle me-1"></i>Submitted {{ submission.submitted_at.strftime('%b %d, %Y') }}
+                                            {% if submission.scan_code %}
+                                            <div class="font-monospace text-muted mt-1" style="font-size:0.72rem;">Sheet ID: {{ submission.scan_code }}</div>
+                                            {% endif %}
+                                            {% if submission.is_graded and submission.score_published %}
+                                            <div class="fw-bold mt-1">Score: {{ submission.score }}/{{ activity.max_score or 100 }}</div>
+                                            {% elif submission.is_graded %}
+                                            <div class="mt-1 text-muted">Graded — pending publish</div>
+                                            {% else %}
+                                            <div class="mt-1 text-muted">Waiting for teacher</div>
+                                            {% endif %}
+                                        </div>
+                                        {% if submission.file_path %}
+                                        <a href="{{ url_for('student_download_submission', assessment_id=activity.id) }}" class="btn btn-sm btn-outline-success w-100 mb-2">
+                                            <i class="fas fa-download me-1"></i>My Submission
+                                        </a>
+                                        {% endif %}
+                                        {% if not submission.is_graded and activity.submission_mode == 'file_upload' %}
+                                        <form action="{{ url_for('student_upload', assessment_id=activity.id) }}" method="POST" enctype="multipart/form-data">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <label class="upload-zone w-100 text-center small" for="file-{{ activity.id }}">
+                                                <i class="fas fa-cloud-upload-alt d-block mb-1"></i>Re-upload work
+                                            </label>
+                                            <input type="file" name="assignment" id="file-{{ activity.id }}" class="d-none" onchange="this.form.submit()" required>
+                                        </form>
+                                        {% endif %}
+                                        {% elif activity.submission_mode == 'text_entry' %}
+                                        <form action="{{ url_for('submit_activity', assessment_id=activity.id) }}" method="POST">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <textarea name="quiz_answers" class="form-control form-control-sm mb-2" rows="3" placeholder="Type your answers..." required></textarea>
+                                            <button type="submit" class="btn btn-primary btn-sm w-100">Submit Answers</button>
+                                        </form>
+                                        {% else %}
+                                        <form action="{{ url_for('student_upload', assessment_id=activity.id) }}" method="POST" enctype="multipart/form-data">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <label class="upload-zone w-100 text-center small" for="file-{{ activity.id }}">
+                                                <i class="fas fa-cloud-upload-alt d-block mb-1"></i>Upload your work
+                                            </label>
+                                            <input type="file" name="assignment" id="file-{{ activity.id }}" class="d-none" onchange="this.form.submit()" required>
+                                        </form>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                            {% else %}
+                            <div class="col-12 text-center text-muted py-5">
+                                <i class="fas fa-check-circle fa-3x mb-3 d-block text-success opacity-75"></i>
+                                <p class="mb-0 fw-semibold">All caught up!</p>
+                                <p class="small">No open tasks right now.</p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if active_tab == 'account' %}
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-white border-bottom py-3">
+                        <h3 class="h6 fw-bold mb-0"><i class="fas fa-wallet text-success me-2"></i>Financial Summary</h3>
+                    </div>
+                    <div class="card-body">
+                        {% if financials %}
+                        <div class="row g-3">
+                            <div class="col-6 col-md-3"><div class="fin-box"><span>Yearly Fee</span><strong>${{ "{:,.2f}".format(financials.yearly_fee|float) }}</strong></div></div>
+                            <div class="col-6 col-md-3"><div class="fin-box text-success"><span>Paid</span><strong>${{ "{:,.2f}".format(financials.tuition_paid|float) }}</strong></div></div>
+                            <div class="col-6 col-md-3"><div class="fin-box text-danger"><span>Balance</span><strong>${{ "{:,.2f}".format(financials.tuition_balance|float) }}</strong></div></div>
+                            <div class="col-6 col-md-3"><div class="fin-box"><span>Registration</span><strong>${{ "{:,.2f}".format(financials.registration_paid|float) }}</strong></div></div>
+                        </div>
+                        {% else %}
+                        <p class="text-muted small mb-0">Financial records are not linked to your profile.</p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% if fees %}
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-bottom py-3"><h3 class="h6 fw-bold mb-0">Payment History</h3></div>
+                    <ul class="list-group list-group-flush">
+                        {% for f in fees %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <div class="fw-semibold small">{{ f.description or 'Payment' }}</div>
+                                <div class="text-muted style-micro">{{ f.paid_on.strftime('%b %d, %Y') if f.paid_on else '' }}</div>
+                            </div>
+                            <span class="badge bg-success">+${{ "{:,.2f}".format(f.amount_paid|float) }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+                {% endif %}
+
+                {% if active_tab == 'attendance' %}
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-white border-bottom py-3">
+                        <h3 class="h6 fw-bold mb-0"><i class="fas fa-calendar-check text-primary me-2"></i>My Attendance</h3>
+                        <p class="text-muted small mb-0 mt-1">{{ display_year.name if display_year else 'Current year' }} — your presence record</p>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3 mb-4">
+                            <div class="col-6 col-md-3">
+                                <div class="fin-box text-center">
+                                    <span>Present Rate</span>
+                                    <strong class="text-success">{% if attendance_self.present_pct is not none %}{{ attendance_self.present_pct }}%{% else %}—{% endif %}</strong>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="fin-box text-center">
+                                    <span>Present</span>
+                                    <strong>{{ attendance_self.counts.present }}</strong>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="fin-box text-center">
+                                    <span>Absent</span>
+                                    <strong class="text-danger">{{ attendance_self.counts.absent }}</strong>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="fin-box text-center">
+                                    <span>Late</span>
+                                    <strong class="text-warning">{{ attendance_self.counts.late }}</strong>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Status</th>
+                                        <th>Note</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in attendance_self.records %}
+                                    <tr>
+                                        <td class="fw-semibold">{{ row.label }}</td>
+                                        <td>
+                                            {% if row.status == 'present' %}<span class="badge bg-success">Present</span>
+                                            {% elif row.status == 'late' %}<span class="badge bg-warning text-dark">Late</span>
+                                            {% elif row.status == 'absent' %}<span class="badge bg-danger">Absent</span>
+                                            {% elif row.status == 'excused' %}<span class="badge bg-info text-dark">Excused</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="small text-muted">{{ row.notes or '—' }}</td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="3" class="text-center text-muted py-4">No attendance records for this academic year yet.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% else %}
+                <div class="alert alert-info">No student profile is linked to your account. Contact the registrar.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .student-dashboard { background: #f1f5f9; min-height: calc(100vh - 80px); }
+    .student-layout { max-width: 1200px; margin: 0 auto; }
+    .student-avatar { width: 96px; height: 96px; overflow: hidden; border: 3px solid #e2e8f0; }
+    .student-class-banner { margin-top: 0.25rem; }
+    .student-grade-badge {
+        background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+        color: #fff;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        padding: 0.45rem 0.75rem;
+        border-radius: 999px;
+    }
+    .student-class-badge {
+        background: #f0f9ff;
+        color: #0c4a6e;
+        border: 1px solid #bae6fd;
+        font-size: 0.78rem;
+        font-weight: 600;
+        padding: 0.45rem 0.75rem;
+        border-radius: 999px;
+    }
+    .student-class-badge.student-class-pending {
+        background: #fffbeb;
+        color: #92400e;
+        border-color: #fcd34d;
+    }
+    .btn-student-primary { background: #1e40af; color: #fff; font-weight: 600; border: none; border-radius: 8px; }
+    .btn-student-primary:hover { background: #1e3a8a; color: #fff; }
+    .standing-box { border-radius: 12px; padding: 1rem; border: 1px solid #e2e8f0; background: #fff; }
+    .standing-draft { border-left: 4px solid #f59e0b; }
+    .standing-published { border-left: 4px solid #10b981; }
+    .standing-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; color: #475569; }
+    .standing-sub { font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.35rem; }
+    .standing-score { font-size: 1.5rem; font-weight: 800; color: #0f172a; line-height: 1.1; }
+    .standing-score span { font-size: 0.85rem; font-weight: 500; color: #64748b; }
+    .task-card { background: #fff; transition: box-shadow 0.2s; }
+    .upload-zone { display: block; padding: 1.25rem; border: 2px dashed #cbd5e1; border-radius: 8px; cursor: pointer; color: #64748b; }
+    .upload-zone:hover { border-color: #1e40af; color: #1e40af; background: #f8fafc; }
+    .fin-box { background: #f8fafc; border-radius: 8px; padding: 0.75rem; border: 1px solid #e2e8f0; }
+    .fin-box span { display: block; font-size: 0.68rem; text-transform: uppercase; color: #64748b; }
+    .fin-box strong { font-size: 1.1rem; }
+    .style-micro { font-size: 0.75rem; }
+</style>
+{% endblock %}

@@ -1,0 +1,232 @@
+{% extends 'base.html' %}
+{% block title %}Alumni Portal — Class of {{ graduation_year.name if graduation_year else 'Graduates' }}{% endblock %}
+
+{% block content %}
+<style>
+    .alumni-shell {
+        min-height: calc(100vh - 120px);
+        background: linear-gradient(160deg, #0b0f19 0%, #111827 45%, #0f172a 100%);
+        padding: 2rem 1rem 3rem;
+    }
+    .alumni-card {
+        max-width: 960px;
+        margin: 0 auto;
+        background: rgba(17, 24, 39, 0.92);
+        border: 1px solid rgba(0, 242, 255, 0.18);
+        border-radius: 16px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45), 0 0 40px rgba(0, 242, 255, 0.06);
+        overflow: hidden;
+    }
+    .alumni-header {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.18), rgba(0, 242, 255, 0.12));
+        border-bottom: 1px solid rgba(16, 185, 129, 0.25);
+        padding: 2.25rem 2rem 1.75rem;
+        text-align: center;
+    }
+    .alumni-badge-icon {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        background: rgba(16, 185, 129, 0.12);
+        border: 2px solid rgba(16, 185, 129, 0.4);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2rem;
+        color: #34d399;
+        margin-bottom: 1rem;
+        box-shadow: 0 0 28px rgba(16, 185, 129, 0.25);
+    }
+    .alumni-title {
+        color: #f8fafc;
+        font-weight: 700;
+        font-size: 1.5rem;
+        letter-spacing: 0.02em;
+        margin-bottom: 0.35rem;
+    }
+    .alumni-subtitle {
+        color: #94a3b8;
+        font-size: 0.95rem;
+        margin: 0;
+    }
+    .alumni-body {
+        padding: 1.75rem 2rem 2rem;
+        color: #cbd5e1;
+    }
+    .alumni-profile {
+        display: flex;
+        align-items: center;
+        gap: 1.25rem;
+        padding: 1.15rem 1.25rem;
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(55, 65, 81, 0.8);
+        border-radius: 12px;
+        margin-bottom: 1.5rem;
+    }
+    .alumni-profile img {
+        width: 64px;
+        height: 64px;
+        border-radius: 12px;
+        object-fit: cover;
+        border: 1px solid rgba(0, 242, 255, 0.2);
+    }
+    .status-alumni {
+        background: rgba(16, 185, 129, 0.12);
+        color: #34d399;
+        border: 1px solid rgba(16, 185, 129, 0.35);
+        font-weight: 600;
+        letter-spacing: 0.04em;
+    }
+    .alumni-section {
+        background: rgba(15, 23, 42, 0.45);
+        border: 1px solid rgba(55, 65, 81, 0.6);
+        border-radius: 12px;
+        padding: 1.25rem 1.35rem;
+        margin-bottom: 1.25rem;
+    }
+    .alumni-section h3 {
+        color: #f1f5f9;
+        font-size: 1rem;
+        font-weight: 700;
+        margin-bottom: 0.85rem;
+    }
+    .alumni-actions .btn {
+        border-radius: 10px;
+    }
+    .btn-alumni-primary {
+        background: linear-gradient(135deg, #10b981, #059669);
+        border: none;
+        color: #fff;
+        font-weight: 600;
+    }
+    .btn-alumni-primary:hover {
+        color: #fff;
+        opacity: 0.92;
+    }
+    .table-alumni {
+        color: #e2e8f0;
+        font-size: 0.875rem;
+    }
+    .table-alumni th {
+        color: #94a3b8;
+        font-weight: 600;
+        border-color: rgba(55, 65, 81, 0.8) !important;
+    }
+    .table-alumni td {
+        border-color: rgba(55, 65, 81, 0.5) !important;
+    }
+    .alumni-readonly-note {
+        font-size: 0.85rem;
+        color: #64748b;
+        border-left: 3px solid rgba(0, 242, 255, 0.35);
+        padding-left: 0.85rem;
+        margin-top: 1rem;
+    }
+</style>
+
+<div class="alumni-shell">
+    <div class="alumni-card">
+        <div class="alumni-header">
+            <div class="alumni-badge-icon">
+                <i class="fas fa-user-graduate"></i>
+            </div>
+            <h1 class="alumni-title">Congratulations, Graduate!</h1>
+            <p class="alumni-subtitle">
+                You have successfully completed your studies
+                {% if graduation_year %} in <strong class="text-emerald">{{ graduation_year.name }}</strong>{% endif %}.
+            </p>
+            <span class="badge status-alumni mt-3 px-3 py-2">Alumni</span>
+        </div>
+
+        <div class="alumni-body">
+            <div class="alumni-profile">
+                <img src="{{ student.photo_url }}" alt="{{ student.full_name }}">
+                <div class="flex-grow-1">
+                    <div class="fw-bold text-white fs-5">{{ student.full_name }}</div>
+                    <div class="text-muted small font-monospace">ID: {{ student.student_id }}</div>
+                    <div class="mt-1">
+                        {% if student.grade_level %}
+                        <span class="badge bg-dark border border-secondary text-cyan">Grade {{ student.grade_level }} Graduate</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <form method="GET" action="{{ url_for('student_dashboard') }}" class="d-flex align-items-center gap-2 m-0">
+                    <label for="academic_year_id" class="small text-muted mb-0">Records</label>
+                    <select name="academic_year_id" id="academic_year_id" class="form-select form-select-sm bg-dark text-white border-secondary" onchange="this.form.submit()">
+                        {% for year in past_years %}
+                        <option value="{{ year.id }}" {% if display_year and year.id == display_year.id %}selected{% endif %}>{{ year.name }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-4">
+                    <div class="alumni-section text-center h-100">
+                        <div class="text-muted small text-uppercase mb-1">Graduation Year</div>
+                        <div class="h5 text-cyan mb-0">{{ graduation_year.name if graduation_year else '—' }}</div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="alumni-section text-center h-100">
+                        <div class="text-muted small text-uppercase mb-1">Viewing Records</div>
+                        <div class="h5 text-white mb-0">{{ display_year.name if display_year else '—' }}</div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="alumni-section text-center h-100">
+                        <div class="text-muted small text-uppercase mb-1">GPA (selected year)</div>
+                        <div class="h5 text-emerald mb-0">{{ '%.2f'|format(gpa) }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="alumni-section alumni-actions">
+                <h3><i class="fas fa-folder-open text-cyan me-2"></i>Your Records</h3>
+                <div class="d-flex flex-wrap gap-2">
+                    <a class="btn btn-alumni-primary" href="{{ url_for('transcript', student_id=student.id) }}">
+                        <i class="fas fa-scroll me-2"></i>Official Transcript
+                    </a>
+                    {% if display_year %}
+                    <a class="btn btn-outline-info" href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ display_year.id }}">
+                        <i class="fas fa-file-invoice me-2"></i>Report Card ({{ display_year.name }})
+                    </a>
+                    {% endif %}
+                </div>
+                <p class="alumni-readonly-note mb-0">
+                    Alumni portal access is read-only. Class assignments, tasks, and registration are no longer active.
+                </p>
+            </div>
+
+            {% if grades %}
+            <div class="alumni-section">
+                <h3><i class="fas fa-chart-line text-emerald me-2"></i>Academic Record — {{ display_year.name if display_year else 'Selected Year' }}</h3>
+                <div class="table-responsive">
+                    <table class="table table-alumni table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Subject</th>
+                                <th class="text-end">Score</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for g in grades %}
+                            <tr>
+                                <td>{{ g.subject_name or g.subject or '—' }}</td>
+                                <td class="text-end font-monospace">{{ g.score if g.score is not none else '—' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% else %}
+            <div class="alumni-section text-center text-muted py-4">
+                <i class="fas fa-inbox opacity-25 fa-2x mb-2 d-block"></i>
+                No grade records found for the selected academic year.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

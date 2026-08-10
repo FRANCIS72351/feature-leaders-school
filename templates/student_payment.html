@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Payment History{% endblock %}
+{% block content %}
+<div class="container mt-4">
+  <h2>Payment History for {{ student.first_name }} {{ student.last_name }}</h2>
+  <p><b>Total Fee:</b> {{ total_fee }}</p>
+  <p><b>Total Paid:</b> {{ total_paid }}</p>
+  <p><b>Balance:</b> {{ balance }}</p>
+
+  <table class="table table-bordered">
+    <thead>
+      <tr><th>Term</th><th>Amount Paid</th><th>Date</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for p in payments %}
+      <tr>
+        <td>Term {{ p.term }}</td>
+        <td>{{ p.amount_paid }}</td>
+        <td>{{ p.paid_on.strftime("%Y-%m-%d") }}</td>
+        <td>
+          <a href="{{ url_for('payment_receipt_pdf', payment_id=p.id) }}" class="btn btn-sm btn-outline-primary me-1">Print Receipt</a>
+          <a href="{{ url_for('export_payment_csv', student_id=student.id) }}?payment_id={{ p.id }}" class="btn btn-sm btn-outline-secondary">Download CSV</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="text-center">No payments yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="mb-3 d-flex flex-wrap gap-2">
+  <a href="{{ url_for('payment_report_pdf', student_id=student.id) }}" class="btn btn-outline-danger">
+    Download Payment Report (PDF)
+  </a>
+  <a href="{{ url_for('export_payment_csv', student_id=student.id) }}" class="btn btn-outline-secondary">
+    Download Payment History (CSV)
+  </a>
+</div>
+{% endblock %}
+

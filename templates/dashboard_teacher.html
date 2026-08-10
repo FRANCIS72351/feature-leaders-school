@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+
+{% block title %}{{ header.sheet_title if header else "Grade Sheet Entry" }}{% endblock %}
+
+{% block content %}
+<style>
+  .grade-sheet-container {
+    background: #ffffff;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    margin-top: 15px;
+  }
+  .sheet-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 16px;
+  }
+  .sheet-header .title-area h1 {
+    margin: 0 0 4px 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1e293b;
+  }
+  .sheet-header .title-area p {
+    margin: 0;
+    color: #64748b;
+    font-size: 0.9rem;
+  }
+  .sheet-badge {
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+  }
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .meta-label {
+    font-size: 0.75rem;
+    color: #64748b;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .meta-value {
+    font-weight: 600;
+    font-size: 0.95rem;
+    display: block;
+    margin-top: 2px;
+    color: #1e293b;
+  }
+  .table-container {
+    overflow-x: auto;
+    margin-bottom: 16px;
+  }
+  .grade-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    text-align: left;
+  }
+  .grade-table th, .grade-table td {
+    padding: 8px 10px;
+    border: 1px solid #e2e8f0;
+  }
+  .grade-table th {
+    background: #f1f5f9;
+    font-weight: 600;
+    color: #334155;
+    white-space: nowrap;
+  }
+  .grade-table input[type="number"],
+  .grade-table input[type="text"],
+  .grade-table select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+  .score-input {
+    width: 60px;
+    text-align: right;
+  }
+  .btn-save-grades {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 10px 18px;
+    font-weight: 600;
+    border-radius: 6px;
+    cursor: pointer;
+    float: right;
+  }
+  .btn-save-grades:hover {
+    background: #1d4ed8;
+  }
+</style>
+
+<!-- System Navigation Action Bar -->
+<nav class="navbar navbar-expand-lg navbar-light bg-light rounded border mb-3 px-3">
+  <div class="container-fluid p-0">
+    <a class="navbar-brand font-weight-bold text-primary" href="{{ url_for('dashboard') }}">
+      <i class="fas fa-graduation-cap mr-2"></i>{{ header.school if header and header.school else 'Portal Home' }}
+    </a>
+    <div class="d-flex align-items-center">
+      <a href="{{ url_for('teacher_dashboard') }}" class="btn btn-outline-secondary btn-sm me-2">
+        <i class="fas fa-arrow-left me-1"></i> Return to Teacher Hub
+      </a>
+      {% if announcements_link %}
+        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-info btn-sm me-2">
+          <i class="fas fa-bullhorn me-1"></i> Overview
+        </a>
+      {% endif %}
+    </div>
+  </div>
+</nav>
+
+<div class="grade-sheet-container">
+  <div class="sheet-header">
+    <div class="title-area">
+      <h1>{{ header.school if header else 'Future Leaders Preparatory Academy' }}</h1>
+      <p>{{ header.sheet_title if header else 'Class Grade Ledger Sheet' }}</p>
+    </div>
+    <span class="sheet-badge">{{ header.status if header else 'Active Session' }}</span>
+  </div>
+
+  <div class="meta-grid">
+    <div>
+      <span class="meta-label">Academic Year</span>
+      <span class="meta-value">{{ header.academic_year if header else 'N/A' }}</span>
+    </div>
+    <div>
+      <span class="meta-label">Class</span>
+      <span class="meta-value">{{ header.class_name if header else selected_grade_class.name if selected_grade_class else 'N/A' }}</span>
+    </div>
+    <div>
+      <span class="meta-label">Subject</span>
+      <span class="meta-value">{{ header.subject if header else grade_subject if grade_subject else 'N/A' }}</span>
+    </div>
+    <div>
+      <span class="meta-label">Teacher</span>
+      <span class="meta-value">{{ header.teacher if header else current_user.full_name }}</span>
+    </div>
+    <div>
+      <span class="meta-label">Period</span>
+      <span class="meta-value">{{ header.period if header else period_label if period_label else '1' }}</span>
+    </div>
+  </div>
+
+  <div class="table-container">
+    <table id="gradeTable" class="grade-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Student Name</th>
+          <th>Student ID</th>
+          <th>Attendance</th>
+          <th>Participation</th>
+          <th>Quiz</th>
+          <th>Assignment</th>
+          <th>Classwork</th>
+          <th>Homework</th>
+          <th>Test</th>
+          <th>Total</th>
+          <th>Grade</th>
+          <th>Remarks</th>
+          <th>Sheet Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if students %}
+          {% for student in students %}
+          <tr data-student-id="{{ student.student_id }}">
+            <td>{{ loop.index }}</td>
+            <td><input type="text" class="field-name" value="{{ student.student_name }}"></td>
+            <td><input type="text" class="field-id" value="{{ student.student_id }}" readonly style="background:#f8fafc"></td>
+            <td><input type="number" class="score-input field-att" value="{{ student.attendance or 0 }}" min="0" max="100"></td>
+            <td><input type="number" class="score-input field-part" value="{{ student.participation or 0 }}" min="0" max="100"></td>
+            <td><input type="number" class="score-input field-quiz" value="{{ student.quiz or 0 }}" min="0" max="100"></td>
+            <td><input type="number" class="score-input field-assg" value="{{ student.assignment or 0 }}" min="0" max="100"></td>
+            <td><input type="number" class="score-input field-cw" value="{{ student.classwork or 0 }}" min="0" max="100"></td>
+            <td><input type="number" class="score-input field-hw" value="{{ student.homework or 0 }}" min="0" max="100"></td>
+            <td><input type="number" class="score-input field-test" value="{{ student.test or 0 }}" min="0" max="100"></td>
+            <td class="cell-total font-weight-bold">{{ student.total or 0 }}</td>
+            <td class="cell-grade font-weight-bold">{{ student.grade or 'F' }}</td>
+            <td><input type="text" class="field-remarks" value="{{ student.remarks or '' }}"></td>
+            <td>
+              <select class="field-status">
+                <option value="Pending" {% if student.sheet_status == 'Pending' %}selected{% endif %}>Pending</option>
+                <option value="Verified" {% if student.sheet_status == 'Verified' %}selected{% endif %}>Verified</option>
+              </select>
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td>1</td>
+            <td><input type="text" class="field-name" value="Jane Doe"></td>
+            <td><input type="text" class="field-id" value="STU-1001" readonly style="background:#f8fafc"></td>
+            <td><input type="number" class="score-input field-att" value="10"></td>
+            <td><input type="number" class="score-input field-part" value="10"></td>
+            <td><input type="number" class="score-input field-quiz" value="15"></td>
+            <td><input type="number" class="score-input field-assg" value="10"></td>
+            <td><input type="number" class="score-input field-cw" value="15"></td>
+            <td><input type="number" class="score-input field-hw" value="10"></td>
+            <td><input type="number" class="score-input field-test" value="25"></td>
+            <td class="cell-total font-weight-bold">95</td>
+            <td class="cell-grade font-weight-bold">A</td>
+            <td><input type="text" class="field-remarks" value="Excellent effort"></td>
+            <td>
+              <select class="field-status">
+                <option value="Verified">Verified</option>
+                <option value="Pending">Pending</option>
+              </select>
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <button class="btn-save-grades" onclick="saveAllGrades()">Save Grade Sheet</button>
+</div>
+
+<script>
+  function getLetter(total) {
+    if (total >= 90) return 'A';
+    if (total >= 80) return 'B';
+    if (total >= 70) return 'C';
+    if (total >= 60) return 'D';
+    return 'F';
+  }
+
+  document.getElementById('gradeTable').addEventListener('input', function(e) {
+    if (e.target.classList.contains('score-input')) {
+      const row = e.target.closest('tr');
+      const scores = Array.from(row.querySelectorAll('.score-input'))
+                          .map(input => parseFloat(input.value) || 0);
+      const total = scores.reduce((a, b) => a + b, 0);
+      
+      row.querySelector('.cell-total').textContent = total;
+      row.querySelector('.cell-grade').textContent = getLetter(total);
+    }
+  });
+
+  async function saveAllGrades() {
+    const rows = document.querySelectorAll('#gradeTable tbody tr');
+    const payload = [];
+
+    rows.forEach(row => {
+      payload.push({
+        student_name: row.querySelector('.field-name').value,
+        student_id: row.querySelector('.field-id').value,
+        attendance: row.querySelector('.field-att').value,
+        participation: row.querySelector('.field-part').value,
+        quiz: row.querySelector('.field-quiz').value,
+        assignment: row.querySelector('.field-assg').value,
+        classwork: row.querySelector('.field-cw').value,
+        homework: row.querySelector('.field-hw').value,
+        test: row.querySelector('.field-test').value,
+        remarks: row.querySelector('.field-remarks').value,
+        sheet_status: row.querySelector('.field-status').value
+      });
+    });
+
+    try {
+      const res = await fetch('/api/save-grades', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: payload })
+      });
+      const result = await res.json();
+      alert(result.message || "Grades successfully saved.");
+    } catch (err) {
+      alert("Failed to communicate with the server: " + err);
+    }
+  }
+</script>
+{% endblock %}

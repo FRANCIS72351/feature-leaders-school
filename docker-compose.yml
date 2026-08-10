@@ -1,0 +1,56 @@
+# Local production-style test before AWS deploy.
+# Usage:
+#   cp .env.production.example .env
+#   # edit .env — set SECRET_KEY, ADMIN_PASSWORD, SITE_URL
+#   docker compose up --build
+#
+# PostgreSQL (recommended for multi-instance AWS):
+#   docker compose --profile postgres up --build
+
+services:
+  web:
+    build: .
+    ports:
+      - "${PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      DOCKER: "1"
+      GUNICORN_BIND: "0.0.0.0:8000"
+    volumes:
+      - school_instance:/app/instance
+      - school_uploads:/app/static/uploads
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  db:
+    profiles: ["postgres"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: school_db
+      POSTGRES_USER: schooluser
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_in_production}
+    volumes:
+      - school_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U schooluser -d school_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  school_instance:
+  school_uploads:
+  school_pgdata:

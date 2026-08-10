@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3>Discipline Records</h3>
+<form method="post">
+  {{ form.hidden_tag() }}
+  <div class="mb-3">{{ form.student_id.label }} {{ form.student_id(class_="form-control") }}</div>
+  <div class="mb-3">{{ form.offense.label }} {{ form.offense(class_="form-control") }}</div>
+  <div class="mb-3">{{ form.action_taken.label }} {{ form.action_taken(class_="form-control") }}</div>
+  <div class="mb-3">{{ form.notes.label }} {{ form.notes(class_="form-control") }}</div>
+  <div>{{ form.submit(class_="btn btn-primary") }}</div>
+</form>
+<hr>
+<table class="table"><thead><tr><th>Student</th><th>Offense</th><th>Action</th></tr></thead><tbody>
+{% for r in records %}<tr><td>{{ r.student_id }}</td><td>{{ r.offense }}</td><td>{{ r.action_taken }}</td></tr>{% else %}<tr><td colspan="3">No records</td></tr>{% endfor %}
+</tbody></table>
+{% endblock %}

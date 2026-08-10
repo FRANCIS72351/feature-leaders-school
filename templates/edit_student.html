@@ -1,0 +1,211 @@
+{% extends 'base.html' %}
+{% block title %}Edit Student — {{ student.full_name }}{% endblock %}
+{% block content %}
+
+<style>
+    body { background-color: #0b0f19; color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; }
+    .text-cyan { color: #00f2ff !important; }
+    .text-emerald { color: #10b981 !important; }
+    .text-muted { color: #94a3b8 !important; }
+    .glow-title { font-weight: 700; color: #fff; text-shadow: 0 0 20px rgba(0, 242, 255, 0.15); }
+    .sec-card {
+        background: #111827;
+        border: 1px solid #1f2937;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+    .form-cyber {
+        background-color: #070a12 !important;
+        border: 1px solid #374151 !important;
+        color: #fff !important;
+        border-radius: 8px !important;
+    }
+    .form-cyber:focus {
+        border-color: #00f2ff !important;
+        box-shadow: 0 0 10px rgba(0, 242, 255, 0.15) !important;
+    }
+    .btn-emerald {
+        background-color: #10b981 !important;
+        color: #070a12 !important;
+        font-weight: 700;
+        border: none !important;
+    }
+    .btn-emerald:hover { background-color: #059669 !important; color: #fff !important; }
+    .fee-highlight {
+        border: 1px solid rgba(16, 185, 129, 0.35);
+        background: rgba(16, 185, 129, 0.06);
+        border-radius: 10px;
+        padding: 1rem;
+    }
+</style>
+
+<div class="container-fluid py-4 px-md-4">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4 pb-3 border-bottom border-secondary border-opacity-10">
+        <div>
+            <span class="badge bg-cyan bg-opacity-10 text-cyan border border-cyan border-opacity-10 px-2 py-1 mb-2" style="font-size:0.65rem;">Registrar Edit Mode</span>
+            <h2 class="glow-title mb-1"><i class="fas fa-user-pen text-cyan me-2"></i>Edit Student Record</h2>
+            <p class="text-muted small mb-0">
+                {{ student.full_name }} &middot; ID #{{ student.student_id }}
+                {% if active_year %} &middot; Session: {{ active_year.name }}{% endif %}
+            </p>
+        </div>
+        <div class="mt-3 mt-md-0 d-flex gap-2">
+            {% if return_to == 'class_roster' and student.klass_id %}
+            <a href="{{ url_for('registrar_class_students', class_id=student.klass_id) }}" class="btn btn-sm btn-outline-secondary text-white-50">
+                <i class="fas fa-arrow-left me-1"></i>Back to Class Roster
+            </a>
+            {% else %}
+            <a href="{{ url_for('register_student') }}" class="btn btn-sm btn-outline-secondary text-white-50">
+                <i class="fas fa-arrow-left me-1"></i>Back to Registrar Dashboard
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card sec-card p-4">
+        <form method="POST" enctype="multipart/form-data">
+            {{ form.hidden_tag() }}
+            {% if return_to %}
+            <input type="hidden" name="return_to" value="{{ return_to }}">
+            {% endif %}
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} mb-3 small">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            {% if form.errors %}
+            <div class="alert alert-danger mb-3 small">
+                <strong>Please fix the following:</strong>
+                <ul class="mb-0 ps-3">
+                {% for field, errors in form.errors.items() %}
+                    {% for error in errors %}
+                    <li><strong>{{ form[field].label.text or field }}:</strong> {{ error }}</li>
+                    {% endfor %}
+                {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div class="row g-3 mb-4">
+                <div class="col-sm-6 col-md-4">
+                    <label class="text-muted small mb-1">Student ID</label>
+                    {{ form.student_id(class_='form-control form-cyber py-2') }}
+                </div>
+                <div class="col-sm-6 col-md-4">
+                    <label class="text-muted small mb-1">First Name</label>
+                    {{ form.first_name(class_='form-control form-cyber py-2') }}
+                </div>
+                <div class="col-sm-6 col-md-4">
+                    <label class="text-muted small mb-1">Last Name</label>
+                    {{ form.last_name(class_='form-control form-cyber py-2') }}
+                </div>
+                <div class="col-sm-6 col-md-4">
+                    <label class="text-muted small mb-1">Date of Birth</label>
+                    {{ form.dob(class_='form-control form-cyber py-2', type='date') }}
+                </div>
+                <div class="col-sm-6 col-md-4">
+                    <label class="text-muted small mb-1">Gender</label>
+                    {{ form.gender(class_='form-select form-cyber py-2') }}
+                </div>
+                <div class="col-sm-6 col-md-4">
+                    <label class="text-muted small mb-1">Academic Level</label>
+                    {{ form.level(class_='form-select form-cyber py-2') }}
+                </div>
+                <div class="col-sm-6 col-md-4">
+                    <label class="text-muted small mb-1">Parent/Guardian Email</label>
+                    {{ form.parent_email(class_='form-control form-cyber py-2') }}
+                </div>
+                <div class="col-sm-6 col-md-4">
+                    <label class="text-muted small mb-1">Parent/Guardian Phone</label>
+                    {{ form.parent_phone(class_='form-control form-cyber py-2', placeholder='+231 77 123 4567') }}
+                    <div class="form-text text-muted small">Used for QR report access (last 4 digits).</div>
+                </div>
+                <div class="col-sm-6 col-md-4">
+                    <label class="text-muted small mb-1">Parent Report PIN</label>
+                    {{ form.parent_report_pin(class_='form-control form-cyber py-2', placeholder='4–6 digits') }}
+                    <div class="form-text text-muted small">Leave blank to keep current PIN.</div>
+                </div>
+                <div class="col-sm-6 col-md-4">
+                    <label class="text-muted small mb-1">Student Portal Email</label>
+                    {{ form.email(class_='form-control form-cyber py-2', placeholder='student@domain.com') }}
+                </div>
+                <div class="col-sm-6 col-md-4">
+                    <label class="text-muted small mb-1">New Password (optional)</label>
+                    {{ form.password(class_='form-control form-cyber py-2', type='password', placeholder='Leave blank to keep current') }}
+                </div>
+                <div class="col-sm-6 col-md-4">
+                    <label class="text-muted small mb-1">Class</label>
+                    {{ form.klass(class_='form-select form-cyber py-2') }}
+                </div>
+                <div class="col-sm-6 col-md-4">
+                    <label class="text-muted small mb-1">Academic Year</label>
+                    {{ form.academic_year(class_='form-select form-cyber py-2') }}
+                </div>
+                <div class="col-sm-6 col-md-4">
+                    <label class="text-muted small mb-1">Photo</label>
+                    {{ form.photo(class_='form-control form-cyber py-2') }}
+                </div>
+            </div>
+
+            {% if parent_report_qr_data_uri %}
+            <div class="mb-4 p-3 rounded" style="border:1px dashed rgba(0,242,255,0.25);background:rgba(0,242,255,0.04);">
+                <div class="d-flex flex-wrap align-items-center gap-3">
+                    <img src="{{ parent_report_qr_data_uri }}" alt="Parent report QR preview" width="96" height="96" style="background:#fff;padding:6px;border-radius:8px;">
+                    <div class="flex-grow-1" style="min-width:200px;">
+                        <div class="text-cyan fw-semibold small mb-1">Parent Report QR (printed on report card)</div>
+                        <p class="text-muted small mb-1">Parents scan with a phone camera — no login. Verify with parent PIN or phone last 4 digits.</p>
+                        {% if parent_report_url %}
+                        <p class="text-muted small mb-0 font-monospace" style="word-break:break-all;">{{ parent_report_url }}</p>
+                        {% endif %}
+                        {% if not parent_report_configured %}
+                        <p class="text-warning small mb-0 mt-2"><i class="fas fa-exclamation-triangle me-1"></i>Set parent phone or report PIN above before sharing.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="fee-highlight mb-4" id="fee">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <i class="fas fa-coins text-emerald"></i>
+                    <h6 class="text-emerald mb-0 fw-bold">Registration Fee</h6>
+                </div>
+                <p class="text-muted small mb-2">
+                    Enter the registration fee for this student. Values like <strong>60,000</strong> are accepted.
+                    If a registration payment already exists for the selected academic year, it will be updated automatically.
+                </p>
+                <div class="row g-3">
+                    <div class="col-sm-6 col-md-4">
+                        <label class="text-muted small mb-1">Registration Fee Amount ($)</label>
+                        {{ form.registration_fees(class_='form-control form-cyber py-2', placeholder='60,000.00') }}
+                    </div>
+                    <div class="col-sm-6 col-md-4 d-flex align-items-end">
+                        <div class="small text-muted">
+                            Current stored fee:
+                            <span class="text-emerald font-monospace fw-bold">
+                                ${{ "{:,.2f}".format(student.registration_fees|float) if student.registration_fees else "0.00" }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2">
+                <button type="submit" class="btn btn-emerald px-4 py-2">
+                    <i class="fas fa-save me-2"></i>Save Changes
+                </button>
+                {% if return_to == 'class_roster' and student.klass_id %}
+                <a href="{{ url_for('registrar_class_students', class_id=student.klass_id) }}" class="btn btn-outline-secondary">Cancel</a>
+                {% else %}
+                <a href="{{ url_for('register_student') }}" class="btn btn-outline-secondary">Cancel</a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}

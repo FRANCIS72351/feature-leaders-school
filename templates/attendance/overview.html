@@ -1,0 +1,262 @@
+{% extends 'base.html' %}
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/grading_hub.css') }}">
+<div class="container-fluid py-4 attendance-overview-page">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+        <div>
+            <a href="{{ back_url }}" class="text-blue small text-decoration-none">
+                <i class="bi bi-arrow-left me-1"></i>{{ back_label }}
+            </a>
+            <h2 class="text-white fw-bold mt-2 mb-1">
+                <i class="bi bi-calendar3-week text-cyan me-2"></i>{{ page_title }}
+            </h2>
+            <p class="text-blue mb-0 small">
+                {% if display_year %}{{ display_year.name }}{% if viewing_archived %} <span class="badge bg-warning text-dark">Archived</span>{% endif %}{% else %}All years{% endif %}
+                {% if read_only %} · <span class="text-warning">Read-only</span>{% endif %}
+                {% if scope == 'summary' %} · <span class="text-info">Summary only — no student drill-down</span>{% endif %}
+            </p>
+        </div>
+        {% if scope != 'summary' and current_user.role|lower in ('admin', 'principal', 'registrar') %}
+        <a href="{{ url_for('export_attendance', academic_year_id=display_year.id if display_year else None) }}" class="btn btn-cyber-sm btn-sm">
+            <i class="bi bi-download me-1"></i>Export CSV
+        </a>
+        {% endif %}
+    </div>
+
+    <div class="att-card mb-4">
+        <div class="att-card-body">
+            <form method="GET" class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label class="text-blue small mb-1">Academic Year</label>
+                    <select name="academic_year_id" class="form-select form-select-sm form-cyber" onchange="this.form.submit()">
+                        {% for y in years %}
+                        <option value="{{ y.id }}" {% if display_year and y.id == display_year.id %}selected{% endif %}>
+                            {{ y.name }}{% if y.is_active %} (Active){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="text-blue small mb-1">Class</label>
+                    <select name="class_id" class="form-select form-select-sm form-cyber">
+                        <option value="">All classes</option>
+                        {% for klass in classes %}
+                        <option value="{{ klass.id }}" {% if filters.class_id == klass.id %}selected{% endif %}>{{ klass.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="text-blue small mb-1">From</label>
+                    <input type="date" name="date_from" value="{{ filters.date_from }}" class="form-control form-control-sm form-cyber">
+                </div>
+                <div class="col-md-2">
+                    <label class="text-blue small mb-1">To</label>
+                    <input type="date" name="date_to" value="{{ filters.date_to }}" class="form-control form-control-sm form-cyber">
+                </div>
+                <div class="col-md-2">
+                    <label class="text-blue small mb-1">Status</label>
+                    <select name="status" class="form-select form-select-sm form-cyber">
+                        <option value="">All statuses</option>
+                        {% for value, label in [('present', 'Present'), ('absent', 'Absent'), ('late', 'Late'), ('excused', 'Excused')] %}
+                        <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-1">
+                    <button type="submit" class="btn btn-cyber-primary btn-sm w-100">
+                        <i class="bi bi-funnel me-1"></i>Filter
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="att-kpi-card att-kpi-present">
+                <div class="att-kpi-label">Present Rate</div>
+                <div class="att-kpi-value">{% if summary_stats.present_pct is not none %}{{ summary_stats.present_pct }}%{% else %}—{% endif %}</div>
+                <div class="att-kpi-sub">{{ summary_stats.present_count }} present/late/excused</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="att-kpi-card att-kpi-absent">
+                <div class="att-kpi-label">Absent</div>
+                <div class="att-kpi-value">{{ summary_stats.absent_count }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="att-kpi-card">
+                <div class="att-kpi-label">Late</div>
+                <div class="att-kpi-value text-warning">{{ summary_stats.late_count }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="att-kpi-card att-kpi-marked">
+                <div class="att-kpi-label">Records</div>
+                <div class="att-kpi-value">{{ summary_stats.total_records }}</div>
+                <div class="att-kpi-sub">In selected range</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-5">
+            <div class="att-card h-100">
+                <div class="att-card-header">
+                    <h6 class="mb-0 text-white"><i class="bi bi-collection me-2 text-cyan"></i>Class Summary</h6>
+                </div>
+                <div class="att-card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table att-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th class="ps-3">Class</th>
+                                    <th class="text-center">Present %</th>
+                                    <th class="text-center">Absent</th>
+                                    <th class="text-center pe-3">Late</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in class_summaries %}
+                                <tr>
+                                    <td class="ps-3 text-white fw-medium">{{ row.class_name }}</td>
+                                    <td class="text-center text-success">{% if row.present_pct is not none %}{{ row.present_pct }}%{% else %}—{% endif %}</td>
+                                    <td class="text-center text-danger">{{ row.absent }}</td>
+                                    <td class="text-center text-warning pe-3">{{ row.late }}</td>
+                                </tr>
+                                {% else %}
+                                <tr><td colspan="4" class="text-center text-blue py-4">No attendance data for these filters.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-7">
+            <div class="att-card">
+                <div class="att-card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0 text-white"><i class="bi bi-calendar-day me-2 text-cyan"></i>Daily by Class</h6>
+                    <span class="text-blue small">{{ filters.date_from }} → {{ filters.date_to }}</span>
+                </div>
+                <div class="att-card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table att-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th class="ps-3">Date</th>
+                                    <th>Class</th>
+                                    <th class="text-center">Present %</th>
+                                    <th class="text-center">Absent</th>
+                                    <th class="text-center">Late</th>
+                                    <th class="text-center pe-3">Marked</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in daily_rows %}
+                                <tr>
+                                    <td class="ps-3">
+                                        {% if can_drill_down %}
+                                        <a href="{{ url_for('attendance_class_day_detail', class_id=row.class_id, date_str=row.date, academic_year_id=display_year.id if display_year else None, date_from=filters.date_from, date_to=filters.date_to, status=filters.status or '') }}"
+                                           class="text-cyan text-decoration-none">{{ row.date_label }}</a>
+                                        {% else %}
+                                        <span class="text-white">{{ row.date_label }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-white">{{ row.class_name }}</td>
+                                    <td class="text-center text-success">{% if row.present_pct is not none %}{{ row.present_pct }}%{% else %}—{% endif %}</td>
+                                    <td class="text-center text-danger">{{ row.absent }}</td>
+                                    <td class="text-center text-warning">{{ row.late }}</td>
+                                    <td class="text-center text-blue pe-3">{{ row.marked }}/{{ row.total }}</td>
+                                </tr>
+                                {% else %}
+                                <tr><td colspan="6" class="text-center text-blue py-4">No daily records match your filters.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .attendance-overview-page {
+        color: #1f2937;
+    }
+    .attendance-overview-page .text-blue { color: #0c7db8 !important; }
+    .attendance-overview-page .text-cyan { color: #0ea5e9 !important; }
+    .attendance-overview-page .text-white,
+    .attendance-overview-page h2,
+    .attendance-overview-page h6,
+    .attendance-overview-page td,
+    .attendance-overview-page span,
+    .attendance-overview-page p,
+    .attendance-overview-page div {
+        color: #1f2937;
+    }
+    .att-card, .att-kpi-card {
+        background: #ffffff;
+        border: 1px solid #dbe7f3;
+        border-radius: 12px;
+        color: #1f2937;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+    }
+    .att-card-header {
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid #e5edf6;
+        background: #f8fbff;
+    }
+    .att-card-body { padding: 1rem 1.25rem; }
+    .att-kpi-card { padding: 1rem 1.25rem; }
+    .att-kpi-label { font-size: 0.72rem; text-transform: uppercase; color: #5f7892; letter-spacing: 0.04em; }
+    .att-kpi-value { font-size: 1.75rem; font-weight: 700; color: #0f172a; }
+    .att-kpi-sub { font-size: 0.72rem; color: #5f7892; }
+    .att-kpi-present .att-kpi-value { color: #16a34a; }
+    .att-kpi-absent .att-kpi-value { color: #dc2626; }
+    .att-kpi-marked .att-kpi-value { color: #0ea5e9; }
+    .att-table th {
+        color: #0369a1;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        border-color: #dbe7f3;
+        background: #f3f8fd;
+    }
+    .att-table td {
+        border-color: #e5edf6;
+        vertical-align: middle;
+        background: #ffffff;
+    }
+    .form-cyber {
+        background: #ffffff !important;
+        border: 1px solid #cfe0ef !important;
+        color: #0f172a !important;
+    }
+    .form-cyber:focus {
+        border-color: #0ea5e9 !important;
+        box-shadow: 0 0 0 0.2rem rgba(14, 165, 233, 0.2) !important;
+    }
+    .btn-cyber-primary {
+        background: linear-gradient(135deg, #0ea5e9, #0284c7);
+        border: none;
+        color: #ffffff;
+        font-weight: 600;
+    }
+    .btn-cyber-sm {
+        background: #edf5fc;
+        border: 1px solid #cfe0ef;
+        color: #0c7db8;
+        font-size: 0.85rem;
+    }
+    .btn-cyber-sm:hover {
+        background: #dff0fb;
+        color: #0369a1;
+        border-color: #9ec4e5;
+    }
+</style>
+{% endblock %}

@@ -1,0 +1,959 @@
+{% extends 'base.html' %}
+{% block title %}Registrar Executive Management Dashboard{% endblock %}
+{% block content %}
+
+<style>
+    /* System Global Workspace Theme Variables */
+    body {
+        background-color: #0b0f19;
+        color: #e2e8f0;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    .text-cyan { color: #00f2ff !important; }
+    .text-emerald { color: #10b981 !important; }
+    .text-amber { color: #f59e0b !important; }
+    .text-rose { color: #f43f5e !important; }
+    .text-blue { color: #38bdf8 !important; }
+
+    /* Core Application Title Accentuation */
+    .glow-title {
+        font-weight: 700;
+        letter-spacing: 0.4px;
+        color: #ffffff;
+        text-shadow: none;
+    }
+
+    /* Modern Glassmorphic Container Nodes */
+    .sec-card {
+        background: #111827;
+        border: 1px solid #1f2937;
+        border-radius: 12px !important;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        transition: border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .sec-card:hover {
+        border-color: rgba(0, 242, 255, 0.25);
+    }
+
+    /* Cybernetic Custom Form Controllers */
+    .form-cyber {
+        background-color: #070a12 !important;
+        border: 1px solid #374151 !important;
+        color: #ffffff !important;
+        border-radius: 8px !important;
+        transition: border-color 0.3s ease;
+    }
+    .form-cyber:focus {
+        border-color: #00f2ff !important;
+        box-shadow: 0 0 10px rgba(0, 242, 255, 0.15) !important;
+    }
+    
+    select.form-cyber option {
+        background-color: #111827;
+        color: #fff;
+    }
+
+    /* Success Submit Button Mechanics */
+    .btn-emerald {
+        background-color: #10b981 !important;
+        color: #070a12 !important;
+        font-weight: 700;
+        transition: all 0.2s ease-in-out;
+        box-shadow: 0 0 15px rgba(16, 185, 129, 0.25);
+        border: none !important;
+    }
+    .btn-emerald:hover {
+        background-color: #059669 !important;
+        color: #ffffff !important;
+        box-shadow: 0 0 25px rgba(16, 185, 129, 0.45) !important;
+        transform: translateY(-1px);
+    }
+
+    /* Sleek Polished Datatables */
+    .table-cyber { color: #e2e8f0 !important; font-size: 0.9rem; }
+    .table-cyber th {
+        background-color: #1f2937 !important;
+        color: #00f2ff !important;
+        border-color: #374151 !important;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        padding: 12px;
+    }
+    .table-cyber td { background-color: transparent !important; border-color: #1f2937 !important; padding: 14px 12px; }
+    .table-cyber tbody tr { transition: background-color 0.2s ease; }
+    .table-cyber tbody tr:hover { background-color: rgba(255, 255, 255, 0.02) !important; }
+
+    /* Hardware Accelerated Animation Framework */
+    .fade-glide-in {
+        opacity: 0;
+        transform: translateY(15px);
+        animation: dashboardFadeGlide 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .delay-1 { animation-delay: 0.1s; }
+    .delay-2 { animation-delay: 0.2s; }
+    .delay-3 { animation-delay: 0.3s; }
+
+    @keyframes dashboardFadeGlide { to { opacity: 1; transform: translateY(0); } }
+
+    .form-cyber:read-only,
+    .form-cyber.field-locked {
+        background: rgba(30, 41, 59, 0.6) !important;
+        color: #94a3b8 !important;
+        cursor: not-allowed;
+        border-color: #374151 !important;
+    }
+    .lookup-banner {
+        display: none;
+        border-radius: 10px;
+        padding: 0.75rem 1rem;
+        margin-bottom: 1rem;
+        font-size: 0.85rem;
+        border: 1px solid transparent;
+        min-height: 2.5rem;
+    }
+    .lookup-banner.show { display: block; }
+    .lookup-banner.returning {
+        background: rgba(16, 185, 129, 0.1);
+        border-color: rgba(16, 185, 129, 0.3);
+        color: #6ee7b7;
+    }
+    .lookup-banner.new-student {
+        background: rgba(56, 189, 248, 0.08);
+        border-color: rgba(56, 189, 248, 0.25);
+        color: #7dd3fc;
+    }
+    .lookup-banner.error {
+        background: rgba(244, 63, 94, 0.1);
+        border-color: rgba(244, 63, 94, 0.3);
+        color: #fda4af;
+    }
+    .lookup-spinner { display: none; color: #00f2ff; font-size: 0.8rem; }
+    .lookup-spinner.show { display: inline-block; }
+    .enroll-step-label {
+        color: #00f2ff;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 0.35rem;
+    }
+
+    /* Enrollment wizard */
+    .enroll-wizard-steps {
+        display: flex;
+        gap: 0;
+        margin-bottom: 1.25rem;
+        border-radius: 10px;
+        overflow: hidden;
+        border: 1px solid #374151;
+    }
+    .enroll-wizard-step {
+        flex: 1;
+        padding: 0.65rem 1rem;
+        text-align: center;
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        background: #0a0e17;
+        color: #64748b;
+        border-right: 1px solid #374151;
+        transition: all 0.25s ease;
+    }
+    .enroll-wizard-step:last-child { border-right: none; }
+    .enroll-wizard-step.active {
+        background: rgba(0, 242, 255, 0.08);
+        color: #00f2ff;
+    }
+    .enroll-wizard-step.done {
+        background: rgba(16, 185, 129, 0.08);
+        color: #10b981;
+    }
+    .enroll-wizard-step .step-num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.25rem;
+        height: 1.25rem;
+        border-radius: 50%;
+        font-size: 0.65rem;
+        margin-right: 0.35rem;
+        border: 1px solid currentColor;
+    }
+    .enroll-type-badge {
+        display: none;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.6rem 1rem;
+        border-radius: 10px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+    }
+    .enroll-type-badge.show { display: flex; }
+    .enroll-type-badge.returning {
+        background: rgba(16, 185, 129, 0.12);
+        border: 1px solid rgba(16, 185, 129, 0.35);
+        color: #6ee7b7;
+    }
+    .enroll-type-badge.new-student {
+        background: rgba(56, 189, 248, 0.1);
+        border: 1px solid rgba(56, 189, 248, 0.3);
+        color: #7dd3fc;
+    }
+    .enroll-section {
+        border: 1px solid #1f2937;
+        border-radius: 10px;
+        padding: 1.25rem;
+        margin-bottom: 1rem;
+        background: rgba(255, 255, 255, 0.01);
+    }
+    .enroll-section-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        padding-bottom: 0.65rem;
+        border-bottom: 1px solid #1f2937;
+    }
+    .enroll-section-header h6 {
+        margin: 0;
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #ffffff;
+        letter-spacing: 0.03em;
+    }
+    .enroll-section-header .section-hint {
+        font-size: 0.72rem;
+        color: #38bdf8;
+        margin-left: auto;
+    }
+    .enroll-section.enrollment-focus {
+        border-color: rgba(0, 242, 255, 0.25);
+        background: rgba(0, 242, 255, 0.03);
+    }
+    .field-locked-wrap {
+        position: relative;
+    }
+    .field-locked-wrap .lock-indicator {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #64748b;
+        font-size: 0.75rem;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+    .field-locked-wrap.is-locked .lock-indicator { opacity: 1; }
+    .field-locked-wrap.is-locked .form-cyber {
+        padding-right: 2rem;
+    }
+    .enroll-step2-panel {
+        display: none;
+    }
+    .enroll-step2-panel.visible {
+        display: block;
+        animation: dashboardFadeGlide 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .enroll-staff-guide {
+        font-size: 0.78rem;
+        color: #38bdf8;
+        line-height: 1.5;
+        padding: 0.75rem 1rem;
+        background: rgba(56, 189, 248, 0.05);
+        border: 1px solid rgba(56, 189, 248, 0.15);
+        border-radius: 8px;
+        margin-bottom: 1rem;
+    }
+    .enroll-staff-guide ol {
+        margin: 0.35rem 0 0;
+        padding-left: 1.15rem;
+    }
+    .enroll-staff-guide li { margin-bottom: 0.2rem; }
+    .enroll-policy-banner {
+        font-size: 0.78rem;
+        line-height: 1.55;
+        padding: 0.75rem 1rem;
+        background: rgba(16, 185, 129, 0.06);
+        border: 1px solid rgba(16, 185, 129, 0.2);
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        color: #94a3b8;
+    }
+    .enroll-policy-banner strong { color: #6ee7b7; }
+    .student-id-feedback {
+        display: none;
+        font-size: 0.75rem;
+        margin-top: 0.35rem;
+        line-height: 1.4;
+    }
+    .student-id-feedback.show { display: block; }
+    .student-id-feedback.is-error { color: #fda4af; }
+    .student-id-feedback.is-ok { color: #6ee7b7; }
+    .student-id-feedback.is-info { color: #7dd3fc; }
+    .student-id-feedback .id-check-hint {
+        display: block;
+        margin-top: 0.25rem;
+        color: #38bdf8;
+    }
+    .dashboard-stat-card {
+        min-height: 150px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+    .dashboard-card-icon {
+        font-size: 1.8rem;
+        opacity: 0.82;
+    }
+    .btn-outline-light {
+        color: #ffffff !important;
+        border-color: rgba(255,255,255,0.18) !important;
+    }
+    .btn-outline-light:hover {
+        background: rgba(255,255,255,0.08) !important;
+        border-color: rgba(255,255,255,0.28) !important;
+        color: #ffffff !important;
+    }
+    .highlight-queue {
+        animation: pulse-highlight 1.8s ease-in-out;
+        box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
+        border-color: rgba(245, 158, 11, 0.35) !important;
+    }
+    @keyframes pulse-highlight {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-4px); }
+    }
+    .btn-lookup {
+        background: rgba(0, 242, 255, 0.12) !important;
+        border: 1px solid rgba(0, 242, 255, 0.35) !important;
+        color: #00f2ff !important;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+    .btn-lookup:hover:not(:disabled) {
+        background: rgba(0, 242, 255, 0.22) !important;
+        color: #ffffff !important;
+    }
+    .btn-lookup:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    /* System Theme Overrides for Registrar Terminal */
+    .registrar-terminal label {
+        color: #cbd5e1 !important;
+    }
+    .registrar-terminal .form-cyber {
+        background-color: #070a12 !important;
+        border-color: #374151 !important;
+        color: #ffffff !important;
+    }
+    .registrar-terminal .form-cyber::placeholder {
+        color: #64748b !important;
+    }
+</style>
+
+<div class="container-fluid py-4 px-md-4 registrar-terminal pro-dashboard">
+    {% set year_param = {'academic_year_id': display_year.id} if display_year else {} %}
+    
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4 pb-3 border-bottom border-secondary border-opacity-10 fade-glide-in">
+        <div>
+            <h2 class="glow-title mb-1"><i class="fas fa-folder-open text-cyan me-2"></i>Registrar Dashboard</h2>
+            <p class="text-muted small mb-2">Manage student registration, class assignments, and academic year operations from one unified workspace.</p>
+            <div class="d-flex flex-wrap gap-2">
+                <a href="{{ url_for('register_student', academic_year_id=display_year.id if display_year else None) }}" class="btn btn-sm btn-emerald py-1 px-3">Register Student</a>
+                <a href="#student-enrollment" class="btn btn-sm btn-outline-light py-1 px-3">Enrollment Form</a>
+                <a href="{{ url_for('registrar_class_students', class_id=(classes|first).id, **year_param) if classes|length else url_for('dashboard', **year_param) }}" class="btn btn-sm btn-outline-secondary py-1 px-3">View Class Folders</a>
+            </div>
+        </div>
+        <span class="badge bg-dark border border-secondary border-opacity-20 text-white-50 px-3 py-2 mt-3 mt-md-0 rounded-3">
+            <i class="fas fa-server text-emerald me-2"></i>Ledger Sync: Active
+        </span>
+    </div>
+
+    <div class="row g-3 mb-4 fade-glide-in delay-1">
+        <div class="col-sm-6 col-xl-3">
+            <div class="card sec-card p-3 h-100 dashboard-stat-card">
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <div>
+                        <div class="text-white-50 small">Current Enrollment</div>
+                        <h3 class="text-cyan mb-0">{{ counts.students if counts else 0 }}</h3>
+                    </div>
+                    <i class="fas fa-user-check dashboard-card-icon text-emerald"></i>
+                </div>
+                <p class="text-muted small mb-3">Students registered for {{ display_year.name if display_year else 'the selected year' }}.</p>
+                <a href="{{ url_for('dashboard', view='active', **year_param) }}" class="btn btn-sm btn-outline-light">View roster</a>
+            </div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+            <div class="card sec-card p-3 h-100 dashboard-stat-card" id="reRegStatCard">
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <div>
+                        <div class="text-white-50 small">Pending Re-registration</div>
+                        <h3 class="text-amber mb-0">{{ counts.pending_registration if counts else 0 }}</h3>
+                    </div>
+                    <i class="fas fa-hourglass-half dashboard-card-icon text-amber"></i>
+                </div>
+                <p class="text-muted small mb-3">Students awaiting confirmation for the academic year.</p>
+                <a href="#student-enrollment" class="btn btn-sm btn-outline-warning" id="jumpReRegistrationQueue">Process queue</a>
+            </div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+            <div class="card sec-card p-3 h-100 dashboard-stat-card">
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <div>
+                        <div class="text-white-50 small">New Intakes</div>
+                        <h3 class="text-emerald mb-0">{{ counts.new_students if counts else 0 }}</h3>
+                    </div>
+                    <i class="fas fa-user-plus dashboard-card-icon text-cyan"></i>
+                </div>
+                <p class="text-muted small mb-3">New student intake for this year.</p>
+                <a href="{{ url_for('register_student', academic_year_id=display_year.id if display_year else None) }}" class="btn btn-sm btn-outline-light">Add student</a>
+            </div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+            <div class="card sec-card p-3 h-100 dashboard-stat-card">
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <div>
+                        <div class="text-white-50 small">Alumni Ledger</div>
+                        <h3 class="text-cyan mb-0">{{ counts.alumni if counts else 0 }}</h3>
+                    </div>
+                    <i class="fas fa-graduation-cap dashboard-card-icon text-blue"></i>
+                </div>
+                <p class="text-muted small mb-3">Graduates recorded in the selected academic session.</p>
+                <a href="{{ url_for('dashboard', view='alumni', **year_param) }}" class="btn btn-sm btn-outline-light">View alumni</a>
+            </div>
+        </div>
+    </div>
+
+    {% if viewing_archived %}
+    <div class="alert bg-dark border border-warning border-opacity-40 text-white mb-4 shadow-sm rounded-3 fade-glide-in delay-1 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div class="d-flex align-items-center">
+            <div class="p-2 bg-warning bg-opacity-10 rounded-3 me-3 text-warning border border-warning border-opacity-20">
+                <i class="fas fa-archive fa-fw fa-lg"></i>
+            </div>
+            <div>
+                <span class="text-white-50 small d-block uppercase tracking-wider" style="font-size:0.7rem;">Historical Academic Session</span>
+                <strong class="text-amber">Viewing: {{ display_year.name }} (Archived)</strong>
+                <span class="text-muted small ms-2">Records scoped to this year only</span>
+            </div>
+        </div>
+        {% if active_year %}
+        <a href="{{ url_for('dashboard', academic_year_id=active_year.id) }}" class="btn btn-sm btn-outline-success">
+            <i class="fas fa-arrow-left me-1"></i> Return to Active Year ({{ active_year.name }})
+        </a>
+        {% endif %}
+    </div>
+    {% elif display_year and display_year.is_active %}
+    <div class="alert bg-dark border border-cyan border-opacity-25 text-white mb-4 shadow-sm rounded-3 fade-glide-in delay-1 d-flex align-items-center">
+        <div class="p-2 bg-cyan bg-opacity-10 rounded-3 me-3 text-cyan border border-cyan border-opacity-10">
+            <i class="fas fa-calendar-check fa-fw fa-lg"></i>
+        </div>
+        <div>
+            <span class="text-white-50 small d-block uppercase tracking-wider" style="font-size:0.7rem;">Active System Academic Term Session</span>
+            <strong class="text-cyan">Viewing: {{ display_year.name }} (Active)</strong>
+            <span class="badge bg-cyan bg-opacity-10 text-cyan small border border-cyan border-opacity-10 ms-2">Active</span>
+            {% if counts and counts.students is defined %}
+            <span class="text-emerald small ms-2"><i class="fas fa-user-check me-1"></i>{{ counts.students }} student{{ 's' if counts.students != 1 else '' }} enrolled this year</span>
+            {% if counts.pending_registration %}
+            <span class="text-amber small ms-2"><i class="fas fa-hourglass-half me-1"></i>{{ counts.pending_registration }} awaiting re-registration</span>
+            {% endif %}
+            {% endif %}
+            {% if display_year.start_date %}
+            <span class="text-muted ms-2">({{ display_year.start_date }}{% if display_year.end_date %} to {{ display_year.end_date }}{% endif %})</span>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if year_lifecycle_status %}
+    <div class="card sec-card p-3 mb-4 fade-glide-in delay-1">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <h6 class="text-white font-weight-bold mb-0"><i class="fas fa-list-check text-emerald me-2"></i>Academic Year Lifecycle</h6>
+            <a href="{{ url_for('academic_years') }}" class="btn btn-sm btn-outline-secondary text-white">Manage Years</a>
+        </div>
+        <ul class="list-unstyled mb-0 small">
+            {% for item in year_lifecycle_status %}
+            <li class="d-flex align-items-start gap-2 py-1 border-bottom border-secondary border-opacity-10">
+                {% if item.ok is sameas true %}
+                <i class="fas fa-check-circle text-emerald mt-1"></i>
+                {% elif item.ok is sameas false %}
+                <i class="fas fa-exclamation-circle text-rose mt-1"></i>
+                {% else %}
+                <i class="fas fa-circle text-amber mt-1" style="font-size:0.5rem;margin-top:0.45rem;"></i>
+                {% endif %}
+                <span><strong class="text-white">{{ item.label }}</strong>{% if item.hint %} — <span class="text-blue">{{ item.hint }}</span>{% endif %}</span>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+    {% elif display_year %}
+    <div class="alert bg-dark border border-secondary border-opacity-25 text-white mb-4 shadow-sm rounded-3 fade-glide-in delay-1 d-flex align-items-center">
+        <div class="p-2 bg-secondary bg-opacity-10 rounded-3 me-3 text-white-50 border border-secondary border-opacity-10">
+            <i class="fas fa-calendar fa-fw fa-lg"></i>
+        </div>
+        <div>
+            <span class="text-white-50 small d-block uppercase tracking-wider" style="font-size:0.7rem;">Academic Session</span>
+            <strong class="text-cyan">Viewing: {{ display_year.name }}</strong>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="row g-4">
+        
+        <!-- Left Sidebar Column -->
+        <div class="col-xl-4 d-flex flex-column gap-4 fade-glide-in delay-1">
+            
+            <div class="card sec-card p-4">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="position-relative" style="width: 72px; height: 72px; flex-shrink: 0;">
+                        <img src="{{ current_user.photo_url if current_user.photo_url else url_for('static', filename='images/default-avatar.png') }}" class="w-100 h-100 object-fit-cover rounded-3 border border-secondary border-opacity-20" alt="User Avatar">
+                        <span class="position-absolute bottom-0 end-0 bg-emerald border border-dark rounded-circle p-1.5" title="Operator Status: Active"></span>
+                    </div>
+                    <div>
+                        <h5 class="text-white mb-0 font-weight-bold">{{ current_user.full_name }}</h5>
+                        <span class="badge bg-cyan bg-opacity-10 text-cyan small border border-cyan border-opacity-10 mt-1 px-2.5 py-1">{{ current_user.role|title }}</span>
+                    </div>
+                </div>
+                <hr class="border-secondary opacity-10 my-3">
+                <div class="small text-blue d-flex flex-column gap-2">
+                    <div><i class="fas fa-envelope text-blue me-2 fa-fw"></i>{{ current_user.email }}</div>
+                    {% if current_user.telephone_number %}
+                        <div><i class="fas fa-phone text-blue me-2 fa-fw"></i>{{ current_user.telephone_number }}</div>
+                    {% endif %}
+                    {% if current_user.home_address %}
+                        <div><i class="fas fa-map-marker-alt text-blue me-2 fa-fw"></i>{{ current_user.home_address }}</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card sec-card p-4">
+                <h6 class="text-white font-weight-bold mb-2"><i class="fas fa-door-open text-amber me-2"></i>Admissions Publishing</h6>
+                <p class="text-muted small mb-3">Upload entrance exam notices and academic year information sheets for parents and students.</p>
+                <div class="d-flex flex-column gap-2">
+                    <a href="{{ url_for('school_media_create') }}" class="btn btn-sm btn-warning text-dark fw-semibold">
+                        <i class="fas fa-upload me-1"></i>Post Entrance / Info Sheet
+                    </a>
+                    <a href="{{ url_for('school_media_manage') }}" class="btn btn-sm btn-outline-secondary text-white">
+                        <i class="fas fa-folder-open me-1"></i>Manage Registrar Documents
+                    </a>
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-12 col-sm-4 col-xl-12">
+                    <div class="card bg-dark border border-secondary border-opacity-10 p-3 rounded-3 shadow-sm">
+                        <span class="text-white-50 small d-block mb-1">Total Enrolled Registry</span>
+                        <h4 class="text-cyan font-weight-bold mb-0">{{ counts.students if counts else 0 }} <span class="small text-muted fw-normal fs-6">Nodes</span></h4>
+                    </div>
+                </div>
+                <div class="col-12 col-sm-4 col-xl-12">
+                    <div class="card bg-dark border border-secondary border-opacity-10 p-3 rounded-3 shadow-sm">
+                        <span class="text-white-50 small d-block mb-1">New Intakes Term Counter</span>
+                        <h4 class="text-emerald font-weight-bold mb-0">{{ counts.new_students if counts else 0 }} <span class="small text-muted fw-normal fs-6">Nodes</span></h4>
+                    </div>
+                </div>
+                <div class="col-12 col-sm-4 col-xl-12">
+                    <div class="card bg-dark border border-secondary border-opacity-10 p-3 rounded-3 shadow-sm">
+                        <span class="text-white-50 small d-block mb-1">Alumni Registry</span>
+                        <h4 class="text-emerald font-weight-bold mb-0">{{ counts.alumni if counts else 0 }} <span class="small text-muted fw-normal fs-6">Graduates</span></h4>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card sec-card p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="text-white font-weight-bold mb-0"><i class="fas fa-folder-tree text-cyan me-2"></i>Class Folders</h6>
+                    <div class="d-flex gap-2 align-items-center">
+                        <a href="{{ url_for('registrar_attendance', academic_year_id=display_year.id if display_year else None) }}" class="btn btn-sm btn-outline-info text-cyan py-1 px-2" style="font-size:0.72rem;">
+                            <i class="fas fa-calendar-check me-1"></i>Attendance Lookup
+                        </a>
+                        <form method="get" class="d-flex gap-1">
+                            {% if display_year %}<input type="hidden" name="academic_year_id" value="{{ display_year.id }}">{% endif %}
+                            <input type="text" name="search_class" class="form-control form-cyber form-control-sm py-1" style="font-size:0.75rem;" placeholder="Search..." value="{{ search_class or '' }}" />
+                            <button type="submit" class="btn btn-sm btn-primary px-2"><i class="fas fa-magnifying-glass"></i></button>
+                            {% if search_class %}
+                                <a href="{{ url_for('dashboard', **year_param) }}" class="btn btn-sm btn-secondary px-2"><i class="fas fa-times"></i></a>
+                            {% endif %}
+                        </form>
+                    </div>
+                </div>
+                
+                <div class="d-flex flex-column gap-2" style="max-height: 380px; overflow-y: auto; padding-right:4px;">
+                    {% if classes %}
+                        {% for klass in classes %}
+                        <div class="p-3 border border-secondary border-opacity-10 rounded-3" style="background: rgba(255,255,255,0.015);">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div class="fw-bold text-white small">{{ klass.name }}</div>
+                                <span class="badge bg-emerald bg-opacity-10 text-emerald small border border-emerald border-opacity-10" style="font-size:0.7rem;">{{ klass.student_count if klass.student_count else 0 }} Students</span>
+                            </div>
+                            <div class="text-muted small mb-3" style="font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ klass.description or 'No description available' }}</div>
+                            <a href="{{ url_for('registrar_class_students', class_id=klass.id, **year_param) }}" class="btn btn-sm btn-outline-light w-100 py-2" style="font-size:0.75rem;"><i class="fas fa-eye me-1"></i>View Class Folder</a>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="text-center py-4 text-muted small"><i class="fas fa-inbox opacity-25 me-1.5"></i>No matching class records mapped.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Enrollment Wizard & Student Register Section -->
+        <div class="col-xl-8 d-flex flex-column gap-4 fade-glide-in delay-2">
+            
+            <div class="card sec-card p-4" id="student-enrollment">
+                <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2 mb-3">
+                    <div>
+                        <h5 class="text-emerald font-weight-bold mb-0"><i class="fas fa-user-plus me-2"></i>Register Student</h5>
+                        <p class="text-muted small mb-0">Official registrar enrollment — search by email or student ID first, then complete registration details.</p>
+                    </div>
+                </div>
+
+                <div class="enroll-wizard-steps" aria-label="Registration progress">
+                    <div class="enroll-wizard-step active" id="wizardStep1" data-step="1">
+                        <span class="step-num">1</span> Lookup Student
+                    </div>
+                    <div class="enroll-wizard-step" id="wizardStep2" data-step="2">
+                        <span class="step-num">2</span> Confirm &amp; Enroll
+                    </div>
+                </div>
+
+                <div class="enroll-staff-guide mb-3">
+                    <i class="fas fa-info-circle me-1 text-cyan"></i> <strong>Registrar Quick Start:</strong>
+                    <ol class="mb-0">
+                        <li>Enter a Student ID or Email below and click <strong>Lookup</strong>.</li>
+                        <li>If returning, existing student information will auto-populate to prevent duplicates.</li>
+                        <li>Assign class, set enrollment status, attach registration fee proof, and click <strong>Submit Registration</strong>.</li>
+                    </ol>
+                </div>
+
+                <!-- Registration Main Form -->
+                <form id="enrollmentForm" action="{{ url_for('register_student') }}" method="POST" enctype="multipart/form-data">
+                    {% if display_year %}
+                    <input type="hidden" name="academic_year_id" value="{{ display_year.id }}">
+                    {% endif %}
+                    <input type="hidden" name="is_returning_student" id="is_returning_student" value="false">
+
+                    <!-- STEP 1: LOOKUP PANEL -->
+                    <div class="enroll-section" id="step1Panel">
+                        <div class="enroll-section-header">
+                            <h6 class="text-white"><i class="fas fa-search text-cyan me-2"></i>Step 1: Student Lookup</h6>
+                            <span class="section-hint">Database Query</span>
+                        </div>
+
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label small text-muted">Student ID (Optional)</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control form-cyber" id="lookup_student_id" name="student_id_lookup" placeholder="e.g. STU-2026-001">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small text-muted">Student Email Address <span class="text-rose">*</span></label>
+                                <div class="input-group">
+                                    <input type="email" class="form-control form-cyber" id="lookup_email" name="email" placeholder="student@school.edu" required>
+                                    <button class="btn btn-lookup" type="button" id="btnLookupStudent">
+                                        <i class="fas fa-magnifying-glass me-1"></i> Lookup
+                                        <span class="spinner-border spinner-border-sm lookup-spinner ms-1" id="lookupSpinner" role="status"></span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="student-id-feedback" id="studentIdFeedback"></div>
+                        <div class="lookup-banner mt-3" id="lookupBanner"></div>
+                    </div>
+
+                    <!-- STEP 2: DETAILS & SUBMISSION PANEL -->
+                    <div class="enroll-step2-panel" id="step2Panel">
+                        
+                        <div class="enroll-type-badge" id="enrollTypeBadge">
+                            <i class="fas fa-user-check"></i> <span id="enrollTypeBadgeText">Student Selected</span>
+                        </div>
+
+                        <!-- Personal Data Section -->
+                        <div class="enroll-section">
+                            <div class="enroll-section-header">
+                                <h6><i class="fas fa-id-card text-emerald me-2"></i>Personal Details</h6>
+                                <span class="section-hint" id="personalDetailsHint">Editable for New Students</span>
+                            </div>
+                            
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label small text-muted">First Name <span class="text-rose">*</span></label>
+                                    <div class="field-locked-wrap" id="wrap_first_name">
+                                        <input type="text" class="form-control form-cyber" id="first_name" name="first_name" required>
+                                        <i class="fas fa-lock lock-indicator" title="Locked from existing record"></i>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small text-muted">Last Name <span class="text-rose">*</span></label>
+                                    <div class="field-locked-wrap" id="wrap_last_name">
+                                        <input type="text" class="form-control form-cyber" id="last_name" name="last_name" required>
+                                        <i class="fas fa-lock lock-indicator" title="Locked from existing record"></i>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small text-muted">Gender</label>
+                                    <select class="form-select form-cyber" id="gender" name="gender">
+                                        <option value="">Select Gender...</option>
+                                        <option value="Male">Male</option>
+                                        <option value="Female">Female</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small text-muted">Telephone Number</label>
+                                    <input type="tel" class="form-control form-cyber" id="telephone_number" name="telephone_number" placeholder="+1 (555) 000-0000">
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small text-muted">Home Address</label>
+                                    <input type="text" class="form-control form-cyber" id="home_address" name="home_address" placeholder="123 Academic Way, Suite 100">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Class & Enrollment Options -->
+                        <div class="enroll-section enrollment-focus">
+                            <div class="enroll-section-header">
+                                <h6><i class="fas fa-graduation-cap text-cyan me-2"></i>Class Assignment &amp; Session</h6>
+                                <span class="section-hint">Target Term Configuration</span>
+                            </div>
+
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label small text-muted">Target Class / Grade Level <span class="text-rose">*</span></label>
+                                    <select class="form-select form-cyber" id="class_id" name="class_id" required>
+                                        <option value="">Choose Class Folder...</option>
+                                        {% for klass in classes %}
+                                        <option value="{{ klass.id }}">{{ klass.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small text-muted">Registration Status <span class="text-rose">*</span></label>
+                                    <select class="form-select form-cyber" id="enrollment_status" name="enrollment_status" required>
+                                        <option value="Active" selected>Active (Enrolled)</option>
+                                        <option value="Pending">Pending Approval</option>
+                                        <option value="Conditional">Conditional Intake</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Parent / Guardian Information -->
+                        <div class="enroll-section">
+                            <div class="enroll-section-header">
+                                <h6><i class="fas fa-users text-amber me-2"></i>Parent / Guardian Contacts</h6>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label small text-muted">Parent / Guardian Full Name</label>
+                                    <input type="text" class="form-control form-cyber" id="guardian_name" name="guardian_name">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small text-muted">Parent Contact Telephone</label>
+                                    <input type="tel" class="form-control form-cyber" id="guardian_phone" name="guardian_phone">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Payment & Proof Attachment -->
+                        <div class="enroll-section">
+                            <div class="enroll-section-header">
+                                <h6><i class="fas fa-file-invoice-dollar text-emerald me-2"></i>Registration Ledger Deposit Proof</h6>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label small text-muted">Payment Receipt Attachment (PDF / PNG / JPG)</label>
+                                    <input type="file" class="form-control form-cyber" id="payment_receipt" name="payment_receipt" accept="image/*,.pdf">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small text-muted">Receipt Reference Number</label>
+                                    <input type="text" class="form-control form-cyber" id="receipt_reference" name="receipt_reference" placeholder="e.g. REC-99201">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="enroll-policy-banner">
+                            <i class="fas fa-shield-alt text-emerald me-1"></i>
+                            <strong>Registrar Execution Policy:</strong> Submitting this form updates the central student registry for academic term <strong>{{ display_year.name if display_year else 'Active Year' }}</strong>.
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center mt-4">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnResetWizard">
+                                <i class="fas fa-undo me-1"></i> Reset / New Search
+                            </button>
+                            <button type="submit" class="btn btn-emerald py-2 px-4">
+                                <i class="fas fa-check-circle me-1"></i> Submit Registration
+                            </button>
+                        </div>
+
+                    </div>
+                </form>
+
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const btnLookup = document.getElementById('btnLookupStudent');
+    const inputEmail = document.getElementById('lookup_email');
+    const inputStudentId = document.getElementById('lookup_student_id');
+    const spinner = document.getElementById('lookupSpinner');
+    const lookupBanner = document.getElementById('lookupBanner');
+    const feedbackId = document.getElementById('studentIdFeedback');
+    
+    const step1Panel = document.getElementById('step1Panel');
+    const step2Panel = document.getElementById('step2Panel');
+    const wizardStep1 = document.getElementById('wizardStep1');
+    const wizardStep2 = document.getElementById('wizardStep2');
+    const btnReset = document.getElementById('btnResetWizard');
+
+    const inputFirstName = document.getElementById('first_name');
+    const inputLastName = document.getElementById('last_name');
+    const inputGender = document.getElementById('gender');
+    const inputPhone = document.getElementById('telephone_number');
+    const inputAddress = document.getElementById('home_address');
+    const isReturningInput = document.getElementById('is_returning_student');
+
+    const badgeType = document.getElementById('enrollTypeBadge');
+    const badgeTypeText = document.getElementById('enrollTypeBadgeText');
+
+    // Smooth Scroll to Queue
+    const jumpQueueBtn = document.getElementById('jumpReRegistrationQueue');
+    if (jumpQueueBtn) {
+        jumpQueueBtn.addEventListener('click', function(e) {
+            const statCard = document.getElementById('reRegStatCard');
+            if (statCard) {
+                statCard.classList.add('highlight-queue');
+                setTimeout(() => statCard.classList.remove('highlight-queue'), 2000);
+            }
+        });
+    }
+
+    // Lookup Execution
+    btnLookup.addEventListener('click', function () {
+        const emailVal = inputEmail.value.trim();
+        const studentIdVal = inputStudentId.value.trim();
+
+        if (!emailVal && !studentIdVal) {
+            showBanner('Please enter an email or student ID to lookup.', 'error');
+            return;
+        }
+
+        spinner.classList.add('show');
+        btnLookup.disabled = true;
+
+        // AJAX Query endpoint
+        fetch(`/api/student/lookup?email=${encodeURIComponent(emailVal)}&student_id=${encodeURIComponent(studentIdVal)}`)
+            .then(res => res.json())
+            .then(data => {
+                spinner.classList.remove('show');
+                btnLookup.disabled = false;
+
+                if (data.found) {
+                    // Populate returning student details
+                    inputFirstName.value = data.student.first_name || '';
+                    inputLastName.value = data.student.last_name || '';
+                    if (data.student.gender) inputGender.value = data.student.gender;
+                    if (data.student.telephone_number) inputPhone.value = data.student.telephone_number;
+                    if (data.student.home_address) inputAddress.value = data.student.home_address;
+
+                    // Lock fixed attributes
+                    lockField('first_name');
+                    lockField('last_name');
+
+                    isReturningInput.value = "true";
+
+                    showBanner(`<strong>Returning Student Found:</strong> ${data.student.full_name} (${data.student.student_id})`, 'returning');
+                    setBadge('returning', `Returning Student: ${data.student.full_name}`);
+                } else {
+                    // Reset lock states for new student
+                    unlockField('first_name');
+                    unlockField('last_name');
+                    isReturningInput.value = "false";
+
+                    showBanner('<strong>New Student Intake:</strong> No existing record found. Please complete personal information.', 'new-student');
+                    setBadge('new-student', 'New Student Intake');
+                }
+
+                // Proceed to Step 2
+                wizardStep1.classList.remove('active');
+                wizardStep1.classList.add('done');
+                wizardStep2.classList.add('active');
+                step2Panel.classList.add('visible');
+            })
+            .catch(err => {
+                console.error('Lookup Error:', err);
+                spinner.classList.remove('show');
+                btnLookup.disabled = false;
+
+                // Fallback for demo/offline: treat as new student
+                unlockField('first_name');
+                unlockField('last_name');
+                isReturningInput.value = "false";
+
+                showBanner('Ready to register. Complete details below.', 'new-student');
+                setBadge('new-student', 'New Student Registration');
+
+                wizardStep1.classList.remove('active');
+                wizardStep1.classList.add('done');
+                wizardStep2.classList.add('active');
+                step2Panel.classList.add('visible');
+            });
+    });
+
+    // Reset Wizard Action
+    if (btnReset) {
+        btnReset.addEventListener('click', function () {
+            document.getElementById('enrollmentForm').reset();
+            unlockField('first_name');
+            unlockField('last_name');
+            isReturningInput.value = "false";
+
+            step2Panel.classList.remove('visible');
+            lookupBanner.classList.remove('show', 'returning', 'new-student', 'error');
+            badgeType.classList.remove('show', 'returning', 'new-student');
+
+            wizardStep2.classList.remove('active');
+            wizardStep1.classList.remove('done');
+            wizardStep1.classList.add('active');
+        });
+    }
+
+    function lockField(fieldId) {
+        const field = document.getElementById(fieldId);
+        const wrap = document.getElementById(`wrap_${fieldId}`);
+        if (field) field.readOnly = true;
+        if (wrap) wrap.classList.add('is-locked');
+    }
+
+    function unlockField(fieldId) {
+        const field = document.getElementById(fieldId);
+        const wrap = document.getElementById(`wrap_${fieldId}`);
+        if (field) field.readOnly = false;
+        if (wrap) wrap.classList.remove('is-locked');
+    }
+
+    function showBanner(message, type) {
+        lookupBanner.innerHTML = message;
+        lookupBanner.className = `lookup-banner show ${type}`;
+    }
+
+    function setBadge(type, text) {
+        badgeTypeText.textContent = text;
+        badgeType.className = `enroll-type-badge show ${type}`;
+    }
+});
+</script>
+
+{% endblock %}

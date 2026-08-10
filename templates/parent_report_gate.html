@@ -1,0 +1,164 @@
+{% extends 'base.html' %}
+{% block title %}Parent Report Access{% endblock %}
+{% block content %}
+<style>
+    .parent-gate-wrap { max-width: 520px; margin: 2.5rem auto; padding: 0 1rem; }
+    .parent-gate-card {
+        background: linear-gradient(145deg, #111827 0%, #0b0f19 100%);
+        border: 1px solid rgba(0, 242, 255, 0.22);
+        border-radius: 16px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+        overflow: hidden;
+    }
+    .parent-gate-header {
+        padding: 1.25rem 1.5rem;
+        border-bottom: 1px solid rgba(0, 242, 255, 0.12);
+        background: rgba(0, 242, 255, 0.06);
+    }
+    .verify-tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+    .verify-tab {
+        flex: 1;
+        text-align: center;
+        padding: 0.65rem 0.5rem;
+        border-radius: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        background: rgba(255, 255, 255, 0.03);
+        color: #94a3b8;
+        font-size: 0.82rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .verify-tab.active {
+        border-color: rgba(0, 242, 255, 0.45);
+        background: rgba(0, 242, 255, 0.1);
+        color: #00f2ff;
+    }
+    .verify-panel { display: none; }
+    .verify-panel.active { display: block; }
+    .parent-gate-input {
+        background: #070a12 !important;
+        border: 1px solid #374151 !important;
+        color: #fff !important;
+        letter-spacing: 0.15em;
+        text-align: center;
+        font-size: 1.25rem;
+        font-weight: 700;
+    }
+</style>
+
+<div class="parent-gate-wrap">
+    <div class="parent-gate-card">
+        <div class="parent-gate-header">
+            <h1 class="h5 text-white mb-1"><i class="fas fa-user-shield text-cyan me-2"></i>Parent Report Access</h1>
+            <p class="text-muted small mb-0">Verify your identity to view your child's report card — no account login required.</p>
+        </div>
+
+        <div class="p-4">
+            {% if not valid %}
+            <div class="text-center py-3">
+                <i class="fas fa-times-circle text-danger fa-3x mb-3"></i>
+                <p class="text-white mb-2">This report link is invalid or has expired.</p>
+                <p class="text-muted small mb-0">Contact the school registrar for a new report QR code.</p>
+            </div>
+            {% else %}
+            <div class="text-center mb-4">
+                <div class="text-muted small text-uppercase mb-1">Student</div>
+                <div class="h5 text-white fw-bold mb-0">{{ student.full_name }}</div>
+                <div class="text-muted small mt-1">ID {{ student.student_id }}{% if display_year %} · {{ display_year.name }}{% endif %}</div>
+            </div>
+
+            {% if not pin_configured and not phone_hint_available %}
+            <div class="alert alert-warning border-0 small mb-0">
+                Parent access is not set up yet. Ask the registrar to add a <strong>parent phone</strong> or <strong>report PIN</strong> on your child's record.
+            </div>
+            {% else %}
+            <form method="POST" id="parentGateForm">
+                {{ form.hidden_tag() }}
+                <input type="hidden" name="verify_method" id="verifyMethodField" value="{{ form.verify_method.data or 'pin' }}">
+
+                <div class="verify-tabs" role="tablist">
+                    {% if pin_configured %}
+                    <button type="button" class="verify-tab active" data-method="pin" id="tabPin">
+                        <i class="fas fa-key me-1"></i> Parent PIN
+                    </button>
+                    {% endif %}
+                    {% if phone_hint_available %}
+                    <button type="button" class="verify-tab {% if not pin_configured %}active{% endif %}" data-method="phone" id="tabPhone">
+                        <i class="fas fa-mobile-alt me-1"></i> Phone Last 4
+                    </button>
+                    {% endif %}
+                </div>
+
+                <div class="verify-panel {% if pin_configured %}active{% endif %}" id="panelPin" {% if not pin_configured %}style="display:none"{% endif %}>
+                    <label class="form-label text-muted small" for="parentPinInput">Enter your 4–6 digit parent PIN</label>
+                    <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+                           name="parent_pin" id="parentPinInput" class="form-control parent-gate-input py-3"
+                           placeholder="••••" autocomplete="one-time-code"
+                           {% if pin_configured %}required{% endif %}>
+                    <p class="text-muted small mt-2 mb-0">Provided by the school when the report was issued.</p>
+                </div>
+
+                <div class="verify-panel {% if not pin_configured and phone_hint_available %}active{% endif %}" id="panelPhone" {% if pin_configured %}style="display:none"{% endif %}>
+                    <label class="form-label text-muted small" for="phoneLast4Input">Last 4 digits of parent phone on file</label>
+                    <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4"
+                           name="phone_last4" id="phoneLast4Input" class="form-control parent-gate-input py-3"
+                           placeholder="••••" autocomplete="off"
+                           {% if not pin_configured and phone_hint_available %}required{% endif %}>
+                    <p class="text-muted small mt-2 mb-0">Use the parent/guardian phone number registered with the school.</p>
+                </div>
+
+                {% if attempts_remaining is defined and attempts_remaining < 5 %}
+                <p class="text-warning small mt-3 mb-0"><i class="fas fa-exclamation-triangle me-1"></i>{{ attempts_remaining }} attempt(s) remaining.</p>
+                {% endif %}
+
+                <button type="submit" class="btn btn-primary w-100 mt-4 py-2 fw-semibold">
+                    <i class="fas fa-file-alt me-2"></i>{{ form.submit.label.text }}
+                </button>
+            </form>
+
+            <p class="text-muted small text-center mt-4 mb-0">
+                Have a parent portal account?
+                <a href="{{ url_for('login') }}" class="text-cyan text-decoration-none">Sign in here</a>
+            </p>
+            {% endif %}
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% if valid and (pin_configured or phone_hint_available) %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const methodField = document.getElementById('verifyMethodField');
+    const panelPin = document.getElementById('panelPin');
+    const panelPhone = document.getElementById('panelPhone');
+    const pinInput = document.getElementById('parentPinInput');
+    const phoneInput = document.getElementById('phoneLast4Input');
+    document.querySelectorAll('.verify-tab').forEach(function(tab) {
+        tab.addEventListener('click', function() {
+            const method = tab.dataset.method;
+            methodField.value = method;
+            document.querySelectorAll('.verify-tab').forEach(function(t) { t.classList.remove('active'); });
+            tab.classList.add('active');
+            if (method === 'pin') {
+                panelPin.classList.add('active');
+                panelPin.style.display = 'block';
+                panelPhone.classList.remove('active');
+                panelPhone.style.display = 'none';
+                if (pinInput) { pinInput.required = true; }
+                if (phoneInput) { phoneInput.required = false; phoneInput.value = ''; }
+            } else {
+                panelPhone.classList.add('active');
+                panelPhone.style.display = 'block';
+                panelPin.classList.remove('active');
+                panelPin.style.display = 'none';
+                if (phoneInput) { phoneInput.required = true; }
+                if (pinInput) { pinInput.required = false; pinInput.value = ''; }
+            }
+        });
+    });
+});
+</script>
+{% endif %}
+{% endblock %}

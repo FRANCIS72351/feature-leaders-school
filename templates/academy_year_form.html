@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+
+{% block title %}{{ action }} Academic Year{% endblock %}
+
+{% block content %}
+<div class="form-scope-wrapper py-5">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-6 col-md-8">
+                
+                <div class="configuration-card border-0 shadow-sm bg-white overflow-hidden">
+                    
+                    <div class="card-accent-line"></div>
+                    
+                    <div class="card-body p-4 p-md-5">
+                        
+                        <div class="d-flex align-items-center gap-3 mb-4 header-animation">
+                            <div class="settings-icon-frame shadow-sm">
+                                <i class="fas fa-calendar-plus"></i>
+                            </div>
+                            <div>
+                                <h2 class="h4 font-weight-bold text-dark mb-1">{{ action }} Academic Year</h2>
+                                <p class="text-muted small mb-0">Configure active global calendar parameters for scheduling matrix and financial periods.</p>
+                            </div>
+                        </div>
+                        
+                        <hr class="text-light mb-4 opacity-50">
+
+                        <form method="POST">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <div class="form-group-custom mb-3 input-field-delay-1">
+                                <label class="custom-form-label mb-2"><i class="fas fa-bookmark me-1 text-muted"></i> Academic Session Name</label>
+                                <input type="text" 
+                                       name="name" 
+                                       class="form-control custom-form-input" 
+                                       placeholder="e.g., 2026 - 2027 Academic Year"
+                                       value="{{ year.name if year else '' }}" 
+                                       required>
+                            </div>
+                            
+                            <div class="row g-3 mb-3">
+                                <div class="col-sm-6 input-field-delay-2">
+                                    <div class="form-group-custom">
+                                        <label class="custom-form-label mb-2"><i class="fas fa-hourglass-start me-1 text-muted"></i> Start Date</label>
+                                        <input type="date" 
+                                               name="start_date" 
+                                               class="form-control custom-form-input" 
+                                               value="{{ year.start_date if year else '' }}" 
+                                               required>
+                                    </div>
+                                </div>
+                                <div class="col-sm-6 input-field-delay-3">
+                                    <div class="form-group-custom">
+                                        <label class="custom-form-label mb-2"><i class="fas fa-hourglass-end me-1 text-muted"></i> End Date</label>
+                                        <input type="date" 
+                                               name="end_date" 
+                                               class="form-control custom-form-input" 
+                                               value="{{ year.end_date if year else '' }}" 
+                                               required>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="form-check-switch p-3 rounded-3 mb-4 input-field-delay-4">
+                                <div class="form-check form-switch m-0 d-flex align-items-center gap-3">
+                                    <input type="checkbox" 
+                                           name="is_active" 
+                                           class="form-check-input custom-switch-input position-static m-0" 
+                                           id="isActiveSwitch"
+                                           {% if year and year.is_active %}checked{% endif %}>
+                                    <label class="form-check-label custom-form-label text-dark m-0 cursor-pointer" for="isActiveSwitch">
+                                        Set as Active Academic Session
+                                        <span class="d-block text-muted style-micro mt-0.5">Enforcing this parameters overrides previously active registry logs globally.</span>
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <div class="d-flex align-items-center justify-content-end gap-2 pt-2 input-field-delay-5">
+                                <a href="{{ url_for('academic_years') }}" class="btn btn-action-cancel font-weight-bold">Cancel</a>
+                                <button type="submit" class="btn btn-action-submit font-weight-bold shadow-sm">
+                                    {% if action|lower == 'create' or action|lower == 'add' %}
+                                        <i class="fas fa-plus-circle me-1"></i> Save Parameters
+                                    {% else %}
+                                        <i class="fas fa-save me-1"></i> Update Changes
+                                    {% endif %}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    /* Scoped Container Typography Isolation Framework */
+    .form-scope-wrapper {
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        background-color: #f8fafc;
+        min-height: calc(100vh - 120px);
+    }
+
+    /* Core Microcard Configuration Architecture */
+    .configuration-card {
+        border-radius: 16px !important;
+        border: 1px solid #e2e8f0 !important;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.02) !important;
+        background: #ffffff;
+        position: relative;
+        
+        /* Entrance Animation Call */
+        animation: cardEntranceReveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        opacity: 0;
+        transform: scale(0.97) translateY(10px);
+    }
+
+    .card-accent-line {
+        height: 4px;
+        width: 100%;
+        background: linear-gradient(90deg, #1cc88a 0%, #139364 100%);
+    }
+
+    .settings-icon-frame {
+        width: 44px;
+        height: 44px;
+        background-color: rgba(28, 200, 138, 0.08);
+        color: #1cc88a;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 10px;
+        font-size: 1.15rem;
+    }
+
+    /* Input Fields Design Language Overhaul */
+    .custom-form-label {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #4a5568;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .custom-form-input {
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 8px !important;
+        padding: 0.65rem 0.9rem !important;
+        font-size: 0.92rem !important;
+        color: #1a202c !important;
+        background-color: #ffffff !important;
+        transition: all 0.2s ease !important;
+    }
+
+    .custom-form-input:focus {
+        border-color: #1cc88a !important;
+        box-shadow: 0 0 0 3px rgba(28, 200, 138, 0.15) !important;
+        background-color: #ffffff !important;
+    }
+
+    /* Active Switch Group Module Container */
+    .form-check-switch {
+        background-color: #f8fafc;
+        border: 1px solid #edf2f7;
+        transition: background-color 0.2s ease;
+    }
+
+    .form-check-switch:hover {
+        background-color: #f1f5f9;
+    }
+
+    .custom-switch-input {
+        width: 2.8em !important;
+        height: 1.5em !important;
+        cursor: pointer;
+    }
+
+    .custom-switch-input:checked {
+        background-color: #1cc88a !important;
+        border-color: #1cc88a !important;
+    }
+
+    .cursor-pointer {
+        cursor: pointer;
+    }
+
+    .style-micro {
+        font-size: 0.72rem;
+        font-weight: 400;
+    }
+
+    /* System Micro-interaction Buttons Layout */
+    .btn-action-submit {
+        background-color: #1cc88a !important;
+        color: #ffffff !important;
+        font-size: 0.88rem !important;
+        padding: 0.6rem 1.4rem !important;
+        border-radius: 8px !important;
+        border: none !important;
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    }
+
+    .btn-action-submit:hover {
+        background-color: #17a673 !important;
+        transform: translateY(-1px) !important;
+        box-shadow: 0 4px 12px rgba(28, 200, 138, 0.2) !important;
+    }
+
+    .btn-action-cancel {
+        background-color: transparent !important;
+        color: #4a5568 !important;
+        font-size: 0.88rem !important;
+        padding: 0.6rem 1.4rem !important;
+        border: 1px solid transparent !important;
+        border-radius: 8px !important;
+        transition: all 0.2s ease !important;
+    }
+
+    .btn-action-cancel:hover {
+        background-color: #edf2f7 !important;
+        color: #1a202c !important;
+    }
+
+    /* =========================================================
+       CLASSIC STAGGERED ENTRANCE ANIMATIONS RULES
+       ========================================================= */
+    @keyframes cardEntranceReveal {
+        to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+        }
+    }
+
+    @keyframes elementFadeSlideIn {
+        from {
+            opacity: 0;
+            transform: translateY(8px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* Staggered Delay Chains for Form Controls */
+    .header-animation { animation: elementFadeSlideIn 0.4s ease forwards; animation-delay: 0.15s; opacity: 0; }
+    .input-field-delay-1 { animation: elementFadeSlideIn 0.4s ease forwards; animation-delay: 0.25s; opacity: 0; }
+    .input-field-delay-2 { animation: elementFadeSlideIn 0.4s ease forwards; animation-delay: 0.32s; opacity: 0; }
+    .input-field-delay-3 { animation: elementFadeSlideIn 0.4s ease forwards; animation-delay: 0.39s; opacity: 0; }
+    .input-field-delay-4 { animation: elementFadeSlideIn 0.4s ease forwards; animation-delay: 0.46s; opacity: 0; }
+    .input-field-delay-5 { animation: elementFadeSlideIn 0.4s ease forwards; animation-delay: 0.52s; opacity: 0; }
+</style>
+{% endblock %}

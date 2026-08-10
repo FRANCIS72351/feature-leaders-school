@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3>Payments</h3>
+<form method="post">
+  {{ form.hidden_tag() }}
+  <div class="mb-3">{{ form.student_id.label }} {{ form.student_id(class_="form-control") }}</div>
+  <div class="mb-3">{{ form.amount.label }} {{ form.amount(class_="form-control") }}</div>
+  <div class="mb-3">{{ form.paid_on.label }} {{ form.paid_on(class_="form-control") }}</div>
+  <div class="mb-3">{{ form.note.label }} {{ form.note(class_="form-control") }}</div>
+  <div>{{ form.submit(class_="btn btn-primary") }}</div>
+</form>
+<hr>
+<table class="table"><thead><tr><th>ID</th><th>Student</th><th>Amount</th><th>Date</th></tr></thead><tbody>
+{% for p in payments %}<tr><td>{{ p.id }}</td><td>{{ p.student_id }}</td><td>{{ p.amount }}</td><td>{{ p.paid_on }}</td></tr>{% else %}<tr><td colspan="4">No payments</td></tr>{% endfor %}
+</tbody></table>
+{% endblock %}

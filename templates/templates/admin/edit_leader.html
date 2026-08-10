@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-5 mb-5">
+  <h2 class="fw-bold text-primary mb-4">Edit Leader</h2>
+
+  <form method="POST" enctype="multipart/form-data" class="p-4 bg-light rounded-3 shadow-sm">
+    {{ form.hidden_tag() }}
+
+    <div class="mb-3">
+      {{ form.name.label(class="form-label fw-semibold") }}
+      {{ form.name(class="form-control") }}
+    </div>
+
+    <div class="mb-3">
+      {{ form.role.label(class="form-label fw-semibold") }}
+      {{ form.role(class="form-control") }}
+    </div>
+
+    <div class="mb-3">
+      {{ form.bio.label(class="form-label fw-semibold") }}
+      {{ form.bio(class="form-control", rows="4") }}
+    </div>
+
+    <div class="mb-3">
+      {{ form.contact.label(class="form-label fw-semibold") }}
+      {{ form.contact(class="form-control") }}
+    </div>
+
+    <div class="mb-3">
+      {{ form.category.label(class="form-label fw-semibold") }}
+      {{ form.category(class="form-select") }}
+    </div>
+
+    <div class="mb-3">
+      {{ form.photo.label(class="form-label fw-semibold") }}
+      {{ form.photo(class="form-control") }}
+      {% if leader.photo %}
+        <img src="{{ url_for('static', filename=leader.photo.replace('static/', '')) }}" class="mt-2 rounded" width="120">
+      {% endif %}
+    </div>
+
+    <button type="submit" class="btn btn-primary">{{ form.submit.label.text }}</button>
+    <a href="{{ url_for('manage_leaders') }}" class="btn btn-secondary ms-2">Cancel</a>
+  </form>
+</div>
+{% endblock %}

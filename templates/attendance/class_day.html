@@ -1,0 +1,157 @@
+{% extends 'base.html' %}
+{% block title %}Attendance — {{ klass.name }} — {{ date_label }}{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/grading_hub.css') }}">
+<div class="container-fluid py-4 attendance-day-page">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+        <div>
+            <a href="{{ back_url }}" class="text-blue small text-decoration-none">
+                <i class="bi bi-arrow-left me-1"></i>Back to Overview
+            </a>
+            <h2 class="text-white fw-bold mt-2 mb-1">
+                <i class="bi bi-people text-cyan me-2"></i>{{ klass.name }}
+            </h2>
+            <p class="text-blue mb-0 small">
+                {{ date_label }}
+                {% if display_year %} · {{ display_year.name }}{% if viewing_archived %} <span class="badge bg-warning text-dark">Archived</span>{% endif %}{% endif %}
+                {% if read_only %} · <span class="text-warning">Read-only</span>{% endif %}
+            </p>
+        </div>
+        {% if can_take_attendance %}
+        <a href="{{ url_for('teacher_class_attendance', class_id=klass.id, date=attendance_date) }}" class="btn btn-cyber-primary btn-sm">
+            <i class="bi bi-pencil-square me-1"></i>Edit Roll
+        </a>
+        {% endif %}
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="att-kpi-card">
+                <div class="att-kpi-label">Students</div>
+                <div class="att-kpi-value">{{ total_students }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="att-kpi-card att-kpi-present">
+                <div class="att-kpi-label">Present Rate</div>
+                <div class="att-kpi-value">{% if present_pct is not none %}{{ present_pct }}%{% else %}—{% endif %}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="att-kpi-card att-kpi-absent">
+                <div class="att-kpi-label">Absent</div>
+                <div class="att-kpi-value">{{ counts.absent }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="att-kpi-card att-kpi-marked">
+                <div class="att-kpi-label">Marked</div>
+                <div class="att-kpi-value">{{ marked }}/{{ total_students }}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="att-card">
+        <div class="att-card-header">
+            <h6 class="mb-0 text-white"><i class="bi bi-list-check me-2 text-cyan"></i>Class Roster</h6>
+        </div>
+        <div class="att-card-body p-0">
+            <div class="table-responsive">
+                <table class="table att-table mb-0">
+                    <thead>
+                        <tr>
+                            <th class="ps-4">#</th>
+                            <th>Student</th>
+                            <th>Status</th>
+                            <th class="pe-4">Note</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in roster %}
+                        <tr>
+                            <td class="ps-4 text-blue">{{ loop.index }}</td>
+                            <td>
+                                <div class="fw-semibold text-white">{{ row.student.full_name }}</div>
+                                <small class="text-blue">{{ row.student.student_id or row.student.id }}</small>
+                                {% if viewing_archived and row.student.status in ('ALUMNI', 'GRADUATED') %}
+                                <span class="badge bg-secondary ms-1" style="font-size:0.6rem;">{{ row.student.status|title }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if row.status == 'present' %}
+                                <span class="badge att-badge-present">Present</span>
+                                {% elif row.status == 'late' %}
+                                <span class="badge att-badge-late">Late</span>
+                                {% elif row.status == 'absent' %}
+                                <span class="badge att-badge-absent">Absent</span>
+                                {% elif row.status == 'excused' %}
+                                <span class="badge att-badge-excused">Excused</span>
+                                {% else %}
+                                <span class="badge bg-secondary">Unmarked</span>
+                                {% endif %}
+                            </td>
+                            <td class="pe-4 text-blue small">{{ row.notes or '—' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="text-center text-blue py-5">No students enrolled for this class/year.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .attendance-day-page { color: #1f2937; }
+    .attendance-day-page .text-blue { color: #0c7db8 !important; }
+    .attendance-day-page .text-cyan { color: #0ea5e9 !important; }
+    .attendance-day-page .text-white,
+    .attendance-day-page h2,
+    .attendance-day-page h6,
+    .attendance-day-page td,
+    .attendance-day-page span,
+    .attendance-day-page p,
+    .attendance-day-page div { color: #1f2937; }
+    .att-card, .att-kpi-card {
+        background: #ffffff;
+        border: 1px solid #dbe7f3;
+        border-radius: 12px;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+    }
+    .att-card-header {
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid #e5edf6;
+        background: #f8fbff;
+    }
+    .att-kpi-card { padding: 1rem 1.25rem; }
+    .att-kpi-label { font-size: 0.72rem; text-transform: uppercase; color: #5f7892; }
+    .att-kpi-value { font-size: 1.75rem; font-weight: 700; color: #0f172a; }
+    .att-kpi-present .att-kpi-value { color: #16a34a; }
+    .att-kpi-absent .att-kpi-value { color: #dc2626; }
+    .att-kpi-marked .att-kpi-value { color: #0ea5e9; }
+    .att-table th {
+        color: #0369a1;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        border-color: #dbe7f3;
+        background: #f3f8fd;
+    }
+    .att-table td {
+        border-color: #e5edf6;
+        vertical-align: middle;
+        background: #ffffff;
+    }
+    .att-badge-present { background: #dcfce7; color: #166534; }
+    .att-badge-late { background: #fef3c7; color: #92400e; }
+    .att-badge-absent { background: #fee2e2; color: #991b1b; }
+    .att-badge-excused { background: #dbeafe; color: #1e3a8a; }
+    .btn-cyber-primary {
+        background: linear-gradient(135deg, #0ea5e9, #0284c7);
+        border: none;
+        color: #ffffff;
+        font-weight: 600;
+    }
+</style>
+{% endblock %}

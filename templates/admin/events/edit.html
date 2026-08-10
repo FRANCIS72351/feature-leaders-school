@@ -1,0 +1,6 @@
+{% extends 'admin/events/base.html' %}
+{% from 'admin/events/_form.html' import render_event_form %}
+{% block admin_page_title %}Edit Event{% endblock %}
+{% block admin_page_content %}
+  {{ render_event_form(form, 'Update Event') }}
+{% endblock %}

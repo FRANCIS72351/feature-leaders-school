@@ -1,0 +1,149 @@
+{% extends 'base.html' %}
+{% block title %}Registration Payment — Next Step{% endblock %}
+
+{% block content %}
+<style>
+    .gate-shell {
+        min-height: calc(100vh - 100px);
+        background: linear-gradient(160deg, #0b0f19 0%, #111827 45%, #0f172a 100%);
+        padding: 2.5rem 1rem 3rem;
+    }
+    .gate-card {
+        max-width: 680px;
+        margin: 0 auto;
+        background: rgba(17, 24, 39, 0.92);
+        border: 1px solid rgba(245, 158, 11, 0.22);
+        border-radius: 16px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+        overflow: hidden;
+    }
+    .gate-header {
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.14), rgba(0, 242, 255, 0.08));
+        border-bottom: 1px solid rgba(245, 158, 11, 0.25);
+        padding: 2rem 2rem 1.5rem;
+        text-align: center;
+    }
+    .gate-icon {
+        width: 68px;
+        height: 68px;
+        border-radius: 50%;
+        background: rgba(245, 158, 11, 0.12);
+        border: 2px solid rgba(245, 158, 11, 0.35);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.6rem;
+        color: #fbbf24;
+        margin-bottom: 1rem;
+    }
+    .gate-title { color: #f8fafc; font-weight: 700; font-size: 1.3rem; }
+    .gate-body { padding: 1.75rem 2rem 2rem; color: #cbd5e1; }
+    .fee-box {
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(0, 242, 255, 0.18);
+        border-radius: 12px;
+        padding: 1.15rem 1.25rem;
+        margin-bottom: 1.5rem;
+        text-align: center;
+    }
+    .fee-amount {
+        font-size: 2rem;
+        font-weight: 800;
+        color: #00f2ff;
+        letter-spacing: -0.02em;
+    }
+    .gate-steps {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 1.5rem;
+    }
+    .gate-steps li {
+        display: flex;
+        gap: 0.85rem;
+        padding: 0.65rem 0;
+        border-bottom: 1px solid rgba(55, 65, 81, 0.5);
+        font-size: 0.92rem;
+    }
+    .gate-steps li:last-child { border-bottom: none; }
+    .step-num {
+        flex-shrink: 0;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background: rgba(245, 158, 11, 0.15);
+        color: #fbbf24;
+        font-size: 0.75rem;
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .student-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(55, 65, 81, 0.8);
+        border-radius: 10px;
+        padding: 0.65rem 1rem;
+        margin-bottom: 1.25rem;
+        font-size: 0.9rem;
+    }
+</style>
+
+<div class="gate-shell">
+    <div class="gate-card">
+        <div class="gate-header">
+            <div class="gate-icon"><i class="fas fa-credit-card"></i></div>
+            <h1 class="gate-title">Registration Fee Payment Required</h1>
+            <p class="text-secondary mb-0 small">Your enrollment is saved — complete payment to activate portal access.</p>
+        </div>
+
+        <div class="gate-body">
+            <div class="student-chip">
+                <i class="fas fa-id-card text-warning"></i>
+                <span><strong class="text-white">{{ student.full_name }}</strong> &middot; ID <strong class="text-info">{{ student.student_id }}</strong></span>
+            </div>
+
+            <div class="fee-box">
+                <div class="small text-secondary mb-1">Registration fee due
+                    {% if active_year %} for {{ active_year.name }}{% endif %}
+                </div>
+                <div class="fee-amount">${{ "{:,.2f}".format(registration_fee or 0) }}</div>
+            </div>
+
+            <p class="mb-3">
+                {% if pending.returning %}
+                Your re-registration has been recorded. The Business Office must confirm receipt of your registration fee before your student portal unlocks.
+                {% else %}
+                Your new student record has been created. Pay the registration fee at the Business Office to activate your portal account.
+                {% endif %}
+            </p>
+
+            <ul class="gate-steps">
+                <li>
+                    <span class="step-num">1</span>
+                    <span>Visit the <strong class="text-white">Business Office</strong> with student ID <strong class="text-info">{{ student.student_id }}</strong>.</span>
+                </li>
+                <li>
+                    <span class="step-num">2</span>
+                    <span>Pay the registration fee{% if registration_fee and registration_fee > 0 %} of <strong class="text-white">${{ "{:,.2f}".format(registration_fee) }}</strong>{% endif %} — ask the cashier to note it as a <em>registration</em> payment.</span>
+                </li>
+                <li>
+                    <span class="step-num">3</span>
+                    <span>Once recorded, sign in to the student portal. Registration payments are detected automatically when the description includes "registration".</span>
+                </li>
+            </ul>
+
+            <div class="d-flex flex-wrap gap-2 justify-content-center">
+                <a href="{{ url_for('login') }}" class="btn btn-outline-light btn-sm px-4">
+                    <i class="fas fa-sign-in-alt me-1"></i> Sign In After Payment
+                </a>
+                <a href="{{ url_for('student_enrollment') }}" class="btn btn-outline-secondary btn-sm px-3">
+                    Back to Enrollment
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

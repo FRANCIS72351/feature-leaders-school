@@ -1,0 +1,597 @@
+{% extends "base.html" %}
+{% block title %}Dean of Students — Student Life Command Center{% endblock %}
+
+{% block content %}
+<style>
+    body { background: #0b0f19; color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; }
+    .dean-terminal, .dean-terminal p, .dean-terminal span, .dean-terminal small, .dean-terminal label, .dean-terminal td, .dean-terminal div { color: #fff; }
+    .dean-terminal .text-muted { color: rgba(255,255,255,0.65) !important; }
+    .text-cyan { color: #00f2ff !important; }
+    .text-emerald { color: #10b981 !important; }
+    .text-amber { color: #f59e0b !important; }
+    .text-rose { color: #f43f5e !important; }
+    .glow-title { font-weight: 700; color: #fff; text-shadow: 0 0 20px rgba(0,242,255,0.12); }
+    .sec-card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+    .metric-card { background: #0f172a; border: 1px solid #1f2937; border-radius: 12px; padding: 1rem 1.1rem; height: 100%; }
+    .form-cyber { background: #070a12 !important; border: 1px solid #374151 !important; color: #fff !important; border-radius: 8px; }
+    .form-cyber:focus { border-color: #00f2ff !important; box-shadow: 0 0 10px rgba(0,242,255,0.12) !important; }
+    .table-cyber { color: #e2e8f0; font-size: 0.88rem; }
+    .table-cyber th { background: #1f2937; color: #00f2ff; border-color: #374151; font-size: 0.72rem; text-transform: uppercase; }
+    .table-cyber td { border-color: #1f2937; vertical-align: middle; }
+    .table-cyber tbody tr:hover { background: rgba(255,255,255,0.02); }
+    .btn-command { background: #070a12; border: 1px solid #1f2937; color: #fff; padding: 12px 14px; border-radius: 10px; width: 100%; text-align: left; text-decoration: none !important; display: block; transition: all 0.25s ease; }
+    .btn-command:hover { border-color: #00f2ff; transform: translateY(-2px); color: #fff; }
+    .class-snapshot-card { display: block; background: linear-gradient(145deg, rgba(7,10,18,0.95), rgba(17,24,39,0.85)); border: 1px solid rgba(0,242,255,0.12); border-radius: 12px; padding: 1rem; text-decoration: none !important; color: inherit; height: 100%; transition: all 0.25s ease; }
+    .class-snapshot-card:hover, .class-snapshot-card.active { border-color: rgba(0,242,255,0.45); box-shadow: 0 8px 24px rgba(0,242,255,0.08); color: inherit; }
+    .stat-pill { font-size: 0.68rem; padding: 0.2rem 0.55rem; border-radius: 999px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.02); }
+    .letter-preview { font-family: Georgia, 'Times New Roman', serif; line-height: 1.65; color: #111 !important; background: #fff; }
+    @media print {
+        body * { visibility: hidden; }
+        #officialSuspensionLetterPrintContainer, #officialSuspensionLetterPrintContainer * { visibility: visible; }
+        #officialSuspensionLetterPrintContainer { position: absolute; left: 0; top: 0; width: 100%; }
+    }
+
+    .dean-terminal,
+    .dean-terminal p,
+    .dean-terminal span,
+    .dean-terminal small,
+    .dean-terminal label,
+    .dean-terminal td,
+    .dean-terminal div {
+        color: #1f2937 !important;
+    }
+    .dean-terminal .text-muted {
+        color: #5f7892 !important;
+    }
+    .dean-terminal .glow-title {
+        color: #0f172a !important;
+        text-shadow: none;
+    }
+    .dean-terminal .sec-card,
+    .dean-terminal .metric-card,
+    .dean-terminal .bg-dark,
+    .dean-terminal .alert.bg-dark,
+    .dean-terminal .btn-command,
+    .dean-terminal .class-snapshot-card,
+    .dean-terminal .class-snapshot-card.active,
+    .dean-terminal .class-snapshot-card:hover {
+        background: #ffffff !important;
+        border-color: #dbe7f3 !important;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+    }
+    .dean-terminal .text-cyan { color: #0ea5e9 !important; }
+    .dean-terminal .text-emerald { color: #059669 !important; }
+    .dean-terminal .text-amber { color: #d97706 !important; }
+    .dean-terminal .text-rose { color: #dc2626 !important; }
+    .dean-terminal .table-cyber { color: #1f2937 !important; }
+    .dean-terminal .table-cyber th {
+        background: #f3f8fd !important;
+        color: #0369a1 !important;
+        border-color: #dbe7f3 !important;
+    }
+    .dean-terminal .table-cyber td {
+        background: #ffffff !important;
+        border-color: #e5edf6 !important;
+    }
+    .dean-terminal .form-cyber {
+        background: #ffffff !important;
+        border-color: #cfe0ef !important;
+        color: #0f172a !important;
+    }
+    .dean-terminal .form-cyber:focus {
+        border-color: #0ea5e9 !important;
+        box-shadow: 0 0 0 0.2rem rgba(14, 165, 233, 0.2) !important;
+    }
+    .dean-terminal .stat-pill {
+        border-color: #d7e7f5;
+        background: #f4f9fe;
+        color: #33506b !important;
+    }
+</style>
+
+<div class="container-fluid py-4 px-md-4 dean-terminal pro-dashboard">
+    {% set year_param = {'academic_year_id': display_year.id} if display_year else {} %}
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4 pb-3 border-bottom border-secondary border-opacity-10">
+        <div>
+            <h2 class="glow-title mb-0"><i class="fas fa-user-shield text-cyan me-2"></i>Dean of Students Command Center</h2>
+            <p class="text-muted small mb-0 mt-1">Student conduct, welfare, attendance oversight, and campus safety</p>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-2 mt-2 mt-md-0">
+            {% if years|length > 1 %}
+            <form method="get" class="d-flex align-items-center gap-2">
+                {% if class_id %}<input type="hidden" name="class_id" value="{{ class_id }}">{% endif %}
+                {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+                <label for="deanYearSelect" class="text-muted small mb-0">Year</label>
+                <select id="deanYearSelect" name="academic_year_id" class="form-select form-select-sm form-cyber" onchange="this.form.submit()">
+                    {% for year in years %}
+                    <option value="{{ year.id }}" {% if display_year and display_year.id == year.id %}selected{% endif %}>{{ year.name }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+            {% elif active_year %}
+            <span class="badge bg-dark border border-secondary border-opacity-25 text-white px-3 py-2">
+                <i class="fas fa-calendar-check text-cyan me-1"></i>{{ active_year.name }}
+            </span>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if viewing_archived and display_year %}
+    <div class="alert bg-dark border border-warning border-opacity-40 text-white mb-4 rounded-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div>
+            <span class="badge bg-warning text-dark me-2">Archived</span>
+            <strong>Viewing historical records for {{ display_year.name }}</strong>
+            <span class="text-muted small ms-2">Includes alumni and graduated students on this year's ledger</span>
+        </div>
+        {% if active_year %}
+        <a href="{{ url_for('dean_dashboard', academic_year_id=active_year.id) }}" class="btn btn-sm btn-outline-success">Active Year ({{ active_year.name }})</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="card sec-card p-3 mb-4">
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('dean_attendance') }}" class="btn-command" style="width:auto;min-width:180px;flex:1;">
+                <i class="fas fa-clipboard-check text-cyan me-2"></i><strong>Attendance &amp; Truancy</strong>
+                <div class="text-muted small mt-1">School-wide absence and late patterns</div>
+            </a>
+            <a href="{{ url_for('dean_dashboard') }}" class="btn-command" style="width:auto;min-width:180px;flex:1;">
+                <i class="fas fa-gavel text-rose me-2"></i><strong>Conduct Registry</strong>
+                <div class="text-muted small mt-1">Log incidents and issue suspensions</div>
+            </a>
+            <a href="{{ url_for('announcements') }}" class="btn-command" style="width:auto;min-width:180px;flex:1;">
+                <i class="fas fa-bullhorn text-amber me-2"></i><strong>Announcements</strong>
+                <div class="text-muted small mt-1">Student &amp; parent communications</div>
+            </a>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-xl-2"><div class="metric-card"><span class="text-muted small d-block">Active Suspensions</span><h4 class="text-amber mb-0">{{ stats.active_suspensions }}</h4></div></div>
+        <div class="col-6 col-xl-2"><div class="metric-card"><span class="text-muted small d-block">Incidents (Month)</span><h4 class="text-rose mb-0">{{ stats.incidents_this_month }}</h4></div></div>
+        <div class="col-6 col-xl-2"><div class="metric-card"><span class="text-muted small d-block">Suspended Students</span><h4 class="text-rose mb-0">{{ stats.suspended_students }}</h4></div></div>
+        <div class="col-6 col-xl-2"><div class="metric-card"><span class="text-muted small d-block">Repeat Offenders</span><h4 class="text-amber mb-0">{{ stats.at_risk_students }}</h4></div></div>
+        <div class="col-6 col-xl-2"><div class="metric-card"><span class="text-muted small d-block">Absent Today</span><h4 class="text-cyan mb-0">{{ stats.today_absences }}</h4></div></div>
+        <div class="col-6 col-xl-2"><div class="metric-card"><span class="text-muted small d-block">Rooms at Capacity</span><h4 class="text-emerald mb-0">{{ stats.rooms_at_capacity }}/{{ stats.total_monitored_rooms }}</h4></div></div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-xl-4 col-lg-5 d-flex flex-column gap-4">
+            <div class="card sec-card p-4">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    {% if current_user.photo_url %}
+                    <img src="{{ current_user.photo_url }}" class="rounded-3 border border-secondary border-opacity-25" style="width:64px;height:64px;object-fit:cover;" alt="Dean">
+                    {% else %}
+                    <div class="rounded-3 bg-secondary d-flex align-items-center justify-content-center" style="width:64px;height:64px;font-size:1.4rem;">{{ current_user.full_name[0]|upper }}</div>
+                    {% endif %}
+                    <div>
+                        <h5 class="mb-0">{{ current_user.full_name }}</h5>
+                        <span class="badge bg-cyan bg-opacity-10 text-cyan border border-cyan border-opacity-10 small">Dean of Students</span>
+                    </div>
+                </div>
+                <p class="text-muted small mb-0"><i class="fas fa-envelope me-1"></i>{{ current_user.email }}</p>
+            </div>
+
+            <div class="card sec-card p-4">
+                <h6 class="text-white fw-bold mb-3"><i class="fas fa-bolt text-amber me-2"></i>Dean Responsibilities</h6>
+                <div class="d-flex flex-column gap-2 small">
+                    <div><i class="fas fa-gavel text-rose me-2"></i>Student conduct &amp; discipline</div>
+                    <div><i class="fas fa-user-clock text-amber me-2"></i>Suspension &amp; readmission</div>
+                    <div><i class="fas fa-clipboard-check text-cyan me-2"></i>Attendance &amp; truancy follow-up</div>
+                    <div><i class="fas fa-heart text-emerald me-2"></i>Student welfare &amp; counseling referrals</div>
+                    <div><i class="fas fa-door-open text-blue me-2"></i>Campus space &amp; safety monitoring</div>
+                    <div><i class="fas fa-users text-cyan me-2"></i>Parent/guardian communication</div>
+                </div>
+            </div>
+
+            <div class="card sec-card p-4">
+                <h6 class="text-white fw-bold mb-3"><i class="fas fa-layer-group text-cyan me-2"></i>Class Behavior Snapshot</h6>
+                <div class="row g-2">
+                    <div class="col-12 mb-1">
+                        <a href="{{ url_for('dean_dashboard', **year_param) }}" class="class-snapshot-card{% if not selected_class %} active{% endif %}">
+                            <div class="fw-semibold small">All Classes</div>
+                            <div class="text-muted small">{{ stats.total_students_enrolled }} students{% if viewing_archived %} on record{% endif %}</div>
+                        </a>
+                    </div>
+                    {% for snap in class_snapshots[:6] %}
+                    <div class="col-md-6">
+                        <a href="{{ url_for('dean_dashboard', class_id=snap.klass.id, **year_param) }}" class="class-snapshot-card{% if selected_class and selected_class.id == snap.klass.id %} active{% endif %}">
+                            <div class="fw-semibold small">{{ snap.klass.name }}</div>
+                            <div class="d-flex flex-wrap gap-1 mt-2">
+                                <span class="stat-pill">{{ snap.student_count }} {% if viewing_archived %}on record{% else %}enrolled{% endif %}</span>
+                                {% if snap.incident_count %}<span class="stat-pill text-amber">{{ snap.incident_count }} incidents</span>{% endif %}
+                                {% if snap.suspended_count %}<span class="stat-pill text-rose">{{ snap.suspended_count }} suspended</span>{% endif %}
+                            </div>
+                        </a>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-8 col-lg-7 d-flex flex-column gap-4">
+            <div class="card sec-card p-4">
+                <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-3">
+                    <div>
+                        <h5 class="text-white fw-bold mb-0"><i class="fas fa-search text-cyan me-2"></i>Student Conduct Registry</h5>
+                        <p class="text-muted small mb-0">
+                            {% if selected_class %}Viewing <strong class="text-cyan">{{ selected_class.name }}</strong>{% else %}All enrolled students{% endif %}
+                        </p>
+                    </div>
+                </div>
+                <form method="get" class="row g-2 mb-3">
+                    {% if display_year %}<input type="hidden" name="academic_year_id" value="{{ display_year.id }}">{% endif %}
+                    {% if class_id %}<input type="hidden" name="class_id" value="{{ class_id }}">{% endif %}
+                    <div class="col-md-8">
+                        <input type="search" name="q" class="form-control form-cyber" placeholder="Search student name or ID..." value="{{ search_q or '' }}">
+                    </div>
+                    <div class="col-md-4">
+                        <button type="submit" class="btn btn-primary w-100">Search</button>
+                    </div>
+                </form>
+                <div class="table-responsive rounded-3 border border-secondary border-opacity-10">
+                    <table class="table table-cyber align-middle mb-0" id="conductRegistryTable">
+                        <thead>
+                            <tr>
+                                <th>Student</th>
+                                <th>Class</th>
+                                <th>Status</th>
+                                <th>Incidents</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for student in students %}
+                            <tr class="student-row">
+                                <td>
+                                    <div class="fw-semibold">{{ student.full_name }}</div>
+                                    <div class="text-muted small">ID: {{ student.student_id }}</div>
+                                    {% if viewing_archived and student.status in ('ALUMNI', 'GRADUATED') %}
+                                    <span class="badge bg-secondary mt-1" style="font-size:0.65rem;">{{ student.status|title }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ (student.display_klass or student.klass).name if (student.display_klass or student.klass) else 'Unassigned' }}</td>
+                                <td>
+                                    {% if student.has_active_suspension %}
+                                    <span class="badge bg-rose bg-opacity-10 text-rose border border-rose border-opacity-10">Suspended</span>
+                                    {% elif student.status == 'FAILED' %}
+                                    <span class="badge bg-rose bg-opacity-10 text-rose border border-rose border-opacity-10">Failed — Repeat Year</span>
+                                    {% elif student.status == 'ACTIVE' %}
+                                    <span class="badge bg-emerald bg-opacity-10 text-emerald border border-emerald border-opacity-10">Active</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">{{ student.status|title }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge {% if student.incident_count >= 3 %}bg-amber text-dark{% else %}bg-dark border border-secondary{% endif %}">
+                                        {{ student.incident_count }}
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <a href="{{ url_for('report_card', student_id=student.id) }}{% if display_year %}?academic_year_id={{ display_year.id }}{% endif %}"
+                                       class="btn btn-sm btn-outline-secondary me-1" title="View report card">
+                                        <i class="fas fa-file-alt"></i>
+                                    </a>
+                                    <button type="button" class="btn btn-sm btn-outline-info me-1 btn-log-incident"
+                                        data-student-id="{{ student.id }}"
+                                        data-student-name="{{ student.full_name }}"
+                                        data-student-class="{{ student.klass.name if student.klass else 'Unassigned' }}">
+                                        <i class="fas fa-clipboard-list"></i> Log
+                                    </button>
+                                    {% if student.has_active_suspension %}
+                                    <button type="button" class="btn btn-sm btn-outline-success me-1 btn-reinstate-student"
+                                        data-student-id="{{ student.id }}"
+                                        data-student-name="{{ student.full_name }}">
+                                        <i class="fas fa-user-check"></i> Reinstate
+                                    </button>
+                                    {% else %}
+                                    <button type="button" class="btn btn-sm btn-outline-danger btn-suspend-student"
+                                        data-student-id="{{ student.id }}"
+                                        data-student-name="{{ student.full_name }}"
+                                        data-student-class="{{ student.klass.name if student.klass else 'Unassigned' }}">
+                                        <i class="fas fa-gavel"></i> Suspend
+                                    </button>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="5" class="text-center py-4 text-muted">{% if viewing_archived %}No students recorded for this class in {{ display_year.name }}.{% else %}No students match this view.{% endif %}</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="row g-4">
+                <div class="col-md-6">
+                    <div class="card sec-card p-4 h-100">
+                        <h6 class="fw-bold mb-3"><i class="fas fa-triangle-exclamation text-amber me-2"></i>Repeat Offenders</h6>
+                        {% if repeat_offenders %}
+                        <div class="d-flex flex-column gap-2">
+                            {% for student, count in repeat_offenders %}
+                            <div class="d-flex justify-content-between align-items-center p-2 border border-secondary border-opacity-10 rounded-3">
+                                <div>
+                                    <div class="fw-semibold small">{{ student.full_name }}</div>
+                                    <div class="text-muted small">{{ student.klass.name if student.klass else 'Unassigned' }}</div>
+                                </div>
+                                <span class="badge bg-amber text-dark">{{ count }} incidents</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <p class="text-muted small mb-0">No students with multiple incidents on record.</p>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card sec-card p-4 h-100">
+                        <h6 class="fw-bold mb-3"><i class="fas fa-door-open text-cyan me-2"></i>Campus Space Monitor</h6>
+                        <div class="d-flex flex-column gap-2" style="max-height:220px;overflow-y:auto;">
+                            {% for room in rooms_list %}
+                            {% set pct = (room.current_occupancy / room.capacity * 100)|int if room.capacity else 0 %}
+                            <div class="p-2 border border-secondary border-opacity-10 rounded-3">
+                                <div class="d-flex justify-content-between small mb-1">
+                                    <span class="fw-semibold">{{ room.name }}</span>
+                                    <span class="{% if pct >= 90 %}text-rose{% elif pct >= 70 %}text-amber{% else %}text-emerald{% endif %}">{{ room.current_occupancy }}/{{ room.capacity }}</span>
+                                </div>
+                                <div class="progress" style="height:6px;">
+                                    <div class="progress-bar {% if pct >= 90 %}bg-danger{% elif pct >= 70 %}bg-warning{% else %}bg-success{% endif %}" style="width:{{ pct }}%;"></div>
+                                </div>
+                            </div>
+                            {% else %}
+                            <p class="text-muted small mb-0">No rooms configured.</p>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-4">
+                <div class="col-md-6">
+                    <div class="card sec-card p-4 h-100">
+                        <h6 class="fw-bold mb-3"><i class="fas fa-history text-amber me-2"></i>Recent Suspensions</h6>
+                        <div class="table-responsive">
+                            <table class="table table-cyber table-sm mb-0">
+                                <thead><tr><th>Student</th><th>Until</th><th>Status</th></tr></thead>
+                                <tbody>
+                                    {% for s in recent_suspensions %}
+                                    <tr>
+                                        <td class="small">{{ s.student.full_name if s.student else '—' }}</td>
+                                        <td class="small">{{ s.return_date.strftime('%Y-%m-%d') if s.return_date else '—' }}</td>
+                                        <td>
+                                            {% if s.return_date and s.return_date > current_time %}
+                                            <span class="badge bg-amber text-dark">Active</span>
+                                            {% else %}
+                                            <span class="badge bg-emerald bg-opacity-10 text-emerald">Ended</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="3" class="text-muted small text-center">No suspensions recorded.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card sec-card p-4 h-100">
+                        <h6 class="fw-bold mb-3"><i class="fas fa-clipboard-list text-rose me-2"></i>Recent Conduct Incidents</h6>
+                        <div class="table-responsive">
+                            <table class="table table-cyber table-sm mb-0">
+                                <thead><tr><th>Student</th><th>Offense</th><th>Action</th></tr></thead>
+                                <tbody>
+                                    {% for incident in discipline_incidents %}
+                                    <tr>
+                                        <td class="small">{{ incident.student.full_name if incident.student else '—' }}</td>
+                                        <td class="small text-truncate" style="max-width:120px;">{{ incident.offense }}</td>
+                                        <td class="small"><span class="badge bg-dark border border-secondary">{{ incident.action_taken }}</span></td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="3" class="text-muted small text-center">No incidents logged.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Log Incident Modal -->
+<div class="modal fade" id="incidentModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark border border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title text-white"><i class="fas fa-clipboard-list text-cyan me-2"></i>Log Conduct Incident</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('process_discipline_incident') }}">
+                {{ discipline_form.hidden_tag() }}
+                <input type="hidden" name="student_id" id="incidentStudentId">
+                <input type="hidden" name="return_class_id" value="{{ class_id or '' }}">
+                <input type="hidden" name="return_q" value="{{ search_q or '' }}">
+                <div class="modal-body">
+                    <p class="small text-muted mb-3">Student: <strong class="text-white" id="incidentStudentName">—</strong> · <span id="incidentStudentClass">—</span></p>
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">Offense / Incident</label>
+                        <input type="text" name="offense" class="form-control form-cyber" required placeholder="e.g. Chronic tardiness, dress code violation">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">Action Taken</label>
+                        <select name="action_taken" class="form-select form-cyber">
+                            <option>Verbal warning</option>
+                            <option>Written warning</option>
+                            <option>Parent conference scheduled</option>
+                            <option>Detention assigned</option>
+                            <option>Counseling referral</option>
+                            <option>Logged for dean review</option>
+                        </select>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label small text-muted">Notes (optional)</label>
+                        <textarea name="notes" class="form-control form-cyber" rows="3" placeholder="Witnesses, location, follow-up plan..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Incident</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Suspension Modal -->
+<div class="modal fade" id="suspensionModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content bg-dark border border-secondary">
+            <div class="modal-header border-secondary bg-danger bg-opacity-25">
+                <h5 class="modal-title text-white fw-bold"><i class="fas fa-gavel me-2"></i>Issue Suspension</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="suspensionForm" method="POST" action="{{ url_for('process_suspension') }}">
+                {{ form.hidden_tag() }}
+                <input type="hidden" name="student_id" id="suspensionStudentId">
+                <input type="hidden" name="return_class_id" value="{{ class_id or '' }}">
+                <input type="hidden" name="return_q" value="{{ search_q or '' }}">
+                <div class="modal-body">
+                    <div class="alert alert-dark border-secondary mb-3">
+                        <span class="text-muted small d-block">Student</span>
+                        <strong class="text-amber" id="suspensionStudentName">—</strong>
+                        <span class="badge bg-secondary ms-2" id="suspensionStudentClass">—</span>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">Reason for suspension</label>
+                        <textarea name="reason" class="form-control form-cyber" rows="3" required></textarea>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small text-muted">Start date</label>
+                            <input type="date" name="start_date" id="suspensionStartDate" class="form-control form-cyber" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small text-muted">Return / readmission date</label>
+                            <input type="date" name="return_date" id="suspensionReturnDate" class="form-control form-cyber" required>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="text-muted small text-uppercase mb-0">Official letter preview</h6>
+                        <button type="button" class="btn btn-sm btn-outline-light" onclick="window.print()"><i class="fas fa-print me-1"></i>Print</button>
+                    </div>
+                    <div id="officialSuspensionLetterPrintContainer" class="letter-preview p-4 border rounded">
+                        <div class="text-center border-bottom pb-3 mb-3">
+                            <h5 class="fw-bold text-uppercase mb-1">SoftnetAfrica Academic Institution</h5>
+                            <small class="text-muted">Office of the Dean of Students</small>
+                        </div>
+                        <p class="small">To the parents/guardians of <strong id="printStudentName">—</strong>,</p>
+                        <p class="small">This letter confirms a disciplinary suspension following a review of school conduct policies.</p>
+                        <div class="bg-light p-3 border rounded small mb-3">
+                            <div><strong>Reason:</strong> <span id="printReason" class="fst-italic text-muted">—</span></div>
+                            <div class="row mt-2">
+                                <div class="col-6"><strong>From:</strong> <span id="printStartDate">—</span></div>
+                                <div class="col-6"><strong>Return date:</strong> <span id="printReturnDate">—</span></div>
+                            </div>
+                        </div>
+                        <p class="small">During suspension the student may not attend classes or school activities. Readmission requires a parent conference and behavioral agreement.</p>
+                        <div class="text-end mt-4 pt-3 border-top small">
+                            <strong>{{ current_user.full_name }}</strong><br>
+                            <span class="text-muted">Dean of Students</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Record Suspension</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Reinstate Modal -->
+<div class="modal fade" id="reinstateModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark border border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title text-white"><i class="fas fa-user-check text-emerald me-2"></i>Reinstate Student</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('dean_reinstate_student') }}">
+                {{ form.hidden_tag() }}
+                <input type="hidden" name="student_id" id="reinstateStudentId">
+                <input type="hidden" name="return_class_id" value="{{ class_id or '' }}">
+                <input type="hidden" name="return_q" value="{{ search_q or '' }}">
+                <div class="modal-body">
+                    <p class="small text-muted mb-3">Restore <strong class="text-white" id="reinstateStudentName">—</strong> to active status and close open suspensions.</p>
+                    <label class="form-label small text-muted">Readmission notes (optional)</label>
+                    <textarea name="notes" class="form-control form-cyber" rows="3" placeholder="Parent conference completed, behavioral agreement signed..."></textarea>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">Reinstate Student</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function openIncidentModal(id, name, klass) {
+    document.getElementById('incidentStudentId').value = id;
+    document.getElementById('incidentStudentName').textContent = name;
+    document.getElementById('incidentStudentClass').textContent = klass;
+    new bootstrap.Modal(document.getElementById('incidentModal')).show();
+}
+
+function openSuspensionModal(id, name, klass) {
+    document.getElementById('suspensionStudentId').value = id;
+    document.getElementById('suspensionStudentName').textContent = name;
+    document.getElementById('suspensionStudentClass').textContent = klass;
+    document.getElementById('printStudentName').textContent = name;
+    document.getElementById('suspensionForm').reset();
+    document.getElementById('suspensionStudentId').value = id;
+    const today = new Date().toISOString().slice(0, 10);
+    document.getElementById('suspensionStartDate').value = today;
+    new bootstrap.Modal(document.getElementById('suspensionModal')).show();
+}
+
+function openReinstateModal(id, name) {
+    document.getElementById('reinstateStudentId').value = id;
+    document.getElementById('reinstateStudentName').textContent = name;
+    new bootstrap.Modal(document.getElementById('reinstateModal')).show();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.btn-log-incident').forEach(btn => {
+        btn.addEventListener('click', () => openIncidentModal(
+            btn.dataset.studentId,
+            btn.dataset.studentName,
+            btn.dataset.studentClass
+        ));
+    });
+    document.querySelectorAll('.btn-suspend-student').forEach(btn => {
+        btn.addEventListener('click', () => openSuspensionModal(
+            btn.dataset.studentId,
+            btn.dataset.studentName,
+            btn.dataset.studentClass
+        ));
+    });
+    document.querySelectorAll('.btn-reinstate-student').forEach(btn => {
+        btn.addEventListener('click', () => openReinstateModal(
+            btn.dataset.studentId,
+            btn.dataset.studentName
+        ));
+    });
+
+    const reason = document.querySelector('#suspensionForm textarea[name="reason"]');
+    const start = document.getElementById('suspensionStartDate');
+    const ret = document.getElementById('suspensionReturnDate');
+    if (reason) reason.addEventListener('input', e => { document.getElementById('printReason').textContent = e.target.value || '—'; });
+    if (start) start.addEventListener('change', e => { document.getElementById('printStartDate').textContent = e.target.value || '—'; });
+    if (ret) ret.addEventListener('change', e => { document.getElementById('printReturnDate').textContent = e.target.value || '—'; });
+});
+</script>
+{% endblock %}

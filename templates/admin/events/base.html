@@ -1,0 +1,7 @@
+{% extends 'base.html' %}
+{% block content %}
+  <div class="container py-4">
+    <h1 class="fw-bold text-primary mb-4">{% block admin_page_title %}{% endblock %}</h1>
+    {% block admin_page_content %}{% endblock %}
+  </div>
+{% endblock %}

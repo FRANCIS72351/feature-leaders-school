@@ -1,0 +1,621 @@
+{% extends 'base.html' %}
+{% block title %}Security Hub{% endblock %}
+{% block content %}
+
+<style>
+    body {
+        background-color: #0b0f19; /* Deep Executive Navy Black */
+        color: #e2e8f0;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    /* Professional Cyber Accents */
+    .text-cyan { color: #00f2ff; }
+    .glow-title {
+        font-weight: 700;
+        letter-spacing: 1px;
+        color: #ffffff;
+        text-shadow: 0 0 15px rgba(0, 242, 255, 0.2);
+    }
+
+    /* Enterprise Panel Cards */
+    .sec-card {
+        background: #111827;
+        border: 1px solid #1f2937;
+        border-radius: 12px !important;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+        transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+    .sec-card:hover {
+        border-color: rgba(0, 242, 255, 0.4);
+        box-shadow: 0 6px 24px rgba(0, 242, 255, 0.08);
+    }
+
+    /* Dashboard Grid Utilities */
+    .metric-value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        font-family: 'Courier New', Courier, monospace;
+    }
+
+    /* Progress & Metric Bars */
+    .progress-custom {
+        height: 6px;
+        background-color: #1f2937;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+    .progress-bar-cyan {
+        background: linear-gradient(90deg, #00f2ff, #4e73df);
+        width: 0%;
+        transition: width 0.5s ease-in-out;
+    }
+
+    /* Professionalized Terminal Log */
+    .terminal-container {
+        border: 1px solid rgba(239, 68, 68, 0.4) !important;
+        box-shadow: inset 0 0 15px rgba(239, 68, 68, 0.05);
+    }
+    #security-log {
+        height: 320px;
+        overflow-y: auto;
+        background: #070a12;
+        padding: 15px;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 0.85rem;
+        color: #fca5a5;
+    }
+    .log-entry {
+        padding: 6px 0;
+        border-bottom: 1px solid #1f2937;
+        animation: fadeInLog 0.3s ease;
+    }
+    .log-time { color: #6b7280; font-weight: bold; margin-right: 8px;}
+    
+    @keyframes fadeInLog {
+        from { opacity: 0; transform: translateY(2px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Profile Scanner Element Card Layout */
+    .sec-profile-card {
+        background: linear-gradient(135deg, #111827 0%, #0f172a 100%);
+        border-left: 4px solid #00f2ff !important;
+    }
+    
+    .profile-img-container {
+        position: relative;
+        width: 110px;
+        height: 110px;
+        border: 2px solid rgba(0, 242, 255, 0.3);
+        border-radius: 12px;
+        overflow: hidden;
+        background: #070a12;
+    }
+    #profile-pic { width: 100%; height: 100%; object-fit: cover; }
+    
+    .scanning-bar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 3px;
+        background: linear-gradient(90deg, transparent, #00f2ff, transparent);
+        box-shadow: 0 0 12px #00f2ff;
+        animation: cyberScan 2.5s ease-in-out infinite;
+    }
+    @keyframes cyberScan {
+        0%, 100% { top: 0%; opacity: 0.3; }
+        50% { top: 100%; opacity: 1; }
+    }
+
+    .skill-tag {
+        display: inline-block;
+        background: rgba(0, 242, 255, 0.06);
+        border: 1px solid rgba(0, 242, 255, 0.25);
+        padding: 3px 10px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        margin-top: 6px;
+        margin-right: 6px;
+        border-radius: 6px !important;
+        color: #00f2ff;
+        transition: all 0.2s ease;
+    }
+    .skill-tag:hover {
+        background: rgba(0, 242, 255, 0.15);
+        border-color: #00f2ff;
+    }
+
+    /* Polished Tables */
+    .table-cyber {
+        color: #e2e8f0 !important;
+        font-size: 0.9rem;
+    }
+    .table-cyber th {
+        background-color: #1f2937 !important;
+        color: #00f2ff !important;
+        border-color: #374151 !important;
+    }
+    .table-cyber td {
+        background-color: transparent !important;
+        border-color: #1f2937 !important;
+        padding: 12px 8px;
+    }
+
+    .form-cyber {
+        background: #070a12 !important;
+        border: 1px solid #374151 !important;
+        color: #fff !important;
+        border-radius: 8px;
+    }
+    .form-cyber:focus {
+        border-color: #00f2ff !important;
+        box-shadow: 0 0 10px rgba(0, 242, 255, 0.12) !important;
+    }
+    .archived-banner {
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(17, 24, 39, 0.95));
+        border: 1px solid rgba(245, 158, 11, 0.35);
+        border-radius: 10px;
+    }
+    .year-view-badge-active {
+        background: rgba(28, 200, 138, 0.12);
+        color: #1cc88a;
+        border: 1px solid rgba(28, 200, 138, 0.25);
+    }
+    .year-view-badge-archived {
+        background: rgba(245, 158, 11, 0.12);
+        color: #f59e0b;
+        border: 1px solid rgba(245, 158, 11, 0.25);
+    }
+
+    .admin-terminal {
+        color: #1f2937;
+    }
+    .admin-terminal .sec-card,
+    .admin-terminal .sec-profile-card,
+    .admin-terminal .archived-banner,
+    .admin-terminal .card.bg-dark,
+    .admin-terminal .bg-dark {
+        background: #ffffff !important;
+        border-color: #dbe7f3 !important;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+    }
+    .admin-terminal .text-white,
+    .admin-terminal .fw-bold.text-white,
+    .admin-terminal h4,
+    .admin-terminal h5,
+    .admin-terminal h6,
+    .admin-terminal p,
+    .admin-terminal span,
+    .admin-terminal small,
+    .admin-terminal div {
+        color: #1f2937 !important;
+    }
+    .admin-terminal .text-muted,
+    .admin-terminal .log-time {
+        color: #5f7892 !important;
+    }
+    .admin-terminal .text-cyan { color: #0ea5e9 !important; }
+    .admin-terminal .text-emerald { color: #059669 !important; }
+    .admin-terminal .text-warning { color: #d97706 !important; }
+    .admin-terminal .text-rose,
+    .admin-terminal .text-danger { color: #dc2626 !important; }
+    .admin-terminal .table-cyber {
+        color: #1f2937 !important;
+    }
+    .admin-terminal .table-cyber th {
+        background: #f3f8fd !important;
+        color: #0369a1 !important;
+        border-color: #dbe7f3 !important;
+    }
+    .admin-terminal .table-cyber td {
+        border-color: #e5edf6 !important;
+        background: #ffffff !important;
+    }
+    .admin-terminal .form-cyber {
+        background: #ffffff !important;
+        border-color: #cfe0ef !important;
+        color: #0f172a !important;
+    }
+    .admin-terminal .form-cyber:focus {
+        border-color: #0ea5e9 !important;
+        box-shadow: 0 0 0 0.2rem rgba(14, 165, 233, 0.2) !important;
+    }
+    .admin-terminal #security-log {
+        background: #f8fbff;
+        color: #475569;
+        border: 1px solid #dbe7f3;
+        border-radius: 10px;
+    }
+    .admin-terminal .log-entry {
+        border-bottom-color: #e5edf6;
+    }
+</style>
+
+<div class="container-fluid py-3 admin-terminal pro-dashboard">
+
+    {% if not system_is_active %}
+    <div class="alert alert-danger border-danger bg-danger bg-opacity-10 mb-4" data-aos="fade-down">
+        <strong><i class="fas fa-exclamation-triangle me-2"></i>System is ON HOLD for all non-admin users.</strong>
+        <a href="{{ url_for('admin_system_control') }}" class="alert-link ms-2">Manage activation</a>
+    </div>
+    {% endif %}
+    
+    {% if viewing_archived %}
+    <div class="archived-banner p-3 mb-4 d-flex flex-wrap align-items-center justify-content-between gap-2" data-aos="fade-down">
+        <div>
+            <i class="fas fa-archive text-warning me-2"></i>
+            <strong>Viewing: {{ display_year.name }} (Archived)</strong>
+            <span class="text-muted small ms-2">Historical records — read-only snapshot</span>
+        </div>
+        {% if active_year %}
+        <a href="{{ url_for('dashboard', academic_year_id=active_year.id) }}" class="btn btn-sm btn-outline-success">
+            <i class="fas fa-arrow-left me-1"></i> Return to Active Year ({{ active_year.name }})
+        </a>
+        {% endif %}
+    </div>
+    {% elif display_year and display_year.is_active %}
+    <div class="alert alert-success bg-success bg-opacity-10 border-success border-opacity-25 mb-4 py-2 px-3" data-aos="fade-down">
+        <i class="fas fa-check-circle me-2"></i>Viewing: <strong>{{ display_year.name }}</strong> <span class="badge year-view-badge-active ms-1">Active</span>
+        {% if counts and counts.students is defined %}
+        <span class="text-muted small ms-2">{{ counts.students }} student{{ 's' if counts.students != 1 else '' }} enrolled{% if counts.pending_registration %} · {{ counts.pending_registration }} awaiting re-registration{% endif %}</span>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3 bg-dark bg-opacity-25 p-3 rounded-3 border border-secondary border-opacity-10" data-aos="fade-down">
+        <div class="d-flex flex-wrap gap-4 align-items-center">
+            <div>
+                <span class="text-muted small text-uppercase block d-block">System State</span>
+                {% if system_is_active %}
+                <strong style="color: #1cc88a;"><i class="fas fa-shield-alt me-1"></i> ACTIVE</strong>
+                {% else %}
+                <strong style="color: #f43f5e;"><i class="fas fa-pause-circle me-1"></i> ON HOLD</strong>
+                {% endif %}
+            </div>
+            <div class="border-start border-secondary border-opacity-25 ps-4">
+                <span class="text-muted small text-uppercase block d-block">License Control</span>
+                <a href="{{ url_for('admin_system_control') }}" class="text-warning text-decoration-none">
+                    <strong><i class="fas fa-power-off me-1"></i> Activate / Deactivate System</strong>
+                </a>
+            </div>
+            <div class="border-start border-secondary border-opacity-25 ps-4">
+                <span class="text-muted small text-uppercase d-block mb-1">Academic Year</span>
+                <form method="get" class="d-inline">
+                    <select name="academic_year_id" class="form-select form-select-sm form-cyber" style="min-width: 180px;" onchange="this.form.submit()">
+                        {% for y in (years or all_years or []) %}
+                        <option value="{{ y.id }}" {% if display_year and y.id == display_year.id %}selected{% endif %}>
+                            {{ y.name }}{% if y.is_active %} (Active){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </form>
+            </div>
+        </div>
+        
+        <div class="d-flex gap-2 flex-wrap">
+            <div class="btn-group" role="group">
+                <button id="exportsDropdown" type="button" class="btn btn-sm btn-outline-info dropdown-toggle rounded-3" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-download me-1"></i> Export Datasets
+                </button>
+                <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end shadow" aria-labelledby="exportsDropdown">
+                    <li><a class="dropdown-item" href="{{ url_for('export_students', year=selected_year_name) }}">Students Ledger (CSV)</a></li>
+                    <li><a class="dropdown-item" href="{{ url_for('export_payments', year=selected_year_name) }}">Payments Ledger (CSV)</a></li>
+                    <li><a class="dropdown-item" href="{{ url_for('report_business_pdf', year=selected_year_name) }}">Business Transactions (PDF)</a></li>
+                    <li><a class="dropdown-item" href="{{ url_for('export_grades', year=selected_year_name) }}">Grades Report (CSV)</a></li>
+                    <li><a class="dropdown-item" href="{{ url_for('export_attendance', year=selected_year_name) }}">Attendance Records (CSV)</a></li>
+                    <li><a class="dropdown-item" href="{{ url_for('export_sponsors', year=selected_year_name) }}">Sponsors Mapping (CSV)</a></li>
+                </ul>
+            </div>
+            <a href="{{ url_for('class_create') }}" class="btn btn-sm btn-outline-secondary text-white"><i class="fas fa-chalkboard"></i> Classes</a>
+            <a href="{{ url_for('attendance_overview', academic_year_id=display_year.id if display_year else None) }}" class="btn btn-sm btn-outline-info text-cyan"><i class="fas fa-calendar-check"></i> Attendance</a>
+            <a href="{{ url_for('academic_years') }}" class="btn btn-sm btn-outline-secondary text-white"><i class="fas fa-calendar-plus"></i> Create Academic Year</a>
+            {% if not viewing_archived %}
+            <a href="{{ url_for('academic_rollover') }}" class="btn btn-sm btn-outline-warning text-white">
+                <i class="fas fa-arrows-rotate"></i> Academic Rollover
+            </a>
+            {% endif %}
+            <a href="{{ url_for('admin_users') }}" class="btn btn-sm btn-outline-secondary text-white"><i class="fas fa-users-cog"></i> Users</a>
+            <a href="{{ url_for('business_dashboard') }}" class="btn btn-sm btn-outline-success text-white"><i class="fas fa-coins"></i> Business Office</a>
+            <a href="{{ url_for('school_media_create', type='video', category='advertisement') }}" class="btn btn-sm btn-outline-info text-cyan"><i class="fas fa-video"></i> Upload Video</a>
+            <a href="{{ url_for('school_media_manage') }}" class="btn btn-sm btn-outline-secondary text-white"><i class="fas fa-photo-video"></i> School Media</a>
+            <a href="{{ url_for('report_students_pdf', year=selected_year_name) }}" class="btn btn-sm btn-primary"><i class="fas fa-file-pdf me-1"></i> Master PDF</a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8" data-aos="fade-right">
+            
+            <div class="card sec-card p-4 mb-4">
+                <h5 class="glow-title mb-3"><i class="fas fa-wave-square text-cyan me-2"></i>Registration Stream Waveform Tracking</h5>
+                <canvas id="dbWaveCanvas"></canvas>
+            </div>
+
+            <div class="mb-3 mt-4">
+                <span class="text-muted text-uppercase small font-weight-bold">Scope Filter:</span>
+                {% if viewing_archived %}
+                <span class="badge year-view-badge-archived px-2 py-1 ms-2">{{ selected_year }} (Archived)</span>
+                {% elif display_year and display_year.is_active %}
+                <span class="badge year-view-badge-active px-2 py-1 ms-2">{{ selected_year }} (Active)</span>
+                {% else %}
+                <span class="badge bg-danger bg-opacity-25 text-danger px-2 py-1 border border-danger border-opacity-50 ms-2">{{ selected_year or 'No Year' }}</span>
+                {% endif %}
+            </div>
+            
+            <div class="row g-3 mb-4">
+                <div class="col-sm-6 col-xl-3">
+                    <div class="card sec-card p-3 border-start border-4 border-primary">
+                        <div class="text-muted small text-uppercase">Total Enrolled</div>
+                        <div class="metric-value text-white my-1">{{ counts.students }}</div>
+                        <div class="text-muted d-flex gap-2" style="font-size: 0.72rem;">
+                            <span class="text-cyan">New: {{ counts.new_students }}</span>
+                            <span>Ret: {{ counts.returning_students }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-xl-3">
+                    <div class="card sec-card p-3 border-start border-4 border-info">
+                        <div class="text-muted small text-uppercase">Faculty Staff</div>
+                        <div class="metric-value text-info my-1">{{ counts.teachers }}</div>
+                        <div class="text-muted small" style="font-size: 0.72rem;">Active Lecturers</div>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-xl-3">
+                    <div class="card sec-card p-3 border-start border-4 border-warning">
+                        <div class="text-muted small text-uppercase">Course Rooms</div>
+                        <div class="metric-value text-warning my-1">{{ counts.classes }}</div>
+                        <div class="text-muted small" style="font-size: 0.72rem;">Allocated Divisions</div>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-xl-3">
+                    <div class="card sec-card p-3 border-start border-4 border-success">
+                        <div class="text-muted small text-uppercase">Collected Fees</div>
+                        <div class="metric-value text-success my-1">{{ counts.payments }}</div>
+                        <div class="text-muted small" style="font-size: 0.72rem;">Cleared Batches{% if viewing_archived %} ({{ selected_year }}){% endif %}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card sec-card p-4 mb-4">
+                <h5 class="glow-title mb-4"><i class="fas fa-chart-pie text-cyan me-2"></i>Metrics & Demographics Mapping</h5>
+                <div class="row g-3">
+                    <div class="col-md-4 text-center">
+                        <span class="text-muted small d-block mb-2">Gender Vector</span>
+                        <canvas id="genderChart"></canvas>
+                    </div>
+                    <div class="col-md-4 text-center">
+                        <span class="text-muted small d-block mb-2">Registration Cycles</span>
+                        <canvas id="enrollChart"></canvas>
+                    </div>
+                    <div class="col-md-4 text-center">
+                        <span class="text-muted small d-block mb-2">Revenue Streams</span>
+                        <canvas id="payChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-4">
+                <div class="col-md-6">
+                    <div class="card sec-card p-3 h-100">
+                        <h6 class="text-white font-weight-bold mb-3"><i class="fas fa-chart-line text-primary me-2"></i>Grading Progress Vectors</h6>
+                        <canvas id="gradeChart"></canvas>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card sec-card p-3 h-100">
+                        <h6 class="text-white font-weight-bold mb-3"><i class="fas fa-receipt text-success me-2"></i>Recent Cashflow Ledgers</h6>
+                        <div class="table-responsive">
+                            <table class="table table-cyber align-middle mb-0">
+                                <thead>
+                                    <tr><th>TX ID</th><th>Student</th><th>Amount</th><th>Timestamp</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for p in payments %}
+                                      <tr>
+                                          <td><code class="text-cyan">#{{ p.id }}</code></td>
+                                          <td>{{ p.student_id }}</td>
+                                          <td class="text-success font-weight-bold">${{ p.amount }}</td>
+                                          <td class="text-muted small">{{ p.paid_on }}</td>
+                                      </tr>
+                                    {% else %}
+                                      <tr><td colspan="4" class="text-center text-muted py-3">No payments processed</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="col-lg-4" data-aos="fade-left">
+            
+            <div class="card sec-card p-4 mb-4">
+                <h5 class="glow-title mb-3"><i class="fas fa-server text-cyan me-2"></i>Node Hardware Load</h5>
+                
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between text-white small mb-1">
+                        <span>CPU Compute Core Cluster</span>
+                        <span><span id="cpu-stat" class="text-cyan font-weight-bold">0</span>%</span>
+                    </div>
+                    <div class="progress-custom">
+                        <div id="cpu-bar" class="progress-bar-cyan"></div>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="d-flex justify-content-between text-white small mb-1">
+                        <span>Allocated Memory Matrix</span>
+                        <span><span id="mem-stat" class="text-cyan font-weight-bold">0</span>%</span>
+                    </div>
+                    <div class="progress-custom">
+                        <div id="mem-bar" class="progress-bar-cyan"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card sec-card sec-profile-card p-4 mb-4">
+                <h6 class="text-muted small text-uppercase mb-3">Operator Identity Profile</h6>
+                <div class="d-flex align-items-center gap-3">
+                    <div class="profile-img-container shadow">
+                        <img src="{{ url_for('static', filename='images/pro.png') }}" alt="Verified Engineer Signature Avatar Image" id="profile-pic">
+                        <div class="scanning-bar"></div>
+                    </div>
+                    <div>
+                        <div class="profile-name text-white font-weight-bold h5 mb-0" id="prof-name">FRANCIS BROWNELL</div>
+                        <div class="profile-title text-cyan small tracking-wider uppercase font-weight-bold" id="prof-title">CYBER SECURITY STUDENT</div>
+                        <div class="text-muted small mt-1" style="font-size: 0.75rem;"><i class="fas fa-birthday-cake me-1"></i> <span id="prof-dob">Feb 22, 2003</span></div>
+                    </div>
+                </div>
+                
+                <div id="skill-container" class="mt-2"></div>
+                
+                <hr class="border-secondary my-3 opacity-25">
+                
+                <div class="profile-biography small text-muted" style="font-size: 0.82rem; line-height: 1.5;">
+                    <div class="mb-2 text-white-50"><i class="fas fa-university me-1 text-cyan"></i> <span id="prof-edu">Self Learning Programming</span></div>
+                    <div class="mb-2"><i class="fas fa-briefcase me-1 text-cyan"></i> <span id="prof-exp">Loading credentials profile experience matrix data...</span></div>
+                    <div class="pt-1 d-flex flex-wrap gap-2 text-white-50">
+                        <span><i class="fas fa-phone-alt me-1 text-cyan"></i> <span id="prof-con"></span></span>
+                        <span><i class="fas fa-envelope me-1 text-cyan"></i> <span id="prof-email"></span></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card sec-card terminal-container overflow-hidden">
+                <div class="card-header bg-dark bg-opacity-50 border-bottom border-danger border-opacity-25 py-2 px-3 d-flex justify-content-between align-items-center">
+                    <span class="text-danger small font-weight-bold tracking-widest text-uppercase"><i class="fas fa-terminal me-2"></i>Security Stream Logs Feed</span>
+                    <span class="spinner-grow spinner-grow-sm text-danger" role="status"></span>
+                </div>
+                <div id="security-log">
+                    {% for event in announcements %}
+                    <div class="log-entry">
+                        <span class="log-time">[{{ event.created_at }}]</span> 
+                        <strong class="text-white-50">{{ event.title }}</strong>: {{ (event.content or '')[:50] }}...
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/smoothie/1.35.0/smoothie.min.js"></script>
+<script>
+    // --- 1. SET UP THE ELECTRIC WAVE CHART ---
+    var activityTimeSeries = new TimeSeries();
+    var chart = new SmoothieChart({
+        grid: { strokeStyle: 'rgba(0, 242, 255, 0.05)', fillStyle: '#070a12', lineWidth: 1, millisPerLine: 300, verticalSections: 4 },
+        labels: { fillStyle: '#00f2ff', fontSize: 11 },
+        responsive: true
+    });
+    
+    chart.addTimeSeries(activityTimeSeries, { strokeStyle: '#00f2ff', fillStyle: 'rgba(0, 242, 255, 0.03)', lineWidth: 2 });
+    chart.streamTo(document.getElementById("dbWaveCanvas"), 500);
+
+    // --- 2. POLL THE BACKEND API FOR TELEMETRY DATA ---
+    function updateStats() {
+        fetch('/api/stats')
+            .then(response => response.json())
+            .then(data => {
+                // Update Numeric Text Values
+                document.getElementById('cpu-stat').innerText = data.cpu;
+                document.getElementById('mem-stat').innerText = data.memory;
+
+                // Sync Smooth Animated Metric Status Bars Layout Components
+                document.getElementById('cpu-bar').style.width = data.cpu + '%';
+                document.getElementById('mem-bar').style.width = data.memory + '%';
+
+                // Stream New Point Entry to Database Waveform Chart Matrix
+                activityTimeSeries.append(new Date().getTime(), data.db_wave);
+            })
+            .catch(error => console.error('Error fetching dashboard stats node:', error));
+    }
+
+    // Run updates system every 1 second
+    setInterval(updateStats, 1000);
+    updateStats(); 
+
+    // --- 3. LOAD PROFILE MATRIX DATA PIPELINE ---
+    fetch('{{ url_for("api_profile") }}')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('profile-pic').src = data['profile-img'];
+            document.getElementById('prof-name').textContent = data.name;
+            document.getElementById('prof-title').textContent = data.title;
+            
+            // Re-render strings dynamically into neat badges
+            const skillContainer = document.getElementById('skill-container');
+            skillContainer.innerHTML = ''; 
+            const skills = data.skill.split(',').map(skill => skill.trim());
+            skills.forEach(skill => {
+                if(skill) {
+                    const tag = document.createElement('span');
+                    tag.className = 'skill-tag';
+                    tag.textContent = skill;
+                    skillContainer.appendChild(tag);
+                }
+            });
+            
+            document.getElementById('prof-exp').innerHTML = data.Experience.replace(/\n/g, '<br>');
+            document.getElementById('prof-edu').textContent = data.Education;
+            document.getElementById('prof-con').textContent = data.contact;
+            document.getElementById('prof-email').textContent = data.email;
+            document.getElementById('prof-dob').textContent = data.DoB;
+        })
+        .catch(error => console.error('Error fetching background profile integration data sets:', error));
+
+    // --- 4. DATA PLOTS ENGINE CHART BINDINGS ---
+    const yearQuery = {% if display_year %}'?academic_year_id={{ display_year.id }}'{% else %}''{% endif %};
+
+    fetch('{{ url_for("analytics_gender") }}' + yearQuery).then(r=>r.json()).then(data=>{
+        new Chart(document.getElementById('genderChart'), {
+            type:'doughnut',
+            data:{
+                labels:['Male','Female','Other'],
+                datasets:[{data:[data.male, data.female, data.other], backgroundColor:['#4e73df','#f43f5e','#6b7280']}]
+            },
+            options:{plugins:{legend:{labels:{color:'#e2e8f0'}}}}
+        });
+    });
+
+    fetch('{{ url_for("analytics_enrollment") }}' + yearQuery).then(r=>r.json()).then(data=>{
+        const rows = Array.isArray(data) ? data : Object.entries(data.by_class || {}).map(([k,v])=>({year:'Class '+k, count:v}));
+        new Chart(document.getElementById('enrollChart'), {
+            type:'bar', 
+            data:{
+                labels:rows.map(d=>d.year), 
+                datasets:[{label:'Students', data:rows.map(d=>d.count), backgroundColor:'#4e73df', borderless: true}]
+            },
+            options: { plugins: { legend: { display: false } }, scales: { y: { ticks: { color: '#94a3b8' } }, x: { ticks: { color: '#94a3b8' } } } }
+        });
+    });
+    
+    fetch('{{ url_for("analytics_payments") }}' + yearQuery).then(r=>r.json()).then(data=>{
+        const rows = Array.isArray(data) ? data : Object.entries(data.by_year || {}).map(([k,v])=>({year:k, total:v}));
+        new Chart(document.getElementById('payChart'), {
+            type:'bar', 
+            data:{
+                labels:rows.map(d=>d.year), 
+                datasets:[{label:'Revenue', data:rows.map(d=>d.total), backgroundColor:'#1cc88a'}]
+            },
+            options: { plugins: { legend: { display: false } }, scales: { y: { ticks: { color: '#94a3b8' } }, x: { ticks: { color: '#94a3b8' } } } }
+        });
+    });
+    
+    fetch('{{ url_for("analytics_grades") }}' + yearQuery).then(r=>r.json()).then(data=>{
+        const rows = Array.isArray(data) ? data : Object.entries(data.by_subject || {}).map(([k,v])=>({year:k, average:v}));
+        new Chart(document.getElementById('gradeChart'), {
+            type:'line', 
+            data:{
+                labels:rows.map(d=>d.year), 
+                datasets:[{label:'Average Score', data:rows.map(d=>d.average), borderColor:'#00f2ff', fill: false, tension: 0.3}]
+            },
+            options: { scales: { y: { ticks: { color: '#94a3b8' } }, x: { ticks: { color: '#94a3b8' } } } }
+        });
+    });
+</script>
+{% endblock %}

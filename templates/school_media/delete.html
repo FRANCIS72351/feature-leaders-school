@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}Delete School Media{% endblock %}
+{% block content %}
+<div class="container py-4 col-lg-6">
+  <div class="card shadow-sm p-4">
+    <h1 class="h4 text-danger mb-3">Delete School Media</h1>
+    <p>Are you sure you want to remove <strong>{{ item.title }}</strong>?</p>
+    <form method="POST">
+      {{ form.hidden_tag() }}
+      <div class="d-flex justify-content-between">
+        <a href="{{ url_for('school_media_manage') }}" class="btn btn-outline-secondary">Cancel</a>
+        {{ form.submit(class="btn btn-danger") }}
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3>Create Sponsorship</h3>
+<form method="post">
+  {{ form.hidden_tag() }}
+  <div class="mb-3">{{ form.student_id.label }} {{ form.student_id(class_="form-control") }}</div>
+  <div class="mb-3">{{ form.amount.label }} {{ form.amount(class_="form-control") }}</div>
+  <div>{{ form.submit(class_="btn btn-primary") }}</div>
+</form>
+{% endblock %}

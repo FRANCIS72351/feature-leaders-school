@@ -1,0 +1,780 @@
+{% extends 'base.html' %}
+{% block title %}Teacher Grade Sheet - {{ klass.name }}{% endblock %}
+{% block content %}
+
+<style>
+  :root {
+    --sheet-line: #1f2937;
+    --sheet-cell-fs: 0.82rem;
+    --sheet-head-fs: 0.68rem;
+    --sheet-input-w: 84px;
+  }
+
+  .teacher-grade-sheet {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 1.25rem 1rem 2.5rem;
+  }
+
+  .grade-sheet-header {
+    border: 1px solid rgba(16, 24, 32, 0.18);
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 240, 232, 0.66));
+    padding: 0.95rem 1.05rem;
+    margin-bottom: 1rem;
+  }
+
+  .grade-sheet-toolbar {
+    border: 1px solid rgba(16, 24, 32, 0.16);
+    border-radius: 14px;
+    background: #ffffff;
+    box-shadow: 0 8px 24px rgba(16, 24, 32, 0.08);
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .grade-sheet-intro {
+    border: 1px solid rgba(16, 24, 32, 0.18);
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(37, 59, 82, 0.95), rgba(200, 40, 40, 0.84));
+    color: #f8f0e8;
+    padding: 0.9rem 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .grade-sheet-intro .step-list {
+    margin: 0.45rem 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    font-size: 0.82rem;
+  }
+
+  .grade-sheet-intro .step-list li {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .grade-sheet-intro .step-dot {
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    background: rgba(248, 240, 232, 0.24);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.72rem;
+    font-weight: 800;
+  }
+
+  .status-strip {
+    border: 1px solid rgba(16, 24, 32, 0.16);
+    border-radius: 12px;
+    background: #ffffff;
+    padding: 0.65rem 0.8rem;
+    margin-bottom: 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    align-items: center;
+  }
+
+  .status-pill {
+    border-radius: 999px;
+    padding: 0.18rem 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+  }
+
+  .status-pill.subject {
+    background: rgba(37, 59, 82, 0.1);
+    color: #253b52;
+    border-color: rgba(37, 59, 82, 0.24);
+  }
+
+  .status-pill.period {
+    background: rgba(200, 40, 40, 0.1);
+    color: #a32020;
+    border-color: rgba(200, 40, 40, 0.26);
+  }
+
+  .status-pill.draft {
+    background: rgba(146, 64, 14, 0.12);
+    color: #92400e;
+    border-color: rgba(146, 64, 14, 0.26);
+  }
+
+  .status-pill.published {
+    background: rgba(16, 185, 129, 0.12);
+    color: #047857;
+    border-color: rgba(16, 185, 129, 0.26);
+  }
+
+  .sheet-wrap {
+    border: 1px solid var(--sheet-line);
+    border-radius: 10px;
+    background: #ffffff;
+    box-shadow: 0 12px 26px rgba(16, 24, 32, 0.1);
+    overflow: hidden;
+  }
+
+  .sheet-masthead {
+    border-bottom: 1px solid var(--sheet-line);
+    padding: 0.75rem 0.95rem;
+    background: #fff;
+  }
+
+  .sheet-school-row {
+    display: grid;
+    grid-template-columns: 56px 1fr 56px;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .sheet-school-logo {
+    width: 52px;
+    height: 52px;
+    object-fit: contain;
+  }
+
+  .sheet-school-title {
+    text-align: center;
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    letter-spacing: 0.03em;
+    font-weight: 800;
+    color: #a32020;
+    text-transform: uppercase;
+    line-height: 1.15;
+  }
+
+  .sheet-school-sub {
+    text-align: center;
+    font-size: 0.74rem;
+    color: #374151;
+    margin-top: 0.1rem;
+  }
+
+  .sheet-info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border: 1px solid var(--sheet-line);
+  }
+
+  .sheet-info-cell {
+    border-right: 1px solid var(--sheet-line);
+    border-bottom: 1px solid var(--sheet-line);
+    padding: 0.28rem 0.45rem;
+    font-size: 0.72rem;
+  }
+
+  .sheet-info-cell:nth-child(2n) {
+    border-right: none;
+  }
+
+  .sheet-info-cell.label-strong {
+    font-weight: 700;
+  }
+
+  .report-entry-table {
+    margin: 0;
+    border-top: 1px solid var(--sheet-line);
+  }
+
+  .report-entry-table thead th {
+    background: #ffffff;
+    color: #111827;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: var(--sheet-head-fs);
+    border-color: var(--sheet-line);
+    border-width: 1px;
+    padding-top: 0.62rem;
+    padding-bottom: 0.62rem;
+    font-weight: 800;
+  }
+
+  .report-entry-table td {
+    border-color: var(--sheet-line);
+    border-width: 1px;
+    vertical-align: middle;
+    font-size: var(--sheet-cell-fs);
+    line-height: 1.25;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .report-entry-table tbody tr:hover {
+    background: rgba(248, 240, 232, 0.25);
+  }
+
+  .sheet-score-input {
+    width: var(--sheet-input-w);
+    text-align: center;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-weight: 700;
+    margin: 0 auto;
+  }
+
+  .sheet-total {
+    min-width: 68px;
+    display: inline-block;
+    text-align: center;
+    border: 1px solid var(--sheet-line);
+    border-radius: 999px;
+    padding: 0.18rem 0.52rem;
+    background: #ffffff;
+    color: #111827;
+    font-weight: 700;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+
+  .sheet-score-input.comp-input {
+    width: 76px;
+  }
+
+  .sheet-score-input.ca-total-input {
+    background: #f8fafc;
+    font-weight: 800;
+  }
+
+  .activity-matrix-table {
+    min-width: 980px;
+  }
+
+  .activity-matrix-table thead th.activity-col {
+    min-width: 132px;
+  }
+
+  .activity-col-title {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 800;
+    color: #111827;
+  }
+
+  .activity-col-meta {
+    display: block;
+    font-size: 0.62rem;
+    font-weight: 600;
+    color: #6b7280;
+    margin-top: 0.12rem;
+  }
+
+  .sheet-footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.7rem;
+    margin-top: 0.85rem;
+    padding: 0 0.15rem;
+  }
+
+  .sheet-note {
+    font-size: 0.8rem;
+    color: #5f534b;
+  }
+
+  .sheet-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  .class-tabs-wrap {
+    background: #ffffff;
+    border: 1px solid rgba(16, 24, 32, 0.14);
+    border-radius: 12px;
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .class-tab-link {
+    display: inline-flex;
+    flex-direction: column;
+    border: 1px solid rgba(16, 24, 32, 0.18);
+    border-radius: 10px;
+    padding: 0.45rem 0.7rem;
+    text-decoration: none;
+    color: #253b52;
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+
+  .class-tab-link small {
+    color: #6f625a;
+    font-size: 0.68rem;
+    font-weight: 600;
+  }
+
+  .class-tab-link.active,
+  .class-tab-link:hover {
+    background: #253b52;
+    border-color: #253b52;
+    color: #ffffff;
+  }
+
+  .class-tab-link.active small,
+  .class-tab-link:hover small {
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  @media print {
+    @page {
+      size: A4 portrait;
+      margin: 10mm 8mm;
+    }
+
+    body {
+      background: #ffffff !important;
+      padding-top: 0 !important;
+    }
+
+    .navbar,
+    .dashboard-welcome-banner,
+    .grade-sheet-header,
+    .grade-sheet-toolbar,
+    .class-tabs-wrap,
+    .sheet-actions,
+    .btn,
+    a[href^="/"] {
+      display: none !important;
+    }
+
+    .teacher-grade-sheet {
+      max-width: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .grade-sheet-intro,
+    .status-strip {
+      border-color: #000 !important;
+      color: #000 !important;
+      background: #fff !important;
+      margin-bottom: 0.45rem;
+    }
+
+    .sheet-wrap {
+      border-color: #000 !important;
+      box-shadow: none !important;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    .sheet-masthead,
+    .sheet-info-grid,
+    .sheet-info-cell,
+    .report-entry-table,
+    .report-entry-table thead th,
+    .report-entry-table td {
+      border-color: #000 !important;
+      color: #000 !important;
+      background: #fff !important;
+    }
+
+    .report-entry-table thead th,
+    .report-entry-table td {
+      font-size: 9.5pt !important;
+      padding-top: 3px !important;
+      padding-bottom: 3px !important;
+    }
+
+    .report-entry-table thead {
+      display: table-header-group;
+    }
+
+    .report-entry-table tbody tr.print-page-break {
+      break-before: page;
+      page-break-before: always;
+    }
+
+    .report-entry-table tr,
+    .report-entry-table td,
+    .report-entry-table th {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    .sheet-note {
+      color: #000 !important;
+      font-size: 8.8pt !important;
+    }
+  }
+
+  @media (max-width: 767.98px) {
+    .sheet-school-row {
+      grid-template-columns: 42px 1fr 42px;
+    }
+
+    .sheet-school-logo {
+      width: 40px;
+      height: 40px;
+    }
+
+    .sheet-info-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .sheet-info-cell,
+    .sheet-info-cell:nth-child(2n) {
+      border-right: none;
+    }
+
+    .sheet-score-input {
+      width: 70px;
+    }
+  }
+</style>
+
+<div class="teacher-grade-sheet">
+  <a href="{{ url_for('teacher_dashboard', tab='classes') }}" class="small text-decoration-none text-muted d-inline-block mb-2">
+    <i class="bi bi-arrow-left me-1"></i>Back to Teacher Dashboard
+  </a>
+
+  {% if active_year %}
+  <div class="alert bg-dark border border-cyan border-opacity-25 text-white mb-3 py-2 px-3 rounded-3 d-flex align-items-center" role="status">
+    <i class="bi bi-calendar-check text-cyan me-2"></i>
+    <span>Academic Year: <strong class="text-cyan">{{ active_year.name }}</strong></span>
+    <span class="badge bg-cyan bg-opacity-10 text-cyan border border-cyan border-opacity-25 ms-2 small">Current</span>
+  </div>
+  {% endif %}
+
+  <div class="grade-sheet-header">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+      <div>
+        <h1 class="h4 fw-bold mb-1">Professional Teacher Grade Sheet</h1>
+        <p class="small text-muted mb-0">
+          {{ klass.name }} · Grade {{ klass.grade_level }}{% if klass.stream %} · {{ klass.stream }}{% endif %}
+        </p>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        <a href="{{ url_for('teacher_class_folder', class_id=klass.id) }}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-folder2-open me-1"></i>Class Folder
+        </a>
+        {% if selected_subject %}
+        {% if is_semester_exam %}
+        <button type="submit" form="moeGradesForm" class="btn btn-primary btn-sm">
+          <i class="bi bi-save me-1"></i>Save Grades
+        </button>
+        {% else %}
+        <a href="{{ url_for('manual_activity_grades', class_id=klass.id, subject=selected_subject, period=selected_period) }}" class="btn btn-primary btn-sm">
+          <i class="bi bi-pencil-square me-1"></i>Grade Activities
+        </a>
+        {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if teacher_class_tabs and teacher_class_tabs|length > 1 %}
+  <div class="class-tabs-wrap">
+    <div class="small text-muted fw-semibold mb-2">Switch Class</div>
+    <div class="d-flex flex-wrap gap-2">
+      {% for tab in teacher_class_tabs %}
+      <a href="{{ url_for('grade_entry_class', class_id=tab.id, period=selected_period) }}" class="class-tab-link {% if tab.active %}active{% endif %}">
+        {{ tab.name }}
+        <small>G{{ tab.grade_level }}{% if tab.stream %} · {{ tab.stream }}{% endif %}</small>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="grade-sheet-toolbar">
+    {% if subjects %}
+    <form method="GET" action="{{ url_for('grade_entry_class', class_id=klass.id) }}" class="row g-3 align-items-end">
+      <div class="col-md-5">
+        <label for="subject" class="form-label small fw-semibold">Subject</label>
+        <select id="subject" name="subject" class="form-select form-select-sm" onchange="this.form.submit()">
+          {% for subject in subjects %}
+          <option value="{{ subject }}" {% if subject == selected_subject %}selected{% endif %}>{{ subject }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-5">
+        <label for="period" class="form-label small fw-semibold">Marking Period</label>
+        <select id="period" name="period" class="form-select form-select-sm" onchange="this.form.submit()">
+          {% for period_num, period_name in grading_periods %}
+          <option value="{{ period_num }}" {% if period_num == selected_period %}selected{% endif %}>{{ period_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary btn-sm w-100">
+          <i class="bi bi-funnel me-1"></i>Load Sheet
+        </button>
+      </div>
+    </form>
+    {% else %}
+    <div class="alert alert-warning mb-0">No subjects assigned for this class. Ask the principal to allocate the faculty roster.</div>
+    {% endif %}
+  </div>
+
+  {% if not subjects %}
+  <div class="alert alert-warning mb-0">You have no subject allocation for this class.</div>
+  {% else %}
+  <div class="grade-sheet-intro">
+    <strong>{{ selected_subject }} · {{ period_label }}</strong>
+    <ul class="step-list">
+      <li><span class="step-dot">1</span>Grade activities in the class workspace</li>
+      <li><span class="step-dot">2</span>Review the auto-calculated draft standing here</li>
+      <li><span class="step-dot">3</span>Publish the final period grade to student grade sheet</li>
+    </ul>
+  </div>
+
+  <div class="status-strip">
+    <span class="status-pill subject">Subject: {{ selected_subject }}</span>
+    <span class="status-pill period">{{ period_label }}</span>
+    <span class="status-pill published">Published: {{ grade_rows.values()|selectattr('submitted')|list|length }}</span>
+    <span class="status-pill draft">Draft: {{ grade_rows|length - (grade_rows.values()|selectattr('submitted')|list|length) }}</span>
+    <span class="status-pill">Students: {{ students|length }}</span>
+  </div>
+
+  {% if is_semester_exam %}
+  <form method="POST" id="moeGradesForm" action="{{ url_for('save_grades', class_id=klass.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="subject" value="{{ selected_subject }}">
+    <input type="hidden" name="period" value="{{ selected_period }}">
+
+    <div class="sheet-wrap">
+      <div class="sheet-masthead">
+        <div class="sheet-school-row">
+          <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="sheet-school-logo">
+          <div>
+            <div class="sheet-school-title">Feature Leaders Preparatory Academy</div>
+            <div class="sheet-school-sub">Class Grade Entry Sheet</div>
+          </div>
+          <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="sheet-school-logo">
+        </div>
+        <div class="sheet-info-grid">
+          <div class="sheet-info-cell"><span class="label-strong">Class:</span> {{ klass.name }}</div>
+          <div class="sheet-info-cell"><span class="label-strong">Academic Year:</span> {{ active_year.name if active_year else '-' }}</div>
+          <div class="sheet-info-cell"><span class="label-strong">Subject:</span> {{ selected_subject }}</div>
+          <div class="sheet-info-cell"><span class="label-strong">Period:</span> {{ period_label }}</div>
+          <div class="sheet-info-cell"><span class="label-strong">Teacher:</span> {{ teacher_name }}</div>
+          <div class="sheet-info-cell"><span class="label-strong">Students:</span> {{ students|length }}</div>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table report-entry-table align-middle mb-0">
+          <thead>
+            <tr>
+              <th class="ps-3">#</th>
+              <th>Student Name</th>
+              <th class="text-center">Student ID</th>
+              {% if is_semester_exam %}
+              <th class="text-center">Exam (100)</th>
+              {% endif %}
+              <th class="text-center">Grade</th>
+              <th class="text-center">Remarks</th>
+              <th class="pe-3">Sheet Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for student in students %}
+            {% set existing = grade_rows.get(student.id) %}
+            <tr>
+              <td class="ps-3 text-muted">{{ loop.index }}</td>
+              <td><div class="fw-semibold">{{ student.full_name }}</div></td>
+              <td class="text-center font-monospace small">{{ student.student_id }}</td>
+              {% if is_semester_exam %}
+              <td class="text-center">
+                <input type="number" step="0.1" min="0" max="100" name="exam_{{ student.id }}"
+                       value="{{ existing.score if existing and existing.score is not none else '' }}"
+                       class="form-control form-control-sm sheet-score-input">
+              </td>
+              {% set total = existing.score if existing else none %}
+              {% endif %}
+              <td class="text-center fw-bold grade-letter">
+                {% if total is not none and total != '' %}{{ total | grade_letter }}{% else %}--{% endif %}
+              </td>
+              <td class="text-center small remarks-cell">
+                {% if existing and existing.remarks %}
+                  {{ existing.remarks }}
+                {% elif total is not none and total != '' %}
+                  {% if total >= 90 %}Excellent{% elif total >= 80 %}Good{% elif total >= 70 %}Fair{% elif total >= 60 %}Pass{% else %}Fail{% endif %}
+                {% else %}
+                  --
+                {% endif %}
+              </td>
+              <td class="pe-3 small">
+                {% if existing and existing.submitted %}
+                <span class="badge bg-success">Published</span>
+                {% elif existing %}
+                <span class="badge bg-warning text-dark">Draft</span>
+                {% else %}
+                <span class="badge bg-secondary">Not saved</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+
+            {% if not students %}
+            {% for idx in range(1, 11) %}
+            <tr>
+              <td class="ps-3 text-muted">{{ idx }}</td>
+              <td class="text-muted">Awaiting student registration</td>
+              <td class="text-center text-muted">--</td>
+              {% if is_semester_exam %}
+              <td class="text-center text-muted">--</td>
+              {% endif %}
+              <td class="text-center text-muted">--</td>
+              <td class="text-center text-muted">--</td>
+              <td class="pe-3 small"><span class="badge bg-secondary">Pending</span></td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% if not students %}
+    <div class="alert alert-info mt-3 mb-0">
+      No students are registered in this class yet. The professional grade sheet is ready and will auto-populate once students are enrolled.
+    </div>
+    {% endif %}
+
+    <div class="sheet-footer">
+      <p class="sheet-note mb-0">
+        {% if is_semester_exam %}
+        MoE semester exam period: enter exam score out of 100.
+        {% else %}
+        Activity scores update draft standing automatically for this period.
+        {% endif %}
+      </p>
+      <div class="sheet-actions">
+        <button type="submit" name="publish_action" value="draft" class="btn btn-outline-secondary px-4">
+          <i class="bi bi-save me-1"></i>Save Draft
+        </button>
+        <button type="submit" name="publish_action" value="publish" class="btn btn-primary px-4">
+          <i class="bi bi-megaphone me-1"></i>Publish to Report Card
+        </button>
+      </div>
+    </div>
+  </form>
+  {% else %}
+  <form method="POST" id="periodActivitySheetForm" action="{{ url_for('save_period_activity_sheet', class_id=klass.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="subject" value="{{ selected_subject }}">
+    <input type="hidden" name="period" value="{{ selected_period }}">
+    {% for activity in activity_sheet_items %}
+    <input type="hidden" name="activity_keys" value="{{ activity.key }}">
+    {% endfor %}
+
+  <div class="sheet-wrap">
+    <div class="sheet-masthead">
+      <div class="sheet-school-row">
+        <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="sheet-school-logo">
+        <div>
+          <div class="sheet-school-title">Feature Leaders Preparatory Academy</div>
+            <div class="sheet-school-sub">Period Activity Grade Sheet</div>
+        </div>
+        <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="sheet-school-logo">
+      </div>
+      <div class="sheet-info-grid">
+        <div class="sheet-info-cell"><span class="label-strong">Class:</span> {{ klass.name }}</div>
+        <div class="sheet-info-cell"><span class="label-strong">Academic Year:</span> {{ active_year.name if active_year else '-' }}</div>
+        <div class="sheet-info-cell"><span class="label-strong">Subject:</span> {{ selected_subject }}</div>
+        <div class="sheet-info-cell"><span class="label-strong">Period:</span> {{ period_label }}</div>
+        <div class="sheet-info-cell"><span class="label-strong">Teacher:</span> {{ teacher_name }}</div>
+        <div class="sheet-info-cell"><span class="label-strong">Workflow:</span> Activities -> Draft Standing -> Publish</div>
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table report-entry-table align-middle mb-0">
+        <thead>
+          <tr>
+            <th class="ps-3">#</th>
+            <th>Student Name</th>
+            <th class="text-center">Student ID</th>
+            {% for activity in activity_sheet_items %}
+            <th class="text-center activity-col">
+              <span class="activity-col-title">{{ activity.title }}</span>
+              <span class="activity-col-meta">Max {{ activity.max_score }}{% if activity.is_quick %} · Quick{% endif %}</span>
+            </th>
+            {% endfor %}
+            <th class="text-center">Current Standing</th>
+            <th class="text-center">Grade</th>
+            <th class="text-center">Remarks</th>
+            <th class="pe-3 text-center">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for student in students %}
+          {% set existing = grade_rows.get(student.id) %}
+          <tr>
+            <td class="ps-3 text-muted">{{ loop.index }}</td>
+            <td><div class="fw-semibold">{{ student.full_name }}</div></td>
+            <td class="text-center font-monospace small">{{ student.student_id }}</td>
+            {% for activity in activity_sheet_items %}
+            {% set submission = activity_submission_map.get(activity.assessment_id, {}).get(student.id) if activity.assessment_id else none %}
+            <td class="text-center">
+              <input type="number"
+                     step="0.1"
+                     min="0"
+                     max="{{ activity.max_score }}"
+                     name="score_{{ activity.key }}_{{ student.id }}"
+                     value="{{ submission.score if submission and submission.is_graded else '' }}"
+                     class="form-control form-control-sm sheet-score-input mx-auto text-center"
+                     aria-label="{{ activity.title }} score for {{ student.full_name }}">
+            </td>
+            {% endfor %}
+            <td class="text-center">
+              {% if existing and existing.score is not none %}
+              <span class="sheet-total">{{ '%.1f'|format(existing.score) }}</span>
+              <div class="small text-muted mt-1">CA {{ '%.1f'|format(existing.ca_score or 0) }} · Exam {{ '%.1f'|format(existing.exam_score or 0) }}</div>
+              {% else %}
+              <span class="text-muted">Awaiting graded activities</span>
+              {% endif %}
+            </td>
+            <td class="text-center fw-bold">
+              {% if existing and existing.score is not none %}{{ existing.score | grade_letter }}{% else %}--{% endif %}
+            </td>
+            <td class="text-center small">
+              {% if existing and existing.remarks %}{{ existing.remarks }}{% elif existing and existing.score is not none %}Standing recorded{% else %}--{% endif %}
+            </td>
+            <td class="pe-3 text-center small">
+              {% if existing and existing.submitted %}
+              <span class="badge bg-success">Published</span>
+              <div class="text-muted small mt-1">Visible on report card</div>
+              {% elif existing and existing.score is not none %}
+              <span class="badge bg-warning text-dark">Draft Standing</span>
+              <div class="text-muted small mt-1">Visible on student dashboard</div>
+              {% else %}
+              <span class="badge bg-secondary">Pending</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  </form>
+
+  <div class="sheet-footer">
+    <p class="sheet-note mb-0">Enter all period activity scores in this sheet. Save Draft keeps the student's standing updated. Save &amp; Publish confirms the final grade on the student grade sheet and report card.</p>
+    <div class="sheet-actions">
+      <button type="submit" form="periodActivitySheetForm" name="publish_action" value="draft" class="btn btn-outline-secondary px-4">
+        <i class="bi bi-save me-1"></i>Save Draft
+      </button>
+      <button type="submit" form="periodActivitySheetForm" name="publish_action" value="publish" class="btn btn-primary px-4">
+        <i class="bi bi-megaphone me-1"></i>Save &amp; Publish
+      </button>
+    </div>
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
+
+{% endblock %}

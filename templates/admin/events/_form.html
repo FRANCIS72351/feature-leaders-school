@@ -1,0 +1,49 @@
+{% macro render_event_form(form, submit_label) %}
+  <form method="POST" class="card shadow-sm p-4 bg-light">
+    {{ form.hidden_tag() }}
+    <div class="mb-3">
+      {{ form.title.label(class="form-label fw-semibold") }}
+      {{ form.title(class="form-control", placeholder="e.g., Science Fair") }}
+      {% if form.title.errors %}
+        <div class="text-danger small">{{ form.title.errors[0] }}</div>
+      {% endif %}
+    </div>
+
+    <div class="mb-3">
+      {{ form.description.label(class="form-label fw-semibold") }}
+      {{ form.description(class="form-control", rows=4, placeholder="Short description of the event") }}
+      {% if form.description.errors %}
+        <div class="text-danger small">{{ form.description.errors[0] }}</div>
+      {% endif %}
+    </div>
+
+    <div class="row g-3">
+      <div class="col-md-4">
+        {{ form.date.label(class="form-label fw-semibold") }}
+        {{ form.date(class="form-control") }}
+        {% if form.date.errors %}
+          <div class="text-danger small">{{ form.date.errors[0] }}</div>
+        {% endif %}
+      </div>
+      <div class="col-md-4">
+        {{ form.event_type.label(class="form-label fw-semibold") }}
+        {{ form.event_type(class="form-select") }}
+        {% if form.event_type.errors %}
+          <div class="text-danger small">{{ form.event_type.errors[0] }}</div>
+        {% endif %}
+      </div>
+      <div class="col-md-4">
+        {{ form.location.label(class="form-label fw-semibold") }}
+        {{ form.location(class="form-control", placeholder="Campus Hall A") }}
+        {% if form.location.errors %}
+          <div class="text-danger small">{{ form.location.errors[0] }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="mt-4 d-flex justify-content-between">
+      <a href="{{ url_for('admin_events_list') }}" class="btn btn-outline-secondary">Cancel</a>
+      <button type="submit" class="btn btn-primary">{{ submit_label }}</button>
+    </div>
+  </form>
+{% endmacro %}

@@ -1,0 +1,1 @@
+Static assets folder (Chart.js loaded via CDN). Uploads are stored in instance/uploads.

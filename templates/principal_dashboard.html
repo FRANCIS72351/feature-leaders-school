@@ -1,0 +1,1218 @@
+{% extends 'base.html' %}
+{% block title %}Principal Executive Management Terminal{% endblock %}
+{% block content %}
+
+<style>
+    /* System Global Workspace Theme Variables */
+    body {
+        background-color: #0b0f19;
+        color: #e2e8f0;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    .text-cyan { color: #00f2ff !important; }
+    .text-emerald { color: #10b981 !important; }
+    .text-amber { color: #f59e0b !important; }
+    .text-rose { color: #f43f5e !important; }
+    .text-blue { color: #38bdf8 !important; }
+
+    /* Force readable white text on dark dashboard surfaces */
+    .principal-terminal,
+    .principal-terminal p,
+    .principal-terminal span,
+    .principal-terminal small,
+    .principal-terminal label,
+    .principal-terminal td,
+    .principal-terminal div {
+        color: #ffffff;
+    }
+
+    .principal-terminal .text-muted,
+    .principal-terminal .text-white-50,
+    .principal-terminal .text-dark,
+    .principal-terminal .text-secondary,
+    .principal-terminal .text-gray-800,
+    .principal-terminal .badge.text-white-50 {
+        color: #ffffff !important;
+    }
+
+    .principal-terminal .form-cyber,
+    .principal-terminal .form-cyber:focus {
+        color: #ffffff !important;
+    }
+
+    .principal-terminal .form-cyber::placeholder {
+        color: rgba(255, 255, 255, 0.65) !important;
+    }
+
+    .principal-terminal select.form-cyber option {
+        background-color: #111827;
+        color: #ffffff;
+    }
+
+    /* Preserve accent colors for metrics, badges, and icons */
+    .principal-terminal .text-cyan,
+    .principal-terminal .text-emerald,
+    .principal-terminal .text-amber,
+    .principal-terminal .text-rose,
+    .principal-terminal .glow-title,
+    .principal-terminal h2,
+    .principal-terminal h4,
+    .principal-terminal h5,
+    .principal-terminal h6,
+    .principal-terminal .fw-bold.text-white,
+    .principal-terminal .text-white {
+        color: inherit;
+    }
+    .principal-terminal .text-cyan { color: #00f2ff !important; }
+    .principal-terminal .text-emerald { color: #10b981 !important; }
+    .principal-terminal .text-amber { color: #f59e0b !important; }
+    .principal-terminal .text-rose { color: #f43f5e !important; }
+    .principal-terminal .text-blue { color: #38bdf8 !important; }
+
+    /* Provision Core Class command card — blue secondary copy */
+    .principal-terminal .btn-command.cmd-cyan .cmd-desc,
+    .principal-terminal .btn-command.cmd-cyan .text-blue {
+        color: #38bdf8 !important;
+    }
+    .principal-terminal .glow-title,
+    .principal-terminal h2.glow-title,
+    .principal-terminal .text-white,
+    .principal-terminal h4,
+    .principal-terminal h5,
+    .principal-terminal h6,
+    .principal-terminal .fw-bold.text-white {
+        color: #ffffff !important;
+    }
+
+    .principal-terminal .table-cyber th {
+        color: #00f2ff !important;
+    }
+
+    .principal-terminal .table-cyber td {
+        color: #ffffff !important;
+    }
+
+    /* Core Application Glow Title Accentuation */
+    .glow-title {
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        color: #ffffff;
+        text-shadow: 0 0 20px rgba(0, 242, 255, 0.15);
+    }
+
+    /* Modern Glassmorphic Container Nodes */
+    .sec-card {
+        background: #111827;
+        border: 1px solid #1f2937;
+        border-radius: 12px !important;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        transition: border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .sec-card:hover {
+        border-color: rgba(0, 242, 255, 0.25);
+    }
+
+    /* Command Matrix Dashboard Operational Buttons */
+    .btn-command {
+        background: #070a12;
+        border: 1px solid #1f2937;
+        color: #ffffff;
+        padding: 14px;
+        border-radius: 10px;
+        display: flex;
+        flex-direction: row; /* FIXED: standard css rule configuration */
+        align-items: center;
+        text-align: left;
+        width: 100%;
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        text-decoration: none !important;
+    }
+    .btn-command:hover {
+        background: rgba(0, 242, 255, 0.03);
+        transform: translateY(-2px);
+    }
+    .btn-command.cmd-cyan:hover { border-color: #00f2ff; box-shadow: 0 0 15px rgba(0, 242, 255, 0.15); }
+    .btn-command.cmd-emerald:hover { border-color: #10b981; box-shadow: 0 0 15px rgba(10, 185, 129, 0.15); }
+    .btn-command.cmd-amber:hover { border-color: #f59e0b; box-shadow: 0 0 15px rgba(245, 158, 11, 0.15); }
+    .btn-command.cmd-rose:hover { border-color: #f43f5e; box-shadow: 0 0 15px rgba(244, 63, 94, 0.15); }
+
+    .cmd-icon-box {
+        width: 44px;
+        height: 44px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255,255,255,0.02);
+        border: 1px solid rgba(255,255,255,0.05);
+        flex-shrink: 0;
+    }
+
+    /* Cybernetic Custom Form Controllers */
+    .form-cyber {
+        background-color: #070a12 !important;
+        border: 1px solid #374151 !important;
+        color: #ffffff !important;
+        border-radius: 8px !important;
+        transition: border-color 0.3s ease;
+    }
+    .form-cyber:focus {
+        border-color: #00f2ff !important;
+        box-shadow: 0 0 10px rgba(0, 242, 255, 0.15) !important;
+    }
+
+    /* Sleek Polished Datatables */
+    .table-cyber { color: #e2e8f0 !important; font-size: 0.9rem; }
+    .table-cyber th {
+        background-color: #1f2937 !important;
+        color: #00f2ff !important;
+        border-color: #374151 !important;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        padding: 12px;
+    }
+    .table-cyber td { background-color: transparent !important; border-color: #1f2937 !important; padding: 14px 12px; }
+    .table-cyber tbody tr { transition: background-color 0.2s ease; }
+    .table-cyber tbody tr:hover { background-color: rgba(255, 255, 255, 0.02) !important; }
+
+    /* Hardware Accelerated Animation Framework */
+    .fade-glide-in {
+        opacity: 0;
+        transform: translateY(15px);
+        animation: dashboardFadeGlide 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .delay-1 { animation-delay: 0.1s; }
+    .delay-2 { animation-delay: 0.2s; }
+    .delay-3 { animation-delay: 0.3s; }
+
+    @keyframes dashboardFadeGlide { to { opacity: 1; transform: translateY(0); } }
+
+    /* Class Condition Vault — principal-only class-first roster */
+    .condition-vault-card {
+        display: block;
+        background: linear-gradient(145deg, rgba(7, 10, 18, 0.95), rgba(17, 24, 39, 0.85));
+        border: 1px solid rgba(0, 242, 255, 0.12);
+        border-radius: 14px;
+        padding: 1.1rem 1.25rem;
+        text-decoration: none !important;
+        color: inherit;
+        height: 100%;
+        transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    .condition-vault-card::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #00f2ff, #10b981);
+        opacity: 0.55;
+    }
+    .condition-vault-card:hover {
+        transform: translateY(-3px);
+        border-color: rgba(0, 242, 255, 0.45);
+        box-shadow: 0 12px 28px rgba(0, 242, 255, 0.08);
+    }
+    .vault-health-ring {
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.72rem;
+        font-weight: 700;
+        border: 2px solid rgba(16, 185, 129, 0.35);
+        background: rgba(16, 185, 129, 0.06);
+        color: #10b981;
+        flex-shrink: 0;
+    }
+    .vault-health-ring.warn {
+        border-color: rgba(245, 158, 11, 0.45);
+        background: rgba(245, 158, 11, 0.08);
+        color: #f59e0b;
+    }
+    .vault-health-ring.alert {
+        border-color: rgba(244, 63, 94, 0.45);
+        background: rgba(244, 63, 94, 0.08);
+        color: #f43f5e;
+    }
+    .vault-stat-pill {
+        font-size: 0.68rem;
+        padding: 0.2rem 0.55rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.02);
+    }
+    .class-drill-header {
+        background: linear-gradient(135deg, rgba(0, 242, 255, 0.06), rgba(16, 185, 129, 0.04));
+        border: 1px solid rgba(0, 242, 255, 0.15);
+        border-radius: 12px;
+        padding: 1rem 1.25rem;
+    }
+    .condition-vault-card.unallocated-vault {
+        border-style: dashed;
+        border-color: rgba(245, 158, 11, 0.35);
+        background: linear-gradient(145deg, rgba(20, 14, 7, 0.95), rgba(17, 24, 39, 0.85));
+    }
+    .condition-vault-card.unallocated-vault::before {
+        background: linear-gradient(90deg, #f59e0b, #f43f5e);
+    }
+    .condition-vault-card.unallocated-vault:hover {
+        border-color: rgba(245, 158, 11, 0.55);
+        box-shadow: 0 12px 28px rgba(245, 158, 11, 0.1);
+    }
+    .class-drill-header.unallocated-header {
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(244, 63, 94, 0.04));
+        border-color: rgba(245, 158, 11, 0.2);
+    }
+
+    .principal-terminal,
+    .principal-terminal p,
+    .principal-terminal span,
+    .principal-terminal small,
+    .principal-terminal label,
+    .principal-terminal td,
+    .principal-terminal div {
+        color: #1f2937 !important;
+    }
+    .principal-terminal .text-muted,
+    .principal-terminal .text-white-50,
+    .principal-terminal .text-secondary,
+    .principal-terminal .text-dark,
+    .principal-terminal .text-gray-800,
+    .principal-terminal .badge.text-white-50 {
+        color: #5f7892 !important;
+    }
+    .principal-terminal .sec-card,
+    .principal-terminal .bg-dark,
+    .principal-terminal .alert.bg-dark,
+    .principal-terminal .btn-command,
+    .principal-terminal .condition-vault-card,
+    .principal-terminal .condition-vault-card.unallocated-vault,
+    .principal-terminal .class-drill-header,
+    .principal-terminal .class-drill-header.unallocated-header {
+        background: #ffffff !important;
+        border-color: #dbe7f3 !important;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+    }
+    .principal-terminal .glow-title {
+        color: #0f172a !important;
+        text-shadow: none;
+    }
+    .principal-terminal .text-cyan { color: #0ea5e9 !important; }
+    .principal-terminal .text-emerald { color: #059669 !important; }
+    .principal-terminal .text-amber { color: #d97706 !important; }
+    .principal-terminal .text-rose { color: #dc2626 !important; }
+    .principal-terminal .text-blue { color: #0c7db8 !important; }
+    .principal-terminal .cmd-icon-box {
+        background: #edf5fc;
+        border-color: #d7e7f5;
+    }
+    .principal-terminal .table-cyber {
+        color: #1f2937 !important;
+    }
+    .principal-terminal .table-cyber th {
+        background: #f3f8fd !important;
+        color: #0369a1 !important;
+        border-color: #dbe7f3 !important;
+    }
+    .principal-terminal .table-cyber td {
+        background: #ffffff !important;
+        border-color: #e5edf6 !important;
+        color: #1f2937 !important;
+    }
+    .principal-terminal .form-cyber {
+        background: #ffffff !important;
+        border-color: #cfe0ef !important;
+        color: #0f172a !important;
+    }
+    .principal-terminal .form-cyber:focus {
+        border-color: #0ea5e9 !important;
+        box-shadow: 0 0 0 0.2rem rgba(14, 165, 233, 0.2) !important;
+    }
+    .principal-terminal .bg-secondary,
+    .principal-terminal .badge.bg-secondary {
+        background: #eaf2fa !important;
+        color: #33506b !important;
+    }
+
+    .principal-workspace-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.55rem;
+        margin: 0 0 1rem;
+    }
+    .principal-workspace-tabs a {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.5rem 0.88rem;
+        border-radius: 999px;
+        border: 1px solid rgba(14, 165, 233, 0.22);
+        background: #f8fbff;
+        color: #0c7db8;
+        font-size: 0.76rem;
+        font-weight: 700;
+        text-decoration: none;
+    }
+    .principal-workspace-tabs a:hover {
+        background: #eaf5ff;
+        border-color: rgba(14, 165, 233, 0.4);
+        color: #075985;
+    }
+    .principal-overview-strip {
+        border: 1px solid #dbe7f3;
+        border-radius: 14px;
+        background: linear-gradient(135deg, #ffffff, #f8fbff);
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+        padding: 0.85rem;
+        margin-bottom: 1rem;
+    }
+    .principal-overview-chip {
+        border-radius: 12px;
+        border: 1px solid #dbe7f3;
+        background: #ffffff;
+        padding: 0.75rem;
+        height: 100%;
+    }
+    .principal-overview-chip .label {
+        color: #5f7892;
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.2rem;
+    }
+    .principal-overview-chip .value {
+        font-size: 1.35rem;
+        font-weight: 800;
+        color: #0f172a;
+        line-height: 1.05;
+    }
+    .principal-overview-chip .sub {
+        font-size: 0.72rem;
+        color: #5f7892;
+        margin-top: 0.25rem;
+    }
+
+    .principal-layout-grid {
+        --bs-gutter-x: 0.8rem;
+        --bs-gutter-y: 0.85rem;
+    }
+
+    .principal-layout-grid > .principal-sidebar {
+        width: 29%;
+    }
+
+    .principal-layout-grid > .principal-main {
+        width: 71%;
+    }
+
+    @media (max-width: 1199.98px) {
+        .principal-layout-grid > .principal-sidebar,
+        .principal-layout-grid > .principal-main {
+            width: 100%;
+        }
+    }
+
+    .principal-terminal .btn-command {
+        padding: 0.62rem 0.72rem;
+        min-height: 56px;
+    }
+
+    .principal-terminal .btn-command .fw-bold {
+        font-size: 0.8rem;
+        line-height: 1.2;
+    }
+
+    .principal-terminal .btn-command .cmd-desc,
+    .principal-terminal .btn-command .text-white.small,
+    .principal-terminal .btn-command .text-blue.small {
+        font-size: 0.7rem !important;
+        line-height: 1.2;
+    }
+
+    .principal-terminal .cmd-icon-box {
+        width: 38px;
+        height: 38px;
+    }
+
+    .principal-overview-chip {
+        min-height: 92px;
+    }
+
+    .principal-terminal .vault-stat-pill {
+        font-size: 0.64rem;
+        padding: 0.18rem 0.48rem;
+    }
+
+    .principal-terminal .class-drill-header,
+    .principal-terminal .principal-overview-strip {
+        border-radius: 12px;
+    }
+
+    .principal-terminal .table-cyber th {
+        font-size: 0.68rem;
+    }
+
+    .principal-terminal .table-cyber td {
+        font-size: 0.83rem;
+    }
+    .principal-left-rail {
+        position: sticky;
+        top: 1rem;
+    }
+    .finance-audit-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.55rem;
+        margin-bottom: 0.9rem;
+    }
+    .finance-audit-chip {
+        border: 1px solid rgba(16, 24, 32, 0.16);
+        background: rgba(255, 255, 255, 0.84);
+        border-radius: 10px;
+        padding: 0.5rem 0.6rem;
+    }
+    .finance-audit-chip .label {
+        font-size: 0.67rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #6f625a;
+        font-weight: 700;
+    }
+    .finance-audit-chip .value {
+        font-size: 0.96rem;
+        font-weight: 800;
+        color: #1f1b18;
+        line-height: 1.2;
+    }
+    .finance-audit-entries {
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+    }
+    .finance-entry-row {
+        border: 1px solid rgba(16, 24, 32, 0.14);
+        border-radius: 11px;
+        background: #fff;
+        padding: 0.55rem 0.65rem;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0.5rem;
+    }
+    .finance-entry-row .desc {
+        font-size: 0.79rem;
+        color: #2b2623;
+        font-weight: 700;
+        max-width: 270px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .finance-entry-row .meta {
+        font-size: 0.7rem;
+        color: #6f625a;
+    }
+    .finance-entry-row .amount {
+        font-size: 0.82rem;
+        font-weight: 800;
+        text-align: right;
+    }
+    .finance-entry-row .balance {
+        font-size: 0.7rem;
+        color: #6f625a;
+        text-align: right;
+    }
+    .finance-anomaly-board {
+        border: 1px solid rgba(16, 24, 32, 0.16);
+        border-radius: 12px;
+        background: rgba(248, 240, 232, 0.4);
+        padding: 0.65rem 0.75rem;
+        margin-bottom: 0.85rem;
+    }
+    .finance-anomaly-summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin-bottom: 0.55rem;
+    }
+    .finance-anomaly-tag {
+        font-size: 0.66rem;
+        font-weight: 800;
+        border-radius: 999px;
+        padding: 0.2rem 0.5rem;
+        border: 1px solid transparent;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+    }
+    .finance-anomaly-tag.high {
+        background: rgba(200, 40, 40, 0.12);
+        border-color: rgba(200, 40, 40, 0.35);
+        color: #a32020;
+    }
+    .finance-anomaly-tag.medium {
+        background: rgba(146, 64, 14, 0.12);
+        border-color: rgba(146, 64, 14, 0.3);
+        color: #92400e;
+    }
+    .finance-anomaly-tag.low {
+        background: rgba(37, 59, 82, 0.12);
+        border-color: rgba(37, 59, 82, 0.32);
+        color: #253b52;
+    }
+    .finance-anomaly-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.38rem;
+    }
+    .finance-anomaly-item {
+        border: 1px solid rgba(16, 24, 32, 0.14);
+        border-radius: 10px;
+        background: #ffffff;
+        padding: 0.45rem 0.55rem;
+    }
+    .finance-anomaly-item .title {
+        font-size: 0.76rem;
+        font-weight: 800;
+        color: #1f1b18;
+        line-height: 1.2;
+    }
+    .finance-anomaly-item .detail {
+        font-size: 0.7rem;
+        color: #6f625a;
+        line-height: 1.25;
+    }
+    @media (max-width: 575.98px) {
+        .finance-audit-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+<div class="container-fluid py-4 px-md-4 principal-terminal pro-dashboard">
+    {% set year_param = {'academic_year_id': display_year.id} if display_year else {} %}
+
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4 pb-3 border-bottom border-secondary border-opacity-10 fade-glide-in">
+        <div>
+            <h2 class="glow-title mb-0"><i class="fas fa-shield-halved text-cyan me-2"></i>Principal Oversight Terminal</h2>
+            <p class="text-white small mb-0">System Authority Level: Complete Command & Control Matrix</p>
+        </div>
+        <form method="get" class="d-flex gap-2 mt-2 mt-md-0 flex-wrap align-items-center">
+            {% if class_id %}<input type="hidden" name="class_id" value="{{ class_id }}">{% endif %}
+            {% if selected_folder %}<input type="hidden" name="folder" value="{{ selected_folder }}">{% endif %}
+            {% if search_class %}<input type="hidden" name="search_class" value="{{ search_class }}">{% endif %}
+            {% if request.args.get('search') %}<input type="hidden" name="search" value="{{ request.args.get('search') }}">{% endif %}
+            {% if request.args.get('status') %}<input type="hidden" name="status" value="{{ request.args.get('status') }}">{% endif %}
+            <label for="academic_year_id" class="text-white small mb-0">Academic Year</label>
+            <select name="academic_year_id" id="academic_year_id" class="form-select form-cyber form-select-sm" onchange="this.form.submit()">
+                {% for y in years %}
+                <option value="{{ y.id }}" {% if display_year and y.id == display_year.id %}selected{% endif %}>
+                    {{ y.name }}{% if y.is_active %} (Active){% endif %}
+                </option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+
+    {% if viewing_archived %}
+    <div class="alert bg-dark border border-warning border-opacity-40 text-white mb-4 shadow-sm rounded-3 fade-glide-in delay-1 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div class="d-flex align-items-center">
+            <div class="p-2 bg-warning bg-opacity-10 rounded-3 me-3 text-amber border border-warning border-opacity-10">
+                <i class="fas fa-archive fa-fw fa-lg"></i>
+            </div>
+            <div>
+                <span class="text-white small d-block uppercase tracking-wider" style="font-size:0.7rem;">Historical Record View</span>
+                <strong class="text-amber">Viewing: {{ display_year.name }} (Archived)</strong>
+                <span class="text-white small ms-2" style="opacity:0.75;">Read-only past-year enrollment, grades, and financials</span>
+            </div>
+        </div>
+        {% if active_year %}
+        <a href="{{ url_for('principal_dashboard', academic_year_id=active_year.id) }}" class="btn btn-sm btn-outline-success">
+            <i class="fas fa-arrow-left me-1"></i> Active Year ({{ active_year.name }})
+        </a>
+        {% endif %}
+    </div>
+    {% elif display_year %}
+    <div class="alert bg-dark border border-cyan border-opacity-25 text-white mb-4 shadow-sm rounded-3 fade-glide-in delay-1 d-flex align-items-center">
+        <div class="p-2 bg-cyan bg-opacity-10 rounded-3 me-3 text-cyan border border-cyan border-opacity-10">
+            <i class="fas fa-calendar-check fa-fw fa-lg"></i>
+        </div>
+        <div>
+            <span class="text-white small d-block uppercase tracking-wider" style="font-size:0.7rem;">Active System Academic Term Session</span>
+            <strong class="text-cyan">{{ display_year.name }}</strong>
+            <span class="badge bg-success bg-opacity-10 text-emerald border border-success border-opacity-25 ms-2">Active</span>
+            {% if display_year.start_date %}
+            <span class="text-white ms-2">({{ display_year.start_date }}{% if display_year.end_date %} to {{ display_year.end_date }}{% endif %})</span>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="principal-workspace-tabs fade-glide-in delay-1">
+        <a href="{{ url_for('principal_dashboard', **year_param) }}"><i class="fas fa-grid-2"></i>Overview</a>
+        <a href="{{ url_for('dashboard', view='admin') }}"><i class="fas fa-user-shield"></i>Admin Dashboard</a>
+        <a href="{{ url_for('principal_attendance', academic_year_id=display_year.id if display_year else None) }}"><i class="fas fa-calendar-check"></i>Attendance</a>
+        <a href="{{ url_for('principal_grade_entry') }}"><i class="fas fa-pen-to-square"></i>Grade Review</a>
+        <a href="{{ url_for('business_dashboard', **year_param) }}"><i class="fas fa-wallet"></i>Finance</a>
+        <a href="{{ url_for('announcements') }}"><i class="fas fa-bullhorn"></i>Announcements</a>
+    </div>
+
+    <div class="principal-overview-strip fade-glide-in delay-1">
+        <div class="row g-2">
+            <div class="col-6 col-lg-3">
+                <div class="principal-overview-chip">
+                    <div class="label">Students</div>
+                    <div class="value">{{ counts.students if counts and counts.students is defined else 0 }}</div>
+                    <div class="sub">Active enrollment</div>
+                </div>
+            </div>
+            <div class="col-6 col-lg-3">
+                <div class="principal-overview-chip">
+                    <div class="label">Classes</div>
+                    <div class="value">{{ class_portfolios|length if class_portfolios is defined else 0 }}</div>
+                    <div class="sub">Operational folders</div>
+                </div>
+            </div>
+            <div class="col-6 col-lg-3">
+                <div class="principal-overview-chip">
+                    <div class="label">Pass Rate</div>
+                    <div class="value">{{ academic_stats.passing_rate if academic_stats is defined else 0 }}%</div>
+                    <div class="sub">Academic monitor</div>
+                </div>
+            </div>
+            <div class="col-6 col-lg-3">
+                <div class="principal-overview-chip">
+                    <div class="label">Revenue</div>
+                    <div class="value">${{ "{:,.0f}".format(financial_stats.total_revenue if financial_stats else 0) }}</div>
+                    <div class="sub">Gross stream</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4 principal-layout-grid">
+        
+        <div class="col-xl-4 col-lg-5 d-flex flex-column gap-4 fade-glide-in delay-1 principal-left-rail principal-sidebar">
+            
+            <div class="card sec-card p-4">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="position-relative" style="width: 72px; height: 72px;">
+                        <img src="{{ current_user.photo_url }}" class="w-100 h-100 object-fit-cover rounded-3 border border-secondary border-opacity-20" alt="User Avatar">
+                        <span class="position-absolute bottom-0 end-0 bg-emerald border border-dark rounded-circle p-1.5" title="Operator Status: Active"></span>
+                    </div>
+                    <div>
+                        <h5 class="text-white mb-0 font-weight-bold">{{ current_user.full_name }}</h5>
+                        <span class="badge bg-cyan bg-opacity-10 text-cyan small border border-cyan border-opacity-10 mt-1 px-2.5 py-1">{{ current_user.role|title }}</span>
+                    </div>
+                </div>
+                <hr class="border-secondary opacity-10 my-3">
+                <div class="small text-white d-flex flex-column gap-2">
+                    <div><i class="fas fa-envelope text-white me-2 fa-fw"></i>{{ current_user.email }}</div>
+                    {% if current_user.telephone_number %}
+                        <div><i class="fas fa-phone text-white me-2 fa-fw"></i>{{ current_user.telephone_number }}</div>
+                    {% endif %}
+                    {% if current_user.home_address %}
+                        <div><i class="fas fa-map-marker-alt text-white me-2 fa-fw"></i>{{ current_user.home_address }}</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card sec-card p-4">
+                <h6 class="text-white font-weight-bold mb-1">
+                    <i class="fas fa-terminal text-cyan me-2"></i>Executive Action Commands
+                </h6>
+                <p class="text-white small mb-3">Direct access pipelines to execute foundational configuration updates.</p>
+                
+                <div class="d-flex flex-column gap-3">
+                    <a href="{{ url_for('manage_leaders') }}" class="btn-command cmd-cyan text-decoration-none">
+                        <div class="d-flex align-items-center w-100">
+                            <div class="cmd-icon-box text-cyan me-3"><i class="fas fa-user-tie fa-lg"></i></div>
+                            <div>
+                                <div class="fw-bold text-white small">About Page Leadership</div>
+                                <div class="cmd-desc text-blue small" style="font-size:0.75rem;">Update leader names, roles, bios &amp; photos</div>
+                            </div>
+                        </div>
+                    </a>
+
+                    <a href="{{ url_for('school_media_manage') }}" class="btn-command cmd-cyan text-decoration-none">
+                        <div class="d-flex align-items-center w-100">
+                            <div class="cmd-icon-box text-cyan me-3"><i class="fas fa-photo-video fa-lg"></i></div>
+                            <div>
+                                <div class="fw-bold text-white small">School Media Hub</div>
+                                <div class="cmd-desc text-blue small" style="font-size:0.75rem;">Post photos, videos, entrance info &amp; year documents</div>
+                            </div>
+                        </div>
+                    </a>
+
+                    <a href="{{ url_for('admin_events_list') }}" class="btn-command cmd-cyan text-decoration-none">
+                        <div class="d-flex align-items-center w-100">
+                            <div class="cmd-icon-box text-cyan me-3"><i class="fas fa-calendar-plus fa-lg"></i></div>
+                            <div>
+                                <div class="fw-bold text-white small">School Events Calendar</div>
+                                <div class="cmd-desc text-blue small" style="font-size:0.75rem;">Schedule entrance exams, PTA, and academic events</div>
+                            </div>
+                        </div>
+                    </a>
+
+                    <a href="{{ url_for('announcements') }}" class="btn-command cmd-emerald text-decoration-none">
+                        <div class="d-flex align-items-center w-100">
+                            <div class="cmd-icon-box text-emerald me-3"><i class="fas fa-bullhorn fa-lg"></i></div>
+                            <div>
+                                <div class="fw-bold text-white small">School Announcements</div>
+                                <div class="cmd-desc text-blue small" style="font-size:0.75rem;">Broadcast updates to students, parents, and staff</div>
+                            </div>
+                        </div>
+                    </a>
+
+                    <a href="{{ url_for('subject_setup') }}" class="btn-command cmd-cyan text-decoration-none">
+                        <div class="d-flex align-items-center w-100">
+                            <div class="cmd-icon-box text-cyan me-3"><i class="fas fa-book-open fa-lg"></i></div>
+                            <div>
+                                <div class="fw-bold text-white small">Subject Setup</div>
+                                <div class="cmd-desc text-blue small" style="font-size:0.75rem;">Configure Science/Arts courses per class</div>
+                            </div>
+                        </div>
+                    </a>
+
+                    <a href="{{ url_for('class_create') }}" class="btn-command cmd-cyan text-decoration-none">
+                        <div class="d-flex align-items-center w-100">
+                            <div class="cmd-icon-box text-cyan me-3"><i class="fas fa-layer-group fa-lg"></i></div>
+                            <div>
+                                <div class="fw-bold text-white small">Provision Core Class</div>
+                                <div class="cmd-desc text-blue small" style="font-size:0.75rem;">Deploy rooms & assign instructions</div>
+                            </div>
+                        </div>
+                    </a>
+              
+                    <a href="{{ url_for('admin_users') }}" class="btn-command cmd-emerald text-decoration-none">
+                        <div class="d-flex align-items-center w-100">
+                            <div class="cmd-icon-box text-emerald me-3"><i class="fas fa-user-plus fa-lg"></i></div>
+                            <div>
+                                <div class="fw-bold text-white small">Enroll New User</div>
+                                <div class="text-white small" style="font-size:0.75rem;">Instantiate teacher, student or accountant ids</div>
+                            </div>
+                        </div>
+                    </a>
+
+                    <a href="{{ url_for('administrative_password_reset') }}" class="btn-command cmd-amber text-decoration-none">
+                        <div class="d-flex align-items-center w-100">
+                            <div class="cmd-icon-box text-amber me-3"><i class="fas fa-key-skeleton fa-lg"></i></div>
+                            <div>
+                                <div class="fw-bold text-white small">Password Override Pipeline</div>
+                                <div class="text-white small" style="font-size:0.75rem;">Reset and recover credential tracking assets</div>
+                            </div>
+                        </div>
+                    </a>
+
+                    <a href="{{ url_for('academic_year_rollover', **year_param) }}" class="btn-command cmd-rose text-decoration-none{% if viewing_archived %} opacity-50 pe-none{% endif %}" {% if viewing_archived %}title="Switch to active year to run rollover"{% endif %}>
+                        <div class="d-flex align-items-center w-100">
+                            <div class="cmd-icon-box text-rose me-3"><i class="fas fa-arrows-rotate fa-lg"></i></div>
+                            <div>
+                                <div class="fw-bold text-white small">Academic Year Rollover</div>
+                                <div class="text-white small" style="font-size:0.75rem;">End term, promote classes & re-enroll students</div>
+                            </div>
+                        </div>
+                    </a>
+
+                    <a href="{{ url_for('academic_years') }}" class="btn-command cmd-rose text-decoration-none">
+                        <div class="d-flex align-items-center w-100">
+                            <div class="cmd-icon-box text-rose me-3"><i class="fas fa-calendar-alt fa-lg"></i></div>
+                            <div>
+                                <div class="fw-bold text-white small">Academic Years</div>
+                                <div class="cmd-desc text-blue small" style="font-size:0.75rem;">Manage terms, rollover, and year archives</div>
+                            </div>
+                        </div>
+                    </a>
+
+                    <a href="{{ url_for('principal_attendance', academic_year_id=display_year.id if display_year else None) }}" class="btn-command cmd-emerald text-decoration-none">
+                        <div class="d-flex align-items-center w-100">
+                            <div class="cmd-icon-box text-emerald me-3"><i class="fas fa-calendar-check fa-lg"></i></div>
+                            <div>
+                                <div class="fw-bold text-white small">Attendance Overview</div>
+                                <div class="cmd-desc text-blue small" style="font-size:0.75rem;">School-wide presence, absences, and class drill-down</div>
+                            </div>
+                        </div>
+                    </a>
+
+                    <a href="{{ url_for('principal_grade_entry') }}" class="btn-command cmd-amber text-decoration-none" title="Backup grade review and publishing for the current operating year">
+                        <div class="d-flex align-items-center w-100">
+                            <div class="cmd-icon-box text-amber me-3"><i class="fas fa-pen-to-square fa-lg"></i></div>
+                            <div>
+                                <div class="fw-bold text-white small">Principal Grade Review</div>
+                                <div class="cmd-desc text-blue small" style="font-size:0.75rem;">Review draft standings and publish official period grades</div>
+                            </div>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </div> <div class="col-xl-8 col-lg-7 d-flex flex-column gap-4 fade-glide-in delay-2 principal-main">
+            
+            <div class="row g-3">
+                <div class="col-sm-6 col-xl-3">
+                    <div class="card bg-dark border border-secondary border-opacity-10 p-3 rounded-3 shadow-sm h-100">
+                        <span class="text-white small d-block mb-1">Revenue Stream (Gross)</span>
+                        <h4 class="text-emerald font-weight-bold mb-0">${{ "{:,.2f}".format(financial_stats.total_revenue if financial_stats else 0) }}</h4>
+                        <div class="text-white small mt-1" style="font-size:0.72rem;">Net: ${{ "{:,.2f}".format(financial_stats.net_profit if financial_stats else 0) }}</div>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-xl-3">
+                    <div class="card bg-dark border border-secondary border-opacity-10 p-3 rounded-3 shadow-sm h-100">
+                        <span class="text-white small d-block mb-1">Passing Success Index</span>
+                        <h4 class="text-cyan font-weight-bold mb-0">{{ academic_stats.passing_rate }}%</h4>
+                        <div class="text-rose small mt-1" style="font-size:0.72rem;"><i class="fas fa-triangle-exclamation me-1"></i>{{ academic_stats.failing_count }} At Risk Nodes</div>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-xl-3">
+                    <div class="card bg-dark border border-secondary border-opacity-10 p-3 rounded-3 shadow-sm h-100">
+                        <span class="text-white small d-block mb-1">Disciplinary Isolations</span>
+                        <h4 class="text-amber font-weight-bold mb-0">{{ disciplinary_stats.active_suspensions }}</h4>
+                        <div class="text-white small mt-1" style="font-size:0.72rem;">Active Suspension Holds</div>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-xl-3">
+                    <div class="card bg-dark border border-secondary border-opacity-10 p-3 rounded-3 shadow-sm h-100">
+                        <span class="text-white small d-block mb-1">Firewall Block Triggers</span>
+                        <h4 class="text-rose font-weight-bold mb-0">{{ security_stats.blocked_ips }}</h4>
+                        <div class="text-white small mt-1" style="font-size:0.72rem;">IP Intercepts (24 Hrs)</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card sec-card p-4">
+                <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2 mb-3">
+                    <div>
+                        <h5 class="text-white font-weight-bold mb-0">
+                            <i class="fas fa-layer-group text-cyan me-2"></i>Active Student Condition Ledger
+                        </h5>
+                        <p class="text-white small mb-0 mt-1" style="opacity:0.75;">
+                            {% if selected_folder == 'unallocated' %}
+                                Unallocated roster — students pending class assignment in <strong class="text-amber">Unallocated Folder</strong>
+                            {% elif selected_class %}
+                                Class drill-down — search and filter students inside <strong class="text-cyan">{{ selected_class.name }}</strong>
+                            {% else %}
+                                Step 1: Open a class folder — then search students and run condition sync
+                            {% endif %}
+                        </p>
+                    </div>
+                    <span class="badge bg-secondary bg-opacity-20 text-white border border-secondary border-opacity-20 px-2.5 py-1.5 small">
+                        {% if selected_folder == 'unallocated' %}Unallocated Mode{% elif selected_class %}Class Mode{% else %}Class Portfolio{% endif %}
+                    </span>
+                </div>
+
+                {% if not selected_class and not selected_folder %}
+                <form method="get" class="d-flex flex-column flex-sm-row gap-2 mb-4">
+                    {% if display_year %}<input type="hidden" name="academic_year_id" value="{{ display_year.id }}">{% endif %}
+                    <input type="text" name="search_class" class="form-control form-cyber py-2" placeholder="Filter classes by name, stream, or grade..." value="{{ search_class or '' }}">
+                    <button type="submit" class="btn btn-primary px-4 py-2 font-weight-bold"><i class="fas fa-filter me-1.5"></i>Filter Classes</button>
+                    {% if search_class %}
+                    <a href="{{ url_for('principal_dashboard', **year_param) }}" class="btn btn-outline-secondary py-2 px-3"><i class="fas fa-times"></i></a>
+                    {% endif %}
+                </form>
+
+                <div class="row g-3">
+                    {% if unallocated_portfolio %}
+                    {% set ring_class = 'alert' if unallocated_portfolio.health_pct < 50 else ('warn' if unallocated_portfolio.health_pct < 70 else '') %}
+                    <div class="col-md-6 col-xl-4">
+                        <a href="{{ url_for('principal_dashboard', folder='unallocated', **year_param) }}" class="condition-vault-card unallocated-vault">
+                            <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+                                <div>
+                                    <div class="text-amber small fw-semibold text-uppercase" style="font-size:0.68rem; letter-spacing:0.04em;">Pending Allocation</div>
+                                    <div class="fw-bold text-white fs-6">Unallocated Students</div>
+                                    <div class="small mt-1" style="opacity:0.7;">No class assignment on file</div>
+                                </div>
+                                <div class="vault-health-ring {{ ring_class }}">{{ unallocated_portfolio.health_pct }}%</div>
+                            </div>
+                            <div class="d-flex flex-wrap gap-2">
+                                <span class="vault-stat-pill text-white"><i class="fas fa-user-clock text-amber me-1"></i>{{ unallocated_portfolio.student_count }} waiting</span>
+                                <span class="vault-stat-pill text-emerald"><i class="fas fa-circle-check me-1"></i>{{ unallocated_portfolio.optimal_count }} optimal</span>
+                                <span class="vault-stat-pill text-amber"><i class="fas fa-triangle-exclamation me-1"></i>{{ unallocated_portfolio.at_risk_count }} at risk</span>
+                                {% if unallocated_portfolio.suspended_count %}
+                                <span class="vault-stat-pill text-rose"><i class="fas fa-ban me-1"></i>{{ unallocated_portfolio.suspended_count }} suspended</span>
+                                {% endif %}
+                            </div>
+                            <div class="small text-amber mt-3 fw-semibold"><i class="fas fa-folder-open me-1.5"></i>Review unassigned students</div>
+                        </a>
+                    </div>
+                    {% endif %}
+
+                    {% for portfolio in class_portfolios %}
+                    {% set ring_class = 'alert' if portfolio.health_pct < 50 else ('warn' if portfolio.health_pct < 70 else '') %}
+                    <div class="col-md-6 col-xl-4">
+                        <a href="{{ url_for('principal_dashboard', class_id=portfolio.klass.id, **year_param) }}" class="condition-vault-card">
+                            <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+                                <div>
+                                    <div class="text-cyan small fw-semibold text-uppercase" style="font-size:0.68rem; letter-spacing:0.04em;">Grade {{ portfolio.klass.grade_level }}</div>
+                                    <div class="fw-bold text-white fs-6">{{ portfolio.klass.name }}</div>
+                                    {% if portfolio.klass.stream %}
+                                    <div class="small mt-1" style="opacity:0.7;">{{ portfolio.klass.stream }} Stream</div>
+                                    {% endif %}
+                                </div>
+                                <div class="vault-health-ring {{ ring_class }}">{{ portfolio.health_pct }}%</div>
+                            </div>
+                            <div class="d-flex flex-wrap gap-2">
+                                <span class="vault-stat-pill text-white"><i class="fas fa-users text-cyan me-1"></i>{{ portfolio.student_count }} {% if viewing_archived %}on record{% else %}enrolled{% endif %}</span>
+                                <span class="vault-stat-pill text-emerald"><i class="fas fa-circle-check me-1"></i>{{ portfolio.optimal_count }} optimal</span>
+                                <span class="vault-stat-pill text-amber"><i class="fas fa-triangle-exclamation me-1"></i>{{ portfolio.at_risk_count }} at risk</span>
+                                {% if portfolio.suspended_count %}
+                                <span class="vault-stat-pill text-rose"><i class="fas fa-ban me-1"></i>{{ portfolio.suspended_count }} suspended</span>
+                                {% endif %}
+                            </div>
+                            <div class="small text-cyan mt-3 fw-semibold"><i class="fas fa-folder-open me-1.5"></i>Open class &amp; search students</div>
+                        </a>
+                    </div>
+                    {% else %}
+                    {% if not unallocated_portfolio %}
+                    <div class="col-12 text-center py-5 text-white small">
+                        <i class="fas fa-folder-open opacity-25 me-1.5"></i>No classes match your filter. Try a different search or provision a class first.
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+
+                {% else %}
+                <div class="class-drill-header mb-3{% if selected_folder == 'unallocated' %} unallocated-header{% endif %}">
+                    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
+                        <div>
+                            <a href="{{ url_for('principal_dashboard', **year_param) }}" class="small text-decoration-none text-cyan d-inline-block mb-2">
+                                <i class="fas fa-arrow-left me-1"></i>Back to all class folders
+                            </a>
+                            {% if selected_folder == 'unallocated' %}
+                            <div class="fw-bold text-white fs-5 mb-0">Unallocated Students</div>
+                            <div class="small" style="opacity:0.75;">
+                                Pending class assignment &middot; {{ students|length }} student{{ 's' if students|length != 1 else '' }} in view
+                            </div>
+                            {% else %}
+                            <div class="fw-bold text-white fs-5 mb-0">{{ selected_class.name }}</div>
+                            <div class="small" style="opacity:0.75;">
+                                Grade {{ selected_class.grade_level }}{% if selected_class.stream %} &middot; {{ selected_class.stream }}{% endif %}
+                                {% if viewing_archived and display_year %} &middot; {{ display_year.name }} <span class="badge bg-warning text-dark ms-1">Archived</span>{% endif %}
+                                &middot; {{ students|length }}{% if selected_class_stats and selected_class_stats.student_count > students|length %} of {{ selected_class_stats.student_count }}{% endif %} student{{ 's' if (selected_class_stats.student_count if selected_class_stats else students|length) != 1 else '' }} in view
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="d-flex flex-wrap gap-2">
+                            {% if selected_class_stats %}
+                            <span class="vault-stat-pill text-emerald">{{ selected_class_stats.optimal_count }} optimal</span>
+                            <span class="vault-stat-pill text-amber">{{ selected_class_stats.at_risk_count }} at risk</span>
+                            {% if selected_class_stats.suspended_count %}
+                            <span class="vault-stat-pill text-rose">{{ selected_class_stats.suspended_count }} suspended</span>
+                            {% endif %}
+                            {% endif %}
+                            {% if selected_class and not viewing_archived %}
+                            <a href="{{ url_for('principal_grade_entry', academic_year_id=display_year.id if display_year else None, search_class=selected_class.name) }}" class="btn btn-sm btn-outline-warning text-amber border-amber border-opacity-40 rounded-3 px-2.5 py-1" style="font-size:0.75rem;">
+                                <i class="fas fa-pen-to-square me-1"></i>Enter Grades
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <form method="get" class="row g-2 mb-3">
+                    {% if display_year %}<input type="hidden" name="academic_year_id" value="{{ display_year.id }}">{% endif %}
+                    {% if selected_folder == 'unallocated' %}
+                    <input type="hidden" name="folder" value="unallocated">
+                    {% else %}
+                    <input type="hidden" name="class_id" value="{{ class_id }}">
+                    {% endif %}
+                    <div class="col-md-6">
+                        <input type="text" name="search" class="form-control form-cyber py-2" placeholder="{% if selected_folder == 'unallocated' %}Search unallocated student name or ID...{% else %}Search student name or ID in this class...{% endif %}" value="{{ request.args.get('search', '') }}">
+                    </div>
+                    <div class="col-md-4">
+                        <select name="status" class="form-select form-cyber py-2">
+                            <option value="">All students in class</option>
+                            <option value="failing" {% if request.args.get('status') == 'failing' %}selected{% endif %}>Academic alert (&lt;70%)</option>
+                            <option value="failed" {% if request.args.get('status') == 'failed' %}selected{% endif %}>Year-end failed</option>
+                            <option value="suspended" {% if request.args.get('status') == 'suspended' %}selected{% endif %}>Suspended holds</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary w-100 py-2 font-weight-bold"><i class="fas fa-rotate me-1.5"></i>Run Sync</button>
+                    </div>
+                </form>
+
+                <div class="table-responsive rounded-3 border border-secondary border-opacity-10">
+                    <table class="table table-cyber align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Student</th>
+                                <th>Grade Average</th>
+                                <th>Condition State</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for student in students %}
+                            <tr>
+                                <td>
+                                    <div class="fw-bold text-white">{{ student.full_name }}</div>
+                                    <div class="text-white small" style="font-size:0.75rem;">ID: #{{ student.student_id }}</div>
+                                    {% if viewing_archived and student.status in ('ALUMNI', 'GRADUATED') %}
+                                    <span class="badge bg-secondary bg-opacity-25 text-white border border-secondary border-opacity-25 mt-1" style="font-size:0.65rem;">{{ student.status|title }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="fw-semibold text-{{ 'rose' if student.average < 70 else 'emerald' }}">
+                                        {{ student.average }}%
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if student.status == 'SUSPENDED' %}
+                                        <span class="badge bg-rose bg-opacity-10 text-rose border border-rose border-opacity-10 rounded-pill px-2.5 py-1">Suspended</span>
+                                    {% elif student.status == 'FAILED' %}
+                                        <span class="badge bg-rose bg-opacity-10 text-rose border border-rose border-opacity-10 rounded-pill px-2.5 py-1">Failed — Repeat Year</span>
+                                    {% elif student.average < 70 %}
+                                        <span class="badge bg-amber bg-opacity-10 text-amber border border-amber border-opacity-10 rounded-pill px-2.5 py-1">At Risk</span>
+                                    {% else %}
+                                        <span class="badge bg-emerald bg-opacity-10 text-emerald border border-emerald border-opacity-10 rounded-pill px-2.5 py-1">Optimal</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <a href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}" class="btn btn-sm btn-outline-secondary text-white rounded-3 px-2.5 py-1" style="font-size:0.75rem;"><i class="fas fa-chart-line me-1"></i>Analysis</a>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="4" class="text-center py-4 text-white small">
+                                    {% if viewing_archived %}
+                                    <i class="fas fa-archive opacity-25 me-1.5"></i>No students are recorded in this class for {{ display_year.name }}. Alumni and graduated learners appear here when their enrollment history matches this folder.
+                                    {% elif request.args.get('search') or request.args.get('status') %}
+                                    <i class="fas fa-inbox opacity-25 me-1.5"></i>No students in this class match your search or filter.
+                                    {% else %}
+                                    <i class="fas fa-inbox opacity-25 me-1.5"></i>No students are currently assigned to this class for the active year.
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="row g-4 fade-glide-in delay-3">
+                
+                <div class="col-md-6">
+                    <div class="card sec-card p-4 h-100">
+                        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                            <h6 class="text-white font-weight-bold mb-0"><i class="fas fa-receipt text-emerald me-2"></i>Financial Audit Command Center</h6>
+                            <a href="{{ url_for('business_dashboard', **year_param) }}" class="btn btn-sm btn-outline-secondary">Open Finance</a>
+                        </div>
+                        <p class="small mb-3" style="opacity:0.8;">
+                            Principal receives full visibility of every transaction from income to expense with running balance verification.
+                        </p>
+
+                        <div class="finance-audit-grid">
+                            <div class="finance-audit-chip">
+                                <div class="label">Total Income</div>
+                                <div class="value text-emerald">${{ "{:,.2f}".format(ledger_health.income_total) }}</div>
+                            </div>
+                            <div class="finance-audit-chip">
+                                <div class="label">Total Expense</div>
+                                <div class="value text-rose">${{ "{:,.2f}".format(ledger_health.expense_total) }}</div>
+                            </div>
+                            <div class="finance-audit-chip">
+                                <div class="label">Net Position</div>
+                                <div class="value text-cyan">${{ "{:,.2f}".format(ledger_health.net_total) }}</div>
+                            </div>
+                            <div class="finance-audit-chip">
+                                <div class="label">Today Movement</div>
+                                <div class="value {{ 'text-emerald' if ledger_health.today_net >= 0 else 'text-rose' }}">${{ "{:,.2f}".format(ledger_health.today_net) }}</div>
+                            </div>
+                        </div>
+
+                        <div class="small mb-2" style="opacity:0.82;">
+                            {% if last_activity_date %}
+                            Last update: <strong>{{ last_activity_date }}</strong> ·
+                            {% endif %}
+                            Running balance: <strong>${{ "{:,.2f}".format(ledger_health.latest_balance) }}</strong>
+                        </div>
+
+                        <div class="finance-anomaly-board">
+                            <div class="d-flex justify-content-between align-items-center gap-2 mb-1">
+                                <div class="small fw-bold" style="letter-spacing:0.03em; text-transform:uppercase; color:#253b52;">Anomaly Monitor</div>
+                                <span class="finance-anomaly-tag {{ 'high' if anomaly_counts.total else 'low' }}">
+                                    {{ anomaly_counts.total }} flag{{ 's' if anomaly_counts.total != 1 else '' }}
+                                </span>
+                            </div>
+                            <div class="finance-anomaly-summary">
+                                <span class="finance-anomaly-tag high">High {{ anomaly_counts.high }}</span>
+                                <span class="finance-anomaly-tag medium">Medium {{ anomaly_counts.medium }}</span>
+                                <span class="finance-anomaly-tag low">Low {{ anomaly_counts.low }}</span>
+                            </div>
+                            <div class="finance-anomaly-list">
+                                {% for flag in anomaly_flags[:4] %}
+                                <div class="finance-anomaly-item">
+                                    <div class="title">{{ flag.title }}</div>
+                                    <div class="detail">{{ flag.detail }}</div>
+                                </div>
+                                {% else %}
+                                <div class="small" style="color:#2f8f63; font-weight:700;">
+                                    <i class="fas fa-circle-check me-1"></i>No anomaly detected in recent finance flow.
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <div class="finance-audit-entries">
+                            {% for transaction in recent_transactions %}
+                            <div class="finance-entry-row">
+                                <div>
+                                    <div class="desc">{{ transaction.description }}</div>
+                                    <div class="meta">
+                                        {{ transaction.date }}
+                                        {% if transaction.category %} · {{ transaction.category }}{% endif %}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="amount text-{{ 'emerald' if transaction.type == 'income' else 'rose' }}">
+                                        {{ '+' if transaction.type == 'income' else '-' }}${{ "{:,.2f}".format(transaction.amount) }}
+                                    </div>
+                                    <div class="balance">Bal: ${{ "{:,.2f}".format(transaction.balance_after or 0) }}</div>
+                                </div>
+                            </div>
+                            {% else %}
+                            <div class="text-center py-4 text-white small">No structural funds captured in this ledger yet.</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="card sec-card p-4 h-100 border-rose border-opacity-10">
+                        <h6 class="text-white font-weight-bold mb-3"><i class="fas fa-triangle-exclamation text-rose me-2"></i>Security Intercept Vectors</h6>
+                        <div class="d-flex flex-column gap-2.5">
+                            {% for event in security_events %}
+                            <div class="p-2.5 border border-danger border-opacity-5 rounded-3" style="background: rgba(244,63,94,0.01);">
+                                <div class="d-flex justify-content-between text-white mb-1" style="font-size:0.7rem;">
+                                    <span><i class="fas fa-shield-halved text-rose me-1.5"></i>IDS Intrusion Watch</span>
+                                    <span>{{ event.timestamp.strftime('%Y-%m-%d %H:%M') }}</span>
+                                </div>
+                                <div class="text-white fw-semibold small"><span class="text-rose">●</span> {{ event.event }}</div>
+                            </div>
+                            {% else %}
+                            <div class="text-center py-4 text-white small"><i class="fas fa-shield text-emerald me-1.5"></i>No malicious perimeter violations parsed.</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+         </div>
+     </div>
+ </div>
+<script>
+    // Keep principal finance oversight current without user action.
+    (function () {
+        const refreshMs = 60000;
+        setInterval(function () {
+            if (document.visibilityState === 'visible') {
+                window.location.reload();
+            }
+        }, refreshMs);
+    })();
+</script>
+  {% endblock %}

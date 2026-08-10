@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}Take Attendance{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/grading_hub.css') }}">
+<div class="container my-5 teacher-terminal">
+    <div class="mb-4">
+        <a href="{{ url_for('teacher_dashboard') }}" class="text-blue small text-decoration-none">
+            <i class="bi bi-arrow-left me-1"></i>Teacher Dashboard
+        </a>
+        <h2 class="text-white fw-bold mt-2 mb-1">
+            <i class="bi bi-calendar-check text-cyan me-2"></i>Take Attendance
+        </h2>
+        <p class="text-blue mb-2 small">Select a class to open today's attendance roll.</p>
+        {% if active_year %}
+        <span class="badge att-session-badge">
+            <i class="bi bi-mortarboard me-1"></i>Current Session: {{ active_year.name }}
+        </span>
+        {% endif %}
+    </div>
+
+    <div class="row g-3">
+        {% for card in class_cards %}
+        <div class="col-md-6 col-lg-4">
+            <a href="{{ url_for('teacher_class_attendance', class_id=card.id, date=attendance_date) }}"
+               class="text-decoration-none d-block class-folder-card p-4 h-100">
+                <div class="fw-bold text-cyber-light fs-5 mb-1">
+                    <i class="bi bi-folder2-open me-1"></i>{{ card.name }}
+                </div>
+                <div class="small text-blue mb-2">
+                    Grade {{ card.grade_level }}
+                    {% if card.stream %} · {{ card.stream }}{% endif %}
+                    · {{ card.student_count }} student{{ 's' if card.student_count != 1 else '' }}
+                </div>
+                {% for label in card.role_labels %}
+                <span class="badge bg-dark border border-cyber text-cyan text-xs me-1">{{ label }}</span>
+                {% endfor %}
+                <div class="mt-3 text-cyan small fw-semibold">
+                    Open attendance roll <i class="bi bi-arrow-right"></i>
+                </div>
+            </a>
+        </div>
+        {% else %}
+        <div class="col-12">
+            <div class="grade-empty-state">
+                <i class="bi bi-inbox empty-icon"></i>
+                <h6>No assigned classes</h6>
+                <p class="text-blue mb-0">You need a class assignment before you can take attendance.</p>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+<style>
+    body { background: #0b0f19; }
+    .teacher-terminal .text-blue { color: #38bdf8 !important; }
+    .att-session-badge {
+        background: rgba(0, 242, 255, 0.12);
+        border: 1px solid rgba(0, 242, 255, 0.35);
+        color: #00f2ff;
+        font-size: 0.78rem;
+        font-weight: 600;
+        padding: 0.4rem 0.75rem;
+    }
+</style>
+{% endblock %}

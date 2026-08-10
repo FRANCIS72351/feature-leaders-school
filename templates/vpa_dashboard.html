@@ -1,0 +1,591 @@
+{% extends "base.html" %}
+{% block title %}VPA Academic Command Center{% endblock %}
+
+{% block content %}
+<style>
+    body { background: #0b0f19; color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; }
+    .vpa-terminal, .vpa-terminal p, .vpa-terminal span, .vpa-terminal small, .vpa-terminal label, .vpa-terminal td, .vpa-terminal div { color: #fff; }
+    .vpa-terminal .text-muted { color: rgba(255,255,255,0.65) !important; }
+    .text-cyan { color: #00f2ff !important; }
+    .text-emerald { color: #10b981 !important; }
+    .text-amber { color: #f59e0b !important; }
+    .text-rose { color: #f43f5e !important; }
+    .text-violet { color: #8b5cf6 !important; }
+    .glow-title { font-weight: 700; color: #fff; text-shadow: 0 0 20px rgba(139,92,246,0.15); }
+    .sec-card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+    .metric-card { background: #0f172a; border: 1px solid #1f2937; border-radius: 12px; padding: 1rem 1.1rem; height: 100%; }
+    .form-cyber { background: #070a12 !important; border: 1px solid #374151 !important; color: #fff !important; border-radius: 8px; }
+    .form-cyber:focus { border-color: #8b5cf6 !important; box-shadow: 0 0 10px rgba(139,92,246,0.12) !important; }
+    .table-cyber { color: #e2e8f0; font-size: 0.88rem; }
+    .table-cyber th { background: #1f2937; color: #8b5cf6; border-color: #374151; font-size: 0.72rem; text-transform: uppercase; }
+    .table-cyber td { border-color: #1f2937; vertical-align: middle; }
+    .table-cyber tbody tr:hover { background: rgba(255,255,255,0.02); }
+    .btn-command { background: #070a12; border: 1px solid #1f2937; color: #fff; padding: 12px 14px; border-radius: 10px; width: 100%; text-align: left; text-decoration: none !important; display: block; transition: all 0.25s ease; }
+    .btn-command:hover { border-color: #8b5cf6; transform: translateY(-2px); color: #fff; }
+    .class-academic-card { display: block; background: linear-gradient(145deg, rgba(7,10,18,0.95), rgba(17,24,39,0.85)); border: 1px solid rgba(139,92,246,0.12); border-radius: 12px; padding: 1rem; text-decoration: none !important; color: inherit; height: 100%; transition: all 0.25s ease; }
+    .class-academic-card:hover, .class-academic-card.active { border-color: rgba(139,92,246,0.45); box-shadow: 0 8px 24px rgba(139,92,246,0.08); color: inherit; }
+    .stat-pill { font-size: 0.68rem; padding: 0.2rem 0.55rem; border-radius: 999px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.02); }
+    .chart-wrap { position: relative; height: 240px; }
+    .badge-pass { background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.2); }
+    .badge-fail { background: rgba(244,63,94,0.12); color: #f43f5e; border: 1px solid rgba(244,63,94,0.2); }
+    .badge-none { background: rgba(148,163,184,0.12); color: #94a3b8; border: 1px solid rgba(148,163,184,0.2); }
+    .registry-student-name {
+        color: #fbbf24 !important;
+        font-weight: 600;
+    }
+    .registry-student-class {
+        color: #0f172a !important;
+        font-weight: 500;
+        background: rgba(251, 191, 36, 0.15);
+        display: inline-block;
+        padding: 0.15rem 0.45rem;
+        border-radius: 4px;
+    }
+    .recent-grade-student-name {
+        color: #fbbf24 !important;
+        font-weight: 600;
+    }
+    .recent-grade-subject {
+        color: #0f172a !important;
+        font-weight: 500;
+        background: rgba(255, 255, 255, 0.88);
+        display: inline-block;
+        padding: 0.1rem 0.4rem;
+        border-radius: 4px;
+    }
+    .recent-grade-score {
+        color: #2563eb !important;
+        font-weight: 700;
+    }
+    .top-performer-name {
+        color: #0f172a !important;
+        font-weight: 600;
+        background: rgba(255, 255, 255, 0.9);
+        display: inline-block;
+        padding: 0.1rem 0.4rem;
+        border-radius: 4px;
+    }
+    .top-performer-class {
+        color: #2563eb !important;
+        font-weight: 600;
+    }
+    .recent-assessment-title {
+        color: #2563eb !important;
+        font-weight: 600;
+    }
+    .recent-assessment-class {
+        color: #0f172a !important;
+        font-weight: 500;
+        background: rgba(255, 255, 255, 0.88);
+        display: inline-block;
+        padding: 0.1rem 0.4rem;
+        border-radius: 4px;
+    }
+    .recent-assessment-subject {
+        color: #fbbf24 !important;
+        font-weight: 600;
+    }
+
+    .vpa-terminal,
+    .vpa-terminal p,
+    .vpa-terminal span,
+    .vpa-terminal small,
+    .vpa-terminal label,
+    .vpa-terminal td,
+    .vpa-terminal div {
+        color: #1f2937 !important;
+    }
+    .vpa-terminal .text-muted {
+        color: #5f7892 !important;
+    }
+    .vpa-terminal .glow-title {
+        color: #0f172a !important;
+        text-shadow: none;
+    }
+    .vpa-terminal .sec-card,
+    .vpa-terminal .metric-card,
+    .vpa-terminal .bg-dark,
+    .vpa-terminal .alert.bg-dark,
+    .vpa-terminal .btn-command,
+    .vpa-terminal .class-academic-card,
+    .vpa-terminal .class-academic-card.active,
+    .vpa-terminal .class-academic-card:hover {
+        background: #ffffff !important;
+        border-color: #dbe7f3 !important;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+    }
+    .vpa-terminal .text-cyan { color: #0ea5e9 !important; }
+    .vpa-terminal .text-emerald { color: #059669 !important; }
+    .vpa-terminal .text-amber { color: #d97706 !important; }
+    .vpa-terminal .text-rose { color: #dc2626 !important; }
+    .vpa-terminal .text-violet { color: #4f46e5 !important; }
+    .vpa-terminal .table-cyber { color: #1f2937 !important; }
+    .vpa-terminal .table-cyber th {
+        background: #f3f8fd !important;
+        color: #0369a1 !important;
+        border-color: #dbe7f3 !important;
+    }
+    .vpa-terminal .table-cyber td {
+        background: #ffffff !important;
+        border-color: #e5edf6 !important;
+    }
+    .vpa-terminal .form-cyber {
+        background: #ffffff !important;
+        border-color: #cfe0ef !important;
+        color: #0f172a !important;
+    }
+    .vpa-terminal .form-cyber:focus {
+        border-color: #4f46e5 !important;
+        box-shadow: 0 0 0 0.2rem rgba(79, 70, 229, 0.2) !important;
+    }
+    .vpa-terminal .stat-pill {
+        border-color: #d7e7f5;
+        background: #f4f9fe;
+        color: #33506b !important;
+    }
+</style>
+
+<div class="container-fluid py-4 px-md-4 vpa-terminal pro-dashboard">
+    {% set year_param = {'academic_year_id': display_year.id} if display_year else {} %}
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4 pb-3 border-bottom border-secondary border-opacity-10">
+        <div>
+            <h2 class="glow-title mb-0"><i class="fas fa-graduation-cap text-violet me-2"></i>VPA Academic Command Center</h2>
+            <p class="text-muted small mb-0 mt-1">Curriculum oversight, grade monitoring, and MoE {{ stats.moe_standard }}% passing standard</p>
+        </div>
+        <form method="get" class="d-flex gap-2 mt-2 mt-md-0 flex-wrap">
+            {% if class_id %}<input type="hidden" name="class_id" value="{{ class_id }}">{% endif %}
+            {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+            <select name="academic_year_id" class="form-select form-cyber form-select-sm" onchange="this.form.submit()">
+                {% for y in years %}
+                <option value="{{ y.id }}" {% if display_year and y.id == display_year.id %}selected{% endif %}>{{ y.name }}{% if y.is_active %} (Active){% endif %}</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+
+    {% if viewing_archived and display_year %}
+    <div class="alert bg-dark border border-warning border-opacity-40 text-white mb-4 rounded-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div>
+            <span class="badge bg-warning text-dark me-2">Archived</span>
+            <strong>Historical academic view — {{ display_year.name }}</strong>
+        </div>
+        {% if active_year %}
+        <a href="{{ url_for('vpa_dashboard', academic_year_id=active_year.id) }}" class="btn btn-sm btn-outline-success">Active Year ({{ active_year.name }})</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-xl-2"><div class="metric-card"><span class="text-muted small d-block">Enrolled Students</span><h4 class="text-violet mb-0">{{ stats.total_students }}</h4></div></div>
+        <div class="col-6 col-xl-2"><div class="metric-card"><span class="text-muted small d-block">MoE Passing Rate</span><h4 class="text-emerald mb-0">{{ stats.passing_rate }}%</h4></div></div>
+        <div class="col-6 col-xl-2"><div class="metric-card"><span class="text-muted small d-block">Below {{ stats.moe_standard }}%</span><h4 class="text-rose mb-0">{{ stats.failing_count }}</h4></div></div>
+        <div class="col-6 col-xl-2"><div class="metric-card"><span class="text-muted small d-block">Grades Entered</span><h4 class="text-cyan mb-0">{{ stats.grades_entered }}</h4></div></div>
+        <div class="col-6 col-xl-2"><div class="metric-card"><span class="text-muted small d-block">Class Assessments</span><h4 class="text-amber mb-0">{{ stats.total_assessments }}</h4></div></div>
+        <div class="col-6 col-xl-2"><div class="metric-card"><span class="text-muted small d-block">Active Teachers</span><h4 class="text-emerald mb-0">{{ stats.total_teachers }}</h4></div></div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3"><div class="metric-card"><span class="text-muted small d-block">Classes</span><div class="fw-bold">{{ stats.total_classes }}</div></div></div>
+        <div class="col-6 col-md-3"><div class="metric-card"><span class="text-muted small d-block">Subjects Allocated</span><div class="fw-bold text-violet">{{ stats.subjects_allocated }}</div></div></div>
+        <div class="col-6 col-md-3"><div class="metric-card"><span class="text-muted small d-block">Published Grades</span><div class="fw-bold text-emerald">{{ stats.grades_published }}</div></div></div>
+        <div class="col-6 col-md-3"><div class="metric-card"><span class="text-muted small d-block">No Grade Data</span><div class="fw-bold text-amber">{{ stats.no_grade_data }}</div></div></div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-xl-4 col-lg-5 d-flex flex-column gap-4">
+            <div class="card sec-card p-4">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    {% if current_user.photo_url %}
+                    <img src="{{ current_user.photo_url }}" class="rounded-3 border border-secondary border-opacity-25" style="width:64px;height:64px;object-fit:cover;" alt="VPA">
+                    {% else %}
+                    <div class="rounded-3 bg-secondary d-flex align-items-center justify-content-center" style="width:64px;height:64px;font-size:1.4rem;">{{ current_user.full_name[0]|upper }}</div>
+                    {% endif %}
+                    <div>
+                        <h5 class="mb-0">{{ current_user.full_name }}</h5>
+                        <span class="badge text-violet border small" style="background:rgba(139,92,246,0.1);border-color:rgba(139,92,246,0.25)!important;">Vice Principal for Academics</span>
+                    </div>
+                </div>
+                {% if active_year %}
+                <p class="text-muted small mb-0"><i class="fas fa-calendar-check text-violet me-1"></i>Active term: <strong class="text-white">{{ active_year.name }}</strong></p>
+                {% endif %}
+            </div>
+
+            <div class="card sec-card p-4">
+                <h6 class="fw-bold mb-3"><i class="fas fa-bolt text-amber me-2"></i>VPA Responsibilities</h6>
+                <div class="d-flex flex-column gap-2 small">
+                    <div><i class="fas fa-book-open text-violet me-2"></i>Curriculum &amp; subject catalog oversight</div>
+                    <div><i class="fas fa-chalkboard-teacher text-cyan me-2"></i>Teacher grade entry monitoring</div>
+                    <div><i class="fas fa-chart-line text-emerald me-2"></i>Student performance (MoE {{ stats.moe_standard }}% standard)</div>
+                    <div><i class="fas fa-layer-group text-amber me-2"></i>Class academic snapshots &amp; promotion readiness</div>
+                    <div><i class="fas fa-exclamation-triangle text-rose me-2"></i>At-risk &amp; failing student follow-up</div>
+                    <div><i class="fas fa-file-alt text-cyan me-2"></i>Report card &amp; assessment audit</div>
+                </div>
+            </div>
+
+            <div class="card sec-card p-4">
+                <h6 class="fw-bold mb-3"><i class="fas fa-terminal text-violet me-2"></i>Quick Actions</h6>
+                <div class="d-flex flex-column gap-2">
+                    <a href="{{ url_for('subject_setup') }}" class="btn-command">
+                        <i class="fas fa-book text-violet me-2"></i>Subject Setup &amp; Curriculum
+                    </a>
+                    <a href="{{ url_for('class_create') }}" class="btn-command">
+                        <i class="fas fa-school text-cyan me-2"></i>Class &amp; Faculty Management
+                    </a>
+                    <a href="{{ url_for('academic_years') }}" class="btn-command">
+                        <i class="fas fa-calendar-alt text-emerald me-2"></i>Academic Years
+                    </a>
+                    <a href="{{ url_for('announcements') }}" class="btn-command">
+                        <i class="fas fa-bullhorn text-amber me-2"></i>School Announcements
+                    </a>
+                    <a href="{{ url_for('school_media_manage') }}" class="btn-command">
+                        <i class="fas fa-photo-video text-violet me-2"></i>School Media Hub
+                    </a>
+                    <a href="{{ url_for('admin_events_list') }}" class="btn-command">
+                        <i class="fas fa-calendar-plus text-cyan me-2"></i>Manage School Events
+                    </a>
+                </div>
+            </div>
+
+            <div class="card sec-card p-4">
+                <h6 class="fw-bold mb-3"><i class="fas fa-layer-group text-violet me-2"></i>Class Academic Matrix</h6>
+                <div class="row g-2">
+                    <div class="col-12 mb-1">
+                        <a href="{{ url_for('vpa_dashboard', **year_param) }}" class="class-academic-card{% if not selected_class %} active{% endif %}">
+                            <div class="fw-semibold small">All Classes</div>
+                            <div class="text-muted small">{{ stats.total_students }} {% if viewing_archived %}on record{% else %}students{% endif %} · {{ selected_year_name }}</div>
+                        </a>
+                    </div>
+                    {% for snap in class_snapshots[:8] %}
+                    <div class="col-md-6">
+                        <a href="{{ url_for('vpa_dashboard', class_id=snap.klass.id, **year_param) }}" class="class-academic-card{% if selected_class and selected_class.id == snap.klass.id %} active{% endif %}">
+                            <div class="fw-semibold small">{{ snap.klass.name }}</div>
+                            <div class="d-flex flex-wrap gap-1 mt-2">
+                                <span class="stat-pill">{{ snap.student_count }} {% if viewing_archived %}on record{% else %}enrolled{% endif %}</span>
+                                <span class="stat-pill text-violet">{{ snap.subject_count }} subjects</span>
+                                {% if snap.class_avg is not none %}<span class="stat-pill text-emerald">{{ snap.class_avg }}% avg</span>{% endif %}
+                                {% if snap.failing_count %}<span class="stat-pill text-rose">{{ snap.failing_count }} below MoE</span>{% endif %}
+                            </div>
+                        </a>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-8 col-lg-7 d-flex flex-column gap-4">
+            <div class="row g-4">
+                <div class="col-md-6">
+                    <div class="card sec-card p-4 h-100">
+                        <h6 class="fw-bold mb-3"><i class="fas fa-chart-pie text-violet me-2"></i>Student Performance Bands</h6>
+                        <div class="chart-wrap"><canvas id="performanceChart"></canvas></div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card sec-card p-4 h-100">
+                        <h6 class="fw-bold mb-3"><i class="fas fa-chart-bar text-cyan me-2"></i>Grade Letter Distribution</h6>
+                        <div class="chart-wrap"><canvas id="letterChart"></canvas></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card sec-card p-4">
+                <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-3">
+                    <div>
+                        {% if selected_class %}
+                        <a href="{{ url_for('vpa_dashboard', **year_param) }}" class="small text-decoration-none text-violet d-inline-block mb-2">
+                            <i class="fas fa-arrow-left me-1"></i>Back to all classes
+                        </a>
+                        {% endif %}
+                        <h5 class="fw-bold mb-0"><i class="fas fa-search text-violet me-2"></i>Student Academic Registry</h5>
+                        <p class="text-muted small mb-0">
+                            {% if selected_class %}
+                            Class drill-down — <strong class="text-violet">{{ selected_class.name }}</strong>
+                            {% if selected_class_stats %} · {{ selected_class_stats.student_count }} student{{ 's' if selected_class_stats.student_count != 1 else '' }} on record{% endif %}
+                            {% else %}All {% if viewing_archived %}students on record{% else %}enrolled students{% endif %}{% endif %}
+                            · {{ selected_year_name }}
+                            {% if viewing_archived and display_year %}<span class="badge bg-warning text-dark ms-1">Archived</span>{% endif %}
+                        </p>
+                    </div>
+                </div>
+                <form method="get" class="row g-2 mb-3">
+                    {% if display_year %}<input type="hidden" name="academic_year_id" value="{{ display_year.id }}">{% endif %}
+                    <div class="col-md-4">
+                        <select name="class_id" class="form-select form-cyber form-select-sm">
+                            <option value="">All classes</option>
+                            {% for snap in class_snapshots %}
+                            <option value="{{ snap.klass.id }}" {% if class_id == snap.klass.id %}selected{% endif %}>{{ snap.klass.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-5">
+                        <input type="text" name="q" class="form-control form-cyber form-control-sm" placeholder="Search name or student ID" value="{{ search_q }}">
+                    </div>
+                    <div class="col-md-3">
+                        <button type="submit" class="btn btn-sm btn-outline-light w-100">Filter</button>
+                    </div>
+                </form>
+                <div class="table-responsive">
+                    <table class="table table-cyber table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Student</th>
+                                <th>Class</th>
+                                <th>Average</th>
+                                <th>Letter</th>
+                                <th>MoE Status</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for student in students[:25] %}
+                            <tr>
+                                <td>
+                                    <div class="small registry-student-name">{{ student.full_name }}</div>
+                                    <div class="text-muted" style="font-size:0.7rem;">{{ student.student_id or '—' }}</div>
+                                    {% if viewing_archived and student.status in ('ALUMNI', 'GRADUATED') %}
+                                    <span class="badge bg-secondary mt-1" style="font-size:0.6rem;">{{ student.status|title }}</span>
+                                    {% elif student.status == 'FAILED' %}
+                                    <span class="badge bg-rose bg-opacity-10 text-rose border border-rose border-opacity-10 mt-1" style="font-size:0.6rem;">Failed</span>
+                                    {% endif %}
+                                </td>
+                                <td class="small"><span class="registry-student-class">{{ student.display_klass.name if student.display_klass else (student.klass.name if student.klass else 'Unassigned') }}</span></td>
+                                <td class="small fw-bold {% if student.academic_average is not none and student.academic_average >= stats.moe_standard %}text-emerald{% elif student.academic_average is not none %}text-rose{% endif %}">
+                                    {% if student.academic_average is not none %}{{ student.academic_average }}%{% else %}—{% endif %}
+                                </td>
+                                <td><span class="badge bg-dark border border-secondary">{{ student.grade_letter }}</span></td>
+                                <td>
+                                    {% if student.moe_status == 'Passing' %}
+                                    <span class="badge badge-pass small">{{ student.moe_status }}</span>
+                                    {% elif student.moe_status == 'Below MoE Standard' %}
+                                    <span class="badge badge-fail small">{{ student.moe_status }}</span>
+                                    {% else %}
+                                    <span class="badge badge-none small">{{ student.moe_status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <a href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}" class="btn btn-sm btn-outline-light py-0 px-2" title="Report card">
+                                        <i class="fas fa-file-alt"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="6" class="text-muted small text-center py-3">
+                                {% if selected_class and viewing_archived and display_year %}
+                                No students are recorded in this class for {{ display_year.name }}. Alumni and graduated learners appear here when their enrollment history matches this folder.
+                                {% else %}
+                                No students match this filter.
+                                {% endif %}
+                            </td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% if students|length > 25 %}
+                <p class="text-muted small mb-0 mt-2">Showing first 25 of {{ students|length }} students. Refine your search to narrow results.</p>
+                {% endif %}
+            </div>
+
+            <div class="row g-4">
+                <div class="col-md-6">
+                    <div class="card sec-card p-4 h-100">
+                        <h6 class="fw-bold mb-3"><i class="fas fa-exclamation-circle text-rose me-2"></i>At-Risk Students (&lt; {{ stats.moe_standard }}%)</h6>
+                        {% if at_risk_students %}
+                        <div class="table-responsive">
+                            <table class="table table-cyber table-sm mb-0">
+                                <thead><tr><th>Student</th><th>Class</th><th>Avg</th></tr></thead>
+                                <tbody>
+                                    {% for row in at_risk_students %}
+                                    <tr>
+                                        <td>
+                                            <div class="small fw-semibold">{{ row.student.full_name }}</div>
+                                            <div class="text-muted" style="font-size:0.7rem;">{{ row.student.student_id or '—' }}</div>
+                                        </td>
+                                        <td class="small">{{ (row.student.display_klass or row.student.klass).name if (row.student.display_klass or row.student.klass) else 'Unassigned' }}</td>
+                                        <td class="small text-rose fw-bold">{{ row.average }}%</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-muted small mb-0">No students currently below the MoE passing threshold.</p>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card sec-card p-4 h-100">
+                        <h6 class="fw-bold mb-3"><i class="fas fa-trophy text-amber me-2"></i>Top Academic Performers</h6>
+                        {% if top_students %}
+                        <div class="table-responsive">
+                            <table class="table table-cyber table-sm mb-0">
+                                <thead><tr><th>Student</th><th>Class</th><th>Avg</th></tr></thead>
+                                <tbody>
+                                    {% for row in top_students %}
+                                    <tr>
+                                        <td>
+                                            <div class="small top-performer-name">{{ row.student.full_name }}</div>
+                                            <div class="text-muted" style="font-size:0.7rem;">{{ row.student.student_id or '—' }}</div>
+                                        </td>
+                                        <td class="small top-performer-class">{{ (row.student.display_klass or row.student.klass).name if (row.student.display_klass or row.student.klass) else 'Unassigned' }}</td>
+                                        <td class="small text-emerald fw-bold">{{ row.average }}%</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-muted small mb-0">No graded students yet for this academic year.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-4">
+                <div class="col-md-6">
+                    <div class="card sec-card p-4 h-100">
+                        <h6 class="fw-bold mb-3"><i class="fas fa-pen text-cyan me-2"></i>Recent Grade Entries</h6>
+                        <div class="table-responsive">
+                            <table class="table table-cyber table-sm mb-0">
+                                <thead><tr><th>Student</th><th>Subject</th><th>Score</th><th>Status</th></tr></thead>
+                                <tbody>
+                                    {% for grade in recent_grades %}
+                                    <tr>
+                                        <td class="small recent-grade-student-name">{{ grade.student.full_name if grade.student else '—' }}</td>
+                                        <td class="small"><span class="recent-grade-subject">{{ grade.subject_name or grade.subject or '—' }}</span></td>
+                                        <td class="small recent-grade-score">{{ grade.score|round(1) if grade.score is not none else '—' }}%</td>
+                                        <td>
+                                            {% if grade.submitted %}
+                                            <span class="badge badge-pass small">Published</span>
+                                            {% else %}
+                                            <span class="badge badge-none small">Draft</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="4" class="text-muted small text-center">No grades recorded for this year.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card sec-card p-4 h-100">
+                        <h6 class="fw-bold mb-3"><i class="fas fa-tasks text-violet me-2"></i>Recent Class Assessments</h6>
+                        <div class="table-responsive">
+                            <table class="table table-cyber table-sm mb-0">
+                                <thead><tr><th>Title</th><th>Class</th><th>Subject</th><th>Type</th></tr></thead>
+                                <tbody>
+                                    {% for assessment in recent_assessments %}
+                                    <tr>
+                                        <td class="small recent-assessment-title">{{ assessment.title }}</td>
+                                        <td class="small"><span class="recent-assessment-class">{{ assessment.klass.name if assessment.klass else '—' }}</span></td>
+                                        <td class="small recent-assessment-subject">{{ assessment.subject_name or '—' }}</td>
+                                        <td><span class="badge bg-dark border border-secondary small">{{ assessment.activity_type or 'Assignment' }}</span></td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="4" class="text-muted small text-center">No assessments created yet.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card sec-card p-4">
+                <h6 class="fw-bold mb-3"><i class="fas fa-info-circle text-violet me-2"></i>MoE Grading Periods ({{ selected_year_name }})</h6>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for period_id, period_label in grading_periods %}
+                    <span class="stat-pill">{{ period_label }}</span>
+                    {% endfor %}
+                </div>
+                <p class="text-muted small mb-0 mt-3">
+                    Liberia MoE standard: Continuous Assessment (60%) + Examination (40%) per period.
+                    Students must maintain a {{ stats.moe_standard }}% average with no more than two failing core subjects for promotion.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const performanceLabels = ['Excellent (90%+)', 'Good (80–89%)', 'Average (70–79%)', 'Below MoE (<70%)', 'No grades'];
+const performanceData = [
+    {{ stats.excellent_students }},
+    {{ stats.good_students }},
+    {{ stats.average_students }},
+    {{ stats.needs_improvement }},
+    {{ stats.no_grade_data }},
+];
+const letterLabels = ['A', 'B', 'C', 'D', 'F'];
+const letterData = [
+    {{ grade_letter_distribution['A'] }},
+    {{ grade_letter_distribution['B'] }},
+    {{ grade_letter_distribution['C'] }},
+    {{ grade_letter_distribution['D'] }},
+    {{ grade_letter_distribution['F'] }},
+];
+
+function buildDoughnut(canvasId, labels, data, colors) {
+    const el = document.getElementById(canvasId);
+    if (!el || typeof Chart === 'undefined') return;
+    const total = data.reduce((a, b) => a + b, 0);
+    if (!total) {
+        labels = ['No data'];
+        data = [1];
+        colors = ['#374151'];
+    }
+    new Chart(el, {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{ data: data, backgroundColor: colors, borderWidth: 0 }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom', labels: { color: '#e2e8f0', boxWidth: 12, font: { size: 11 } } },
+            },
+            cutout: '68%',
+        },
+    });
+}
+
+function buildBar(canvasId, labels, data, color) {
+    const el = document.getElementById(canvasId);
+    if (!el || typeof Chart === 'undefined') return;
+    if (!labels.length) {
+        labels = ['No data'];
+        data = [0];
+    }
+    new Chart(el, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Grade records',
+                data: data,
+                backgroundColor: color,
+                borderRadius: 6,
+            }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+                y: { beginAtZero: true, ticks: { color: '#94a3b8', precision: 0 }, grid: { color: 'rgba(255,255,255,0.04)' } },
+            },
+        },
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    buildDoughnut('performanceChart', performanceLabels, performanceData, ['#8b5cf6', '#10b981', '#00f2ff', '#f43f5e', '#64748b']);
+    buildBar('letterChart', letterLabels, letterData, '#8b5cf6');
+});
+</script>
+{% endblock %}

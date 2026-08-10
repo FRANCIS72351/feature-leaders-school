@@ -1,0 +1,227 @@
+{% extends 'base.html' %}
+
+{% block title %}Student Registry Matrix{% endblock %}
+
+{% block content %}
+<div class="registry-scope-wrapper py-5">
+    <div class="container-fluid max-width-xl">
+        
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4 header-cascade-1">
+            <div>
+                <h2 class="h3 font-weight-bold text-dark mb-1">Institutional Student Registry</h2>
+                <p class="text-muted small mb-0">Manage active dynamic student logs, academic tracking, and global roster indexes.</p>
+            </div>
+            <div>
+                <a class="btn btn-register-action shadow-sm" href="{{ url_for('student_enrollment') }}">
+                    <i class="fas fa-user-plus me-2"></i>Register New Student
+                </a>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4 header-cascade-2">
+            <div class="col-md-4 col-sm-6">
+                <div class="metric-summary-card p-3 border-0 bg-white shadow-sm d-flex align-items-center gap-3">
+                    <div class="metric-icon-frame primary-frame"><i class="fas fa-users"></i></div>
+                    <div>
+                        <div class="text-muted style-micro text-uppercase font-weight-bold">Total Roster Enrolled</div>
+                        <h4 class="m-0 font-weight-bold text-dark">{{ students|length }}</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="registry-table-canvas border-0 shadow-sm bg-white overflow-hidden table-cascade">
+            <div class="table-responsive">
+                <table class="table custom-registry-table m-0">
+                    <thead>
+                        <tr>
+                            <th scope="col" class="ps-4">System ID</th>
+                            <th scope="col">Full Name</th>
+                            <th scope="col" class="pe-4">Assigned Class/Level</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in students %}
+                        <tr style="--row-index: {{ loop.index0 }}">
+                            <td class="ps-4 font-monospace py-3 align-middle">
+                                <span class="student-id-token">#{{ s.student_id }}</span>
+                            </td>
+                            
+                            <td class="fw-semibold text-dark py-3 align-middle">
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="name-initial-avatar">
+                                        {{ s.first_name[0] | upper if s.first_name else 'S' }}
+                                    </div>
+                                    <span>{{ s.first_name }} {{ s.last_name }}</span>
+                                </div>
+                            </td>
+                            
+                            <td class="pe-4 py-3 align-middle">
+                                <span class="badge class-allocation-badge">{{ s.klass }}</span>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="3" class="text-center py-5 text-muted empty-state-delay">
+                                <div class="py-4">
+                                    <i class="fas fa-folder-open fa-3x text-light mb-3 d-block"></i>
+                                    <span class="small fw-medium">No student records are populated within this module parameters yet.</span>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    /* Scoped System Core Theme Properties */
+    .registry-scope-wrapper {
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        background-color: #f8fafc;
+        min-height: calc(100vh - 100px);
+    }
+    
+    .max-width-xl {
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    .style-micro {
+        font-size: 0.72rem;
+        letter-spacing: 0.5px;
+    }
+
+    /* Core Micro-Interface Action Buttons */
+    .btn-register-action {
+        background-color: #0d6efd !important;
+        color: #ffffff !important;
+        font-size: 0.88rem !important;
+        font-weight: 600 !important;
+        padding: 0.65rem 1.4rem !important;
+        border-radius: 10px !important;
+        border: none !important;
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    }
+
+    .btn-register-action:hover {
+        background-color: #0b5ed7 !important;
+        transform: translateY(-1px) !important;
+        box-shadow: 0 6px 18px rgba(13, 110, 253, 0.25) !important;
+    }
+
+    /* Analytics Counter Summary Panel Matrix */
+    .metric-summary-card {
+        border-radius: 14px !important;
+        border: 1px solid #e2e8f0 !important;
+    }
+
+    .metric-icon-frame {
+        width: 42px;
+        height: 42px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 10px;
+        font-size: 1.1rem;
+    }
+
+    .primary-frame {
+        background-color: rgba(13, 110, 253, 0.08);
+        color: #0d6efd;
+    }
+
+    /* Modern Dynamic Datatable Registry Structuring */
+    .registry-table-canvas {
+        border-radius: 16px !important;
+        border: 1px solid #e2e8f0 !important;
+    }
+
+    .custom-registry-table thead th {
+        background-color: #fafafa !important;
+        color: #475569 !important;
+        font-size: 0.8rem !important;
+        font-weight: 700 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.5px !important;
+        padding-top: 14px !important;
+        padding-bottom: 14px !important;
+        border-bottom: 2px solid #edf2f7 !important;
+    }
+
+    .custom-registry-table tbody tr {
+        background-color: #ffffff;
+        transition: background-color 0.15s ease;
+        
+        /* Staggered Row Insertion Animation Logic */
+        opacity: 0;
+        transform: translateY(12px);
+        animation: tableRowFadeSlideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation-delay: calc(var(--row-index) * 0.04s + 0.25s);
+    }
+
+    .custom-registry-table tbody tr:hover {
+        background-color: #f8fafc !important;
+    }
+
+    .custom-registry-table td {
+        border-bottom: 1px solid #edf2f7 !important;
+    }
+
+    /* System Asset Badges & Monospace Registry Tokens */
+    .student-id-token {
+        background-color: #f1f5f9;
+        color: #475569;
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.82rem;
+    }
+
+    .name-initial-avatar {
+        width: 30px;
+        height: 30px;
+        background-color: #e2e8f0;
+        color: #475569;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        font-size: 0.8rem;
+        font-weight: 700;
+    }
+
+    .class-allocation-badge {
+        background-color: rgba(71, 85, 105, 0.08) !important;
+        color: #475569 !important;
+        font-size: 0.8rem !important;
+        font-weight: 600 !important;
+        padding: 5px 10px !important;
+        border-radius: 6px !important;
+    }
+
+    /* =========================================================
+       PROFESSIONAL INTERFACE CASCADE ANIMATIONS
+       ========================================================= */
+    @keyframes elementRevealFadeUp {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes tableRowFadeSlideIn {
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Content Layout Delays */
+    .header-cascade-1 { animation: elementRevealFadeUp 0.4s ease forwards; opacity: 0; }
+    .header-cascade-2 { animation: elementRevealFadeUp 0.4s ease forwards; animation-delay: 0.12s; opacity: 0; }
+    .table-cascade { animation: elementRevealFadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; animation-delay: 0.2s; opacity: 0; }
+    .empty-state-delay { animation: elementRevealFadeUp 0.4s ease forwards; animation-delay: 0.3s; opacity: 0; }
+</style>
+{% endblock %}

@@ -1,0 +1,220 @@
+{% extends 'base.html' %}
+{% block title %}Academic Rollover Preview{% endblock %}
+{% block content %}
+
+<style>
+    .rollover-preview { color: #1f2937; }
+    .rollover-preview .text-muted { color: #5f7892 !important; }
+    .text-cyan { color: #0ea5e9 !important; }
+    .text-emerald { color: #059669 !important; }
+    .text-amber { color: #d97706 !important; }
+    .text-rose { color: #dc2626 !important; }
+    .sec-card {
+        background: #ffffff; border: 1px solid #dbe7f3;
+        border-radius: 0.75rem; padding: 1.5rem;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+    }
+    .stat-pill {
+        background: #f8fbff; border: 1px solid #dbe7f3;
+        border-radius: 0.5rem; padding: 0.85rem 1rem;
+    }
+    .warning-banner {
+        background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35);
+        border-radius: 0.5rem; padding: 1rem 1.25rem;
+    }
+    .danger-banner {
+        background: rgba(244, 63, 94, 0.12); border: 1px solid rgba(244, 63, 94, 0.35);
+        border-radius: 0.5rem; padding: 1rem 1.25rem;
+    }
+    .rollover-preview .text-white,
+    .rollover-preview h2,
+    .rollover-preview h3,
+    .rollover-preview h4,
+    .rollover-preview h5,
+    .rollover-preview h6,
+    .rollover-preview p,
+    .rollover-preview span,
+    .rollover-preview div {
+        color: #1f2937;
+    }
+</style>
+
+<div class="container-fluid px-4 py-4 rollover-preview">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start gap-3 mb-4">
+        <div>
+            <h2 class="fw-bold text-white mb-1">
+                <i class="fas fa-arrows-rotate text-cyan me-2"></i>Academic Year Rollover
+            </h2>
+            <p class="text-muted mb-0">
+                Review promotion outcomes before advancing the active academic year.
+                Promotion uses {{ preview.pass_score }}% average with at most {{ preview.max_failing }} failing subjects.
+            </p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary text-white">
+                <i class="fas fa-arrow-left me-1"></i> Dashboard
+            </a>
+            <a href="{{ wizard_url }}" class="btn btn-outline-info text-white">
+                <i class="fas fa-wand-magic-sparkles me-1"></i> Full Wizard
+            </a>
+        </div>
+    </div>
+
+    {% if show_preview %}
+    <div class="alert alert-info border-0 mb-4" role="status">
+        <i class="fas fa-eye me-2"></i>Preview refreshed — no changes were committed.
+    </div>
+    {% endif %}
+
+    {% for warning in preview.warnings %}
+    <div class="warning-banner text-amber mb-3">
+        <i class="fas fa-triangle-exclamation me-2"></i>{{ warning }}
+    </div>
+    {% endfor %}
+
+    <div class="danger-banner text-rose mb-4">
+        <strong><i class="fas fa-shield-halved me-2"></i>This action cannot be undone easily.</strong>
+        <div class="small mt-1 mb-0 opacity-75">
+            Student promotions, retentions, graduations, and the active academic year will be updated in one transaction.
+            Use the full wizard for custom class mappings, registration fees, and exclusions.
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="sec-card h-100">
+                <div class="text-muted small text-uppercase mb-1">Current Active Year</div>
+                <div class="h4 text-white mb-0">
+                    {% if preview.active_year %}
+                        <i class="fas fa-calendar-check text-cyan me-2"></i>{{ preview.active_year.name }}
+                    {% else %}
+                        <span class="text-rose">None</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="sec-card h-100">
+                <div class="text-muted small text-uppercase mb-1">Next Academic Year</div>
+                <div class="h4 text-white mb-0">
+                    {% if preview.next_year_name %}
+                        <i class="fas fa-forward text-emerald me-2"></i>{{ preview.next_year_name }}
+                    {% else %}
+                        <span class="text-muted">—</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="stat-pill text-center">
+                <div class="text-muted small text-uppercase">Enrolled</div>
+                <div class="h3 text-white mb-0">{{ preview.student_total }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-pill text-center">
+                <div class="text-muted small text-uppercase">Promoted</div>
+                <div class="h3 text-emerald mb-0">{{ preview.promoted }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-pill text-center">
+                <div class="text-muted small text-uppercase">Did Not Pass</div>
+                <div class="h3 text-rose mb-0">{{ preview.failed }}</div>
+                <div class="small text-muted mt-1">Repeat same grade</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-pill text-center">
+                <div class="text-muted small text-uppercase">Graduated</div>
+                <div class="h3 text-cyan mb-0">{{ preview.graduated }}</div>
+            </div>
+        </div>
+    </div>
+
+    {% if preview.failed %}
+    <div class="warning-banner text-rose mb-4">
+        <i class="fas fa-circle-xmark me-2"></i>
+        <strong>{{ preview.failed }} student{{ 's' if preview.failed != 1 else '' }}</strong>
+        did not meet the {{ preview.pass_score }}% promotion standard and will be marked
+        <strong>FAILED</strong> (repeat grade) during rollover.
+    </div>
+    {% endif %}
+
+    <div class="sec-card mb-4">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <span class="text-muted small text-uppercase">Re-registration Required</span>
+                <div class="h5 text-white mb-0">{{ preview.re_registration }} students</div>
+                <div class="small text-muted">Returning status and tuition clearance will be reset.</div>
+            </div>
+            {% if preview.already_rolled_today %}
+            <span class="badge bg-warning text-dark">Rollover logged today</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2">
+        <form method="POST" action="{{ url_for('academic_rollover') }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="preview" value="1">
+            <button type="submit" class="btn btn-outline-info">
+                <i class="fas fa-sync me-1"></i> Refresh Preview
+            </button>
+        </form>
+
+        {% if preview.can_execute %}
+        <form method="POST" action="{{ url_for('academic_rollover') }}" class="d-inline" id="rolloverExecuteForm">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if preview.already_rolled_today %}
+            <input type="hidden" name="allow_repeat_today" value="1" id="allowRepeatField" disabled>
+            {% endif %}
+            <button type="submit" class="btn btn-warning text-dark fw-semibold" id="rolloverExecuteBtn"
+                data-promoted="{{ preview.promoted }}"
+                data-failed="{{ preview.failed }}"
+                data-graduated="{{ preview.graduated }}"
+                data-next="{{ preview.next_year_name }}"
+                data-repeat="{{ '1' if preview.already_rolled_today else '0' }}">
+                <i class="fas fa-play me-1"></i> Execute Rollover
+            </button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+(function () {
+    const btn = document.getElementById('rolloverExecuteBtn');
+    if (!btn) return;
+    btn.addEventListener('click', function (e) {
+        const msg = [
+            'Execute academic year rollover?',
+            '',
+            'Promoted: ' + btn.dataset.promoted,
+            'Did not pass: ' + btn.dataset.failed,
+            'Graduated: ' + btn.dataset.graduated,
+            'New year: ' + btn.dataset.next,
+            '',
+            'This cannot be undone easily.'
+        ].join('\n');
+
+        if (btn.dataset.repeat === '1') {
+            if (!confirm('A rollover was already logged today for this year.\n\nRun again anyway?')) {
+                e.preventDefault();
+                return;
+            }
+            const repeatField = document.getElementById('allowRepeatField');
+            if (repeatField) repeatField.disabled = false;
+        }
+
+        if (!confirm(msg)) {
+            e.preventDefault();
+        }
+    });
+})();
+</script>
+
+{% endblock %}

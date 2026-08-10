@@ -1,0 +1,190 @@
+{% extends 'base.html' %}
+{% block title %}Class Roster - {{ klass.name }}{% endblock %}
+{% block content %}
+
+<style>
+    /* System Global Workspace Theme Variables */
+    body {
+        background-color: #0b0f19;
+        color: #e2e8f0;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    .text-cyan { color: #00f2ff !important; }
+    .text-emerald { color: #10b981 !important; }
+    .text-muted { color: #94a3b8 !important; }
+
+    /* Core Application Glow Title Accentuation */
+    .glow-title {
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        color: #ffffff;
+        text-shadow: 0 0 20px rgba(0, 242, 255, 0.15);
+    }
+
+    /* Modern Glassmorphic Container Nodes */
+    .sec-card {
+        background: #111827;
+        border: 1px solid #1f2937;
+        border-radius: 12px !important;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        transition: border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .sec-card:hover {
+        border-color: rgba(0, 242, 255, 0.25);
+    }
+
+    /* Sleek Polished Datatables */
+    .table-cyber { color: #e2e8f0 !important; font-size: 0.9rem; }
+    .table-cyber th {
+        background-color: #1f2937 !important;
+        color: #00f2ff !important;
+        border-color: #374151 !important;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        padding: 14px 12px;
+    }
+    .table-cyber td { 
+        background-color: transparent !important; 
+        border-color: #1f2937 !important; 
+        padding: 14px 12px; 
+    }
+    .table-cyber tbody tr { 
+        transition: background-color 0.2s ease; 
+    }
+    .table-cyber tbody tr:hover { 
+        background-color: rgba(255, 255, 255, 0.02) !important; 
+    }
+
+    /* Cyber Button Configurations */
+    .btn-cyber-outline {
+        border: 1px solid #374151;
+        color: #94a3b8;
+        background: transparent;
+        transition: all 0.2s ease;
+    }
+    .btn-cyber-outline:hover {
+        border-color: #00f2ff;
+        color: #00f2ff;
+        background: rgba(0, 242, 255, 0.05);
+    }
+
+    .btn-emerald {
+        background: rgba(16, 185, 129, 0.15);
+        color: #10b981;
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        transition: all 0.2s ease;
+    }
+    .btn-emerald:hover {
+        background: rgba(16, 185, 129, 0.25);
+        color: #34d399;
+        border-color: rgba(16, 185, 129, 0.5);
+    }
+
+    /* Hardware Accelerated Animation Framework */
+    .fade-glide-in {
+        opacity: 0;
+        transform: translateY(15px);
+        animation: dashboardFadeGlide 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .delay-1 { animation-delay: 0.1s; }
+
+    @keyframes dashboardFadeGlide { to { opacity: 1; transform: translateY(0); } }
+</style>
+
+<div class="container-fluid py-4 px-md-4">
+    
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4 pb-3 border-bottom border-secondary border-opacity-10 fade-glide-in">
+        <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="badge bg-cyan bg-opacity-10 text-cyan border border-cyan border-opacity-10 uppercase tracking-wider px-2 py-1" style="font-size: 0.65rem;">Class Registry Block</span>
+                {% if viewing_archived and display_year %}
+                    <span class="text-warning small">| Viewing: {{ display_year.name }} (Archived)</span>
+                {% elif display_year %}
+                    <span class="text-muted small">| Session: {{ display_year.name }}</span>
+                {% elif active_year %}
+                    <span class="text-muted small">| Active Session: {{ active_year.name }}</span>
+                {% endif %}
+            </div>
+            <h2 class="glow-title mb-1"><i class="fas fa-folder text-cyan me-2"></i>Class Directory: {{ klass.name }}</h2>
+            <p class="text-muted small mb-0">{{ klass.description or 'No explicit descriptive layout signature mapped to this module.' }}</p>
+        </div>
+        <div class="mt-3 mt-md-0">
+            <a href="{{ url_for('dashboard', academic_year_id=display_year.id if display_year else None) }}" class="btn btn-sm btn-cyber-outline rounded-3 px-3 py-2 fw-semibold fs-7">
+                <i class="fas fa-arrow-left-long me-2"></i>Return to Terminal Dashboard
+            </a>
+        </div>
+    </div>
+
+    <div class="card sec-card p-4 fade-glide-in delay-1">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h5 class="text-white font-weight-bold mb-0">Allocated Student Roster</h5>
+                <p class="text-muted small mb-0">List of all structural records actively assigned to class node array.</p>
+            </div>
+            <span class="badge bg-dark border border-secondary border-opacity-20 text-white-50 px-3 py-2 rounded-3 font-monospace" style="font-size: 0.8rem;">
+                Total Count: {{ students|length }} Nodes
+            </span>
+        </div>
+
+        <div class="table-responsive rounded-3 border border-secondary border-opacity-10">
+            <table class="table table-cyber align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Photo Node</th>
+                        <th>Index Key</th>
+                        <th>Full System Identity</th>
+                        <th>Secure Email Address</th>
+                        <th>Academic Session</th>
+                        <th class="text-end">Registration Fee</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for student in students %}
+                    <tr>
+                        <td>
+                            <div style="width: 44px; height: 44px;">
+                                {% if student.photo_url %}
+                                    <img src="{{ student.photo_url }}" alt="Student Node Image" class="w-100 h-100 object-fit-cover rounded border border-secondary border-opacity-20" />
+                                {% else %}
+                                    <div class="w-100 h-100 d-flex align-items-center justify-content-center bg-dark rounded border border-secondary border-opacity-20" title="Missing Asset Signature">
+                                        <i class="fas fa-user text-muted opacity-25" style="font-size: 0.9rem;"></i>
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="font-monospace text-cyan" style="font-size: 0.8rem;">#{{ student.student_id }}</td>
+                        <td class="fw-bold text-white">{{ student.first_name }} {{ student.last_name }}</td>
+                        <td class="text-muted" style="font-size: 0.8rem;">{{ student.email }}</td>
+                        <td>
+                            <span class="badge bg-secondary bg-opacity-10 text-white-50 border border-secondary border-opacity-10 px-2 py-1">
+                                {{ student.academic_year or '-' }}
+                            </span>
+                        </td>
+                        <td class="text-end font-monospace fw-semibold text-emerald">
+                            ${{ "{:,.2f}".format(student.registration_fees|float) if student.registration_fees else "0.00" }}
+                        </td>
+                        <td class="text-end">
+                            <a href="{{ url_for('edit_student', student_id=student.id, return_to='class_roster') }}" class="btn btn-sm btn-emerald rounded-3 px-2.5 py-1" style="font-size:0.75rem;">
+                                <i class="fas fa-coins me-1"></i>Edit Fees
+                            </a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="text-center py-5 text-muted small">
+                            <div class="mb-2"><i class="fas fa-network-wired opacity-25 fa-2x"></i></div>
+                            No structural student array nodes initialized inside this directory folder frame.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+{% endblock %}

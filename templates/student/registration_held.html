@@ -1,0 +1,375 @@
+{% extends 'base.html' %}
+{% block title %}Registration Pending — Academic Records{% endblock %}
+
+{% block content %}
+<style>
+    .held-shell {
+        min-height: calc(100vh - 120px);
+        background: linear-gradient(160deg, #0b0f19 0%, #111827 45%, #0f172a 100%);
+        padding: 2.5rem 1rem 3rem;
+    }
+    .held-card {
+        max-width: 960px;
+        margin: 0 auto;
+        background: rgba(17, 24, 39, 0.92);
+        border: 1px solid rgba(0, 242, 255, 0.18);
+        border-radius: 16px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45), 0 0 40px rgba(0, 242, 255, 0.06);
+        overflow: hidden;
+    }
+    .held-header {
+        background: linear-gradient(135deg, rgba(244, 63, 94, 0.15), rgba(245, 158, 11, 0.12));
+        border-bottom: 1px solid rgba(244, 63, 94, 0.25);
+        padding: 2rem 2rem 1.5rem;
+        text-align: center;
+    }
+    .held-lock {
+        width: 72px;
+        height: 72px;
+        border-radius: 50%;
+        background: rgba(244, 63, 94, 0.12);
+        border: 2px solid rgba(244, 63, 94, 0.35);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.75rem;
+        color: #fb7185;
+        margin-bottom: 1rem;
+        box-shadow: 0 0 24px rgba(244, 63, 94, 0.2);
+    }
+    .held-title {
+        color: #f8fafc;
+        font-weight: 700;
+        font-size: 1.35rem;
+        letter-spacing: 0.02em;
+        margin-bottom: 0.35rem;
+    }
+    .held-subtitle {
+        color: #94a3b8;
+        font-size: 0.95rem;
+        margin: 0;
+    }
+    .held-body {
+        padding: 1.75rem 2rem 2rem;
+        color: #cbd5e1;
+    }
+    .held-student {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 1rem 1.15rem;
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(55, 65, 81, 0.8);
+        border-radius: 12px;
+        margin-bottom: 1.5rem;
+    }
+    .held-student img {
+        width: 52px;
+        height: 52px;
+        border-radius: 10px;
+        object-fit: cover;
+        border: 1px solid rgba(0, 242, 255, 0.2);
+    }
+    .held-steps {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 1.5rem;
+    }
+    .held-steps li {
+        display: flex;
+        gap: 0.85rem;
+        padding: 0.65rem 0;
+        border-bottom: 1px solid rgba(55, 65, 81, 0.5);
+        font-size: 0.92rem;
+    }
+    .held-steps li:last-child { border-bottom: none; }
+    .held-step-num {
+        flex-shrink: 0;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background: rgba(0, 242, 255, 0.12);
+        color: #00f2ff;
+        font-size: 0.75rem;
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .held-contact {
+        background: rgba(0, 242, 255, 0.06);
+        border: 1px solid rgba(0, 242, 255, 0.15);
+        border-radius: 12px;
+        padding: 1rem 1.15rem;
+        font-size: 0.88rem;
+    }
+    .held-contact strong { color: #00f2ff; }
+    .badge-promoted {
+        background: rgba(245, 158, 11, 0.15);
+        color: #fbbf24;
+        border: 1px solid rgba(245, 158, 11, 0.35);
+        font-weight: 600;
+        font-size: 0.72rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+    .badge-pending {
+        background: rgba(244, 63, 94, 0.15);
+        color: #fb7185;
+        border: 1px solid rgba(244, 63, 94, 0.35);
+        font-weight: 600;
+        font-size: 0.72rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+    .held-section {
+        background: rgba(15, 23, 42, 0.45);
+        border: 1px solid rgba(55, 65, 81, 0.6);
+        border-radius: 12px;
+        padding: 1.25rem 1.35rem;
+        margin-bottom: 1.25rem;
+    }
+    .held-section h2 {
+        color: #f1f5f9;
+        font-size: 1rem;
+        font-weight: 700;
+        margin-bottom: 0.85rem;
+    }
+    .held-year-card {
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(55, 65, 81, 0.8);
+        border-radius: 12px;
+        padding: 1rem 1.1rem;
+        height: 100%;
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .held-year-card.active {
+        border-color: rgba(0, 242, 255, 0.45);
+        box-shadow: 0 0 20px rgba(0, 242, 255, 0.08);
+    }
+    .held-year-card .year-label {
+        color: #00f2ff;
+        font-weight: 700;
+        font-size: 1.05rem;
+    }
+    .held-year-stat {
+        font-size: 0.8rem;
+        color: #94a3b8;
+    }
+    .held-year-stat strong {
+        color: #e2e8f0;
+    }
+    .btn-held-primary {
+        background: linear-gradient(135deg, #0ea5e9, #0284c7);
+        border: none;
+        color: #fff;
+        font-weight: 600;
+        border-radius: 10px;
+        font-size: 0.85rem;
+    }
+    .btn-held-primary:hover {
+        color: #fff;
+        opacity: 0.92;
+    }
+    .table-held {
+        color: #e2e8f0;
+        font-size: 0.875rem;
+    }
+    .table-held th {
+        color: #94a3b8;
+        font-weight: 600;
+        border-color: rgba(55, 65, 81, 0.8) !important;
+    }
+    .table-held td {
+        border-color: rgba(55, 65, 81, 0.5) !important;
+    }
+    .held-readonly-note {
+        font-size: 0.85rem;
+        color: #64748b;
+        border-left: 3px solid rgba(0, 242, 255, 0.35);
+        padding-left: 0.85rem;
+        margin-top: 0.75rem;
+        margin-bottom: 0;
+    }
+    .held-current-year-banner {
+        background: rgba(245, 158, 11, 0.08);
+        border: 1px solid rgba(245, 158, 11, 0.25);
+        border-radius: 10px;
+        padding: 0.75rem 1rem;
+        font-size: 0.88rem;
+        color: #fcd34d;
+        margin-bottom: 1rem;
+    }
+</style>
+
+<div class="held-shell">
+    <div class="held-card">
+        <div class="held-header">
+            <div class="held-lock"><i class="fas fa-lock"></i></div>
+            <h1 class="held-title">Registration Fee Pending</h1>
+            <p class="held-subtitle">
+                You have been promoted{% if active_year %} to <strong class="text-warning">{{ active_year.name }}</strong>{% endif %}.
+                Pay your registration fee at the Business Office to unlock the full student portal.
+            </p>
+        </div>
+
+        <div class="held-body">
+            <div class="held-student">
+                {% if student.photo_url %}
+                <img src="{{ student.photo_url }}" alt="{{ student.full_name }}">
+                {% else %}
+                <div class="d-flex align-items-center justify-content-center bg-dark rounded" style="width:52px;height:52px;">
+                    <i class="fas fa-user-graduate text-secondary"></i>
+                </div>
+                {% endif %}
+                <div class="flex-grow-1">
+                    <div class="fw-bold text-white">{{ student.full_name }}</div>
+                    <div class="small text-secondary">ID {{ student.student_id }}</div>
+                    <div class="d-flex flex-wrap gap-2 mt-2">
+                        {% if student.is_promoted %}
+                        <span class="badge badge-promoted rounded-pill px-2 py-1">Promoted</span>
+                        {% endif %}
+                        <span class="badge badge-pending rounded-pill px-2 py-1">Registration Pending</span>
+                        {% if student.current_grade %}
+                        <span class="badge bg-dark border border-secondary text-light rounded-pill px-2 py-1">Grade {{ student.current_grade }}</span>
+                        {% endif %}
+                        {% if student.klass %}
+                        <span class="badge bg-dark border border-secondary text-light rounded-pill px-2 py-1">{{ student.klass.name }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="held-section">
+                <h2><i class="fas fa-hourglass-half text-warning me-2"></i>Current Year — Registration Pending</h2>
+                <p class="mb-3 small">
+                    Your promotion is confirmed and your record is on file. The Business Office still needs to record your
+                    <strong class="text-white">registration fee</strong> before grades, tasks, class notices, and account details for the new year become available.
+                </p>
+
+                <ul class="held-steps mb-3">
+                    <li>
+                        <span class="held-step-num">1</span>
+                        <span>Visit the <strong class="text-white">Business Office</strong> with student ID <strong class="text-info">{{ student.student_id }}</strong> and pay the registration fee.</span>
+                    </li>
+                    <li>
+                        <span class="held-step-num">2</span>
+                        <span>After payment is recorded, sign out and sign back in — your full dashboard will unlock automatically.</span>
+                    </li>
+                </ul>
+
+                <div class="held-contact">
+                    <i class="fas fa-building-columns me-2 text-info"></i>
+                    Questions or already paid? Contact the Business Office or registrar with your student ID and proof of payment.
+                </div>
+            </div>
+
+            <div class="held-section">
+                <h2><i class="fas fa-folder-open text-info me-2"></i>Your Academic History</h2>
+
+                {% if active_year %}
+                <div class="held-current-year-banner">
+                    <i class="fas fa-info-circle me-1"></i>
+                    <strong>{{ active_year.name }}</strong> portal access is locked until registration is complete.
+                    Past years with published records remain available below.
+                </div>
+                {% endif %}
+
+                {% if record_summaries %}
+                <div class="row g-3 mb-3">
+                    {% for summary in record_summaries %}
+                    <div class="col-md-6 col-lg-4">
+                        <div class="held-year-card {% if display_year and summary.year.id == display_year.id %}active{% endif %}">
+                            <div class="year-label mb-1">{{ summary.year.name }}</div>
+                            <div class="held-year-stat mb-1">
+                                GPA <strong>{{ '%.2f'|format(summary.gpa) }}</strong>
+                                · {{ summary.subject_count }} subject{{ 's' if summary.subject_count != 1 else '' }}
+                            </div>
+                            <div class="d-flex flex-wrap gap-2 mt-3">
+                                <a class="btn btn-sm btn-outline-info"
+                                   href="{{ url_for('student_academic_records', academic_year_id=summary.year.id) }}">
+                                    <i class="fas fa-eye me-1"></i> View
+                                </a>
+                                <a class="btn btn-sm btn-held-primary"
+                                   href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ summary.year.id }}"
+                                   target="_blank" rel="noopener">
+                                    <i class="fas fa-file-invoice me-1"></i> Report Card
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                {% if display_year %}
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <div class="text-center p-3 rounded" style="background:rgba(15,23,42,0.5);border:1px solid rgba(55,65,81,0.6);">
+                            <div class="text-muted small text-uppercase mb-1">Selected Year</div>
+                            <div class="h5 text-white mb-0">{{ display_year.name }}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-center p-3 rounded" style="background:rgba(15,23,42,0.5);border:1px solid rgba(55,65,81,0.6);">
+                            <div class="text-muted small text-uppercase mb-1">GPA</div>
+                            <div class="h5 text-info mb-0">{{ '%.2f'|format(gpa) }}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-center p-3 rounded" style="background:rgba(15,23,42,0.5);border:1px solid rgba(55,65,81,0.6);">
+                            <div class="text-muted small text-uppercase mb-1">Published Records</div>
+                            <div class="h5 text-white mb-0">{{ grades|length }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                {% if grades %}
+                <div class="table-responsive">
+                    <table class="table table-held table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Subject</th>
+                                <th>Period</th>
+                                <th class="text-end">Score</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for g in grades %}
+                            <tr>
+                                <td>{{ g.subject_name or g.subject or '—' }}</td>
+                                <td class="text-muted">{{ g.period or ('Period ' ~ g.marking_period if g.marking_period else '—') }}</td>
+                                <td class="text-end font-monospace">{{ g.score if g.score is not none else '—' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-3">
+                    <i class="fas fa-inbox opacity-25 fa-2x mb-2 d-block"></i>
+                    No published grade records for this year.
+                </div>
+                {% endif %}
+
+                <p class="held-readonly-note">
+                    Academic history is read-only while registration is pending. Report cards open in a new tab and reflect officially published grades only.
+                </p>
+                {% endif %}
+
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-inbox opacity-25 fa-2x mb-2 d-block"></i>
+                    No past academic records on file yet. Once grades are published for prior years, they will appear here.
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="text-center pt-1">
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm px-4">
+                    <i class="fas fa-sign-out-alt me-1"></i> Sign Out
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

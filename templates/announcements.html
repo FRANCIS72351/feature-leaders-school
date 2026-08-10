@@ -1,0 +1,154 @@
+{% extends 'base.html' %}
+{% block title %}Announcements Management{% endblock %}
+
+{% block content %}
+<style>
+    .announcement-workspace {
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        color: #2d3748;
+        background-color: #f8fafc;
+        padding-bottom: 3rem;
+    }
+
+    /* Card Panels */
+    .panel-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    }
+
+    .panel-header-accent {
+        border-bottom: 2px solid #edf2f7;
+        padding-bottom: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    /* Form Design Controls */
+    .form-group-custom {
+        margin-bottom: 1.25rem;
+    }
+
+    .form-group-custom label {
+        font-weight: 600;
+        font-size: 0.875rem;
+        color: #4a5568;
+        margin-bottom: 0.5rem;
+        display: block;
+    }
+
+    .form-group-custom .form-control,
+    .form-group-custom .form-select {
+        border-radius: 8px;
+        border: 1px solid #cbd5e0;
+        padding: 0.625rem 0.75rem;
+        font-size: 0.95rem;
+        transition: all 0.2s ease;
+    }
+
+    .form-group-custom .form-control:focus,
+    .form-group-custom .form-select:focus {
+        border-color: #4e73df;
+        box-shadow: 0 0 0 3px rgba(78, 115, 223, 0.15);
+    }
+
+    /* Announcement Stream Cards */
+    .stream-item {
+        background: #ffffff;
+        border-left: 4px solid #4e73df;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .stream-item:hover {
+        transform: translateX(2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+    }
+
+    /* Target Audience Custom Badges */
+    .badge-audience {
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        padding: 0.4em 0.8em;
+        border-radius: 6px;
+    }
+    
+    .badge-all { background-color: #ebf8ff; color: #2b6cb0; border: 1px solid #bee3f8; }
+    .badge-teachers { background-color: #faf5ff; color: #6b46c1; border: 1px solid #e9d8fd; }
+    .badge-students { background-color: #f0fff4; color: #2f855a; border: 1px solid #c6f6d5; }
+</style>
+
+<div class="container-fluid announcement-workspace mt-4">
+    <div class="mb-4">
+        <h1 class="h3 mb-1 font-weight-bold text-gray-800">Communications Hub</h1>
+        <p class="text-muted small">Broadcast official notifications, circulars, and target-specific updates across the platform ecosystem.</p>
+    </div>
+
+    <div class="row">
+        <div class="col-xl-4 col-lg-5 mb-4">
+            <div class="card panel-card border-0 p-4">
+                <div class="panel-header-accent">
+                    <h5 class="m-0 font-weight-bold text-primary">Create Announcement</h5>
+                </div>
+                
+                <form action="{{ url_for('announcements') }}" method="POST">
+                    {{ form.csrf_token }}
+                    
+                    <div class="form-group-custom">
+                        <label for="title">Announcement Title</label>
+                        {{ form.title(class="form-control", placeholder="e.g., Mid-Term Examination Schedule") }}
+                    </div>
+
+                    <div class="form-group-custom">
+                        <label for="target_audience">Target Audience</label>
+                        {{ form.target_audience(class="form-select") }}
+                    </div>
+
+                    <div class="form-group-custom">
+                        <label for="content">Message Content</label>
+                        {{ form.content(class="form-control", rows="5", placeholder="Type your detailed notice or broadcast message here...") }}
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-block w-100 py-2 mt-2 font-weight-bold" style="border-radius: 8px;">
+                        <i class="fas fa-paper-plane me-2 mr-2"></i>Publish Broadcast
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="col-xl-8 col-lg-7">
+            <div class="card panel-card border-0 p-4">
+                <div class="panel-header-accent">
+                    <h5 class="m-0 font-weight-bold text-gray-800">Recent Updates Feed</h5>
+                </div>
+
+                <div class="announcement-stream">
+                    {% if items %}
+                        {% for item in items %}
+                            <div class="card stream-item border-top-0 border-right-0 border-bottom-0 shadow-sm p-3 mb-3 border-left-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <h6 class="font-weight-bold text-gray-900 m-0">{{ item.title }}</h6>
+                                    <span class="badge-audience badge-{{ item.target_role|lower if item.target_role else 'all' }}">
+                                        {{ item.target_role or 'ALL' }}
+                                    </span>
+                                </div>
+                                <p class="text-gray-700 small mb-2" style="white-space: pre-line;">{{ item.content }}</p>
+                                <div class="text-muted" style="font-size: 0.72rem;">
+                                    <i class="fas fa-calendar-alt me-1 mr-1"></i> Posted on {{ item.created_at.strftime('%B %d, %Y at %I:%M %p') if item.created_at else 'Date Unknown' }}
+                                </div>
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="text-center py-5 text-muted">
+                            <i class="fas fa-bullhorn fa-2x mb-3 text-gray-400"></i>
+                            <p class="m-0 small">No recent announcements found. Your feed is clean.</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

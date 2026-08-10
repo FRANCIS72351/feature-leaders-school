@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+  .parent-pro-shell {
+    background: #f8fbff;
+    border: 1px solid #dbe7f3;
+    border-radius: 14px;
+    padding: 1rem;
+  }
+  .parent-pro-card {
+    border: 1px solid #dbe7f3;
+    border-radius: 12px;
+    background: #ffffff;
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
+  }
+  .parent-pro-chip {
+    border: 1px solid #dbe7f3;
+    border-radius: 10px;
+    background: #f8fbff;
+    padding: 0.6rem 0.8rem;
+    font-size: 0.8rem;
+    color: #5f7892;
+  }
+</style>
+
+<div class="container-fluid px-3 px-md-4 pro-dashboard">
+  <div class="parent-pro-shell">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-3">
+      <div>
+        <h2 class="h4 fw-bold mb-1">Parent Dashboard</h2>
+        <p class="text-muted small mb-0">Monitor your child records, results, and transcript access in one place.</p>
+      </div>
+      <div class="parent-pro-chip">
+        <i class="fas fa-user me-1"></i>{{ current_user.full_name }}
+      </div>
+    </div>
+
+    <div class="card parent-pro-card mb-4">
+      <div class="card-body d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
+        <div>
+          <h5 class="card-title mb-1">My Profile</h5>
+          <p class="mb-1"><strong>{{ current_user.full_name }}</strong> · {{ current_user.email }}</p>
+          {% if current_user.telephone_number %}<p class="small text-muted mb-0">{{ current_user.telephone_number }}</p>{% endif %}
+        </div>
+        {% if active_year %}
+        <div class="parent-pro-chip">
+          <strong>Academic Year:</strong> {{ active_year.name }}
+          {% if active_year.start_date and active_year.end_date %}
+          <div class="small text-muted">{{ active_year.start_date }} – {{ active_year.end_date }}</div>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if children %}
+      {% if children|length > 1 %}
+      <p class="text-muted small mb-3">You have {{ children|length }} children linked to this account.</p>
+      {% endif %}
+      <div class="row g-3">
+        {% for child in children %}
+        <div class="col-12">
+          <div class="card parent-pro-card">
+            <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
+              <div>
+                <h5 class="mb-1">{{ child.full_name }}</h5>
+                <p class="text-muted small mb-0">ID: {{ child.student_id }}{% if child.assigned_class %} · {{ child.assigned_class.name }}{% endif %}</p>
+              </div>
+              <div class="d-flex flex-wrap gap-2">
+                <a class="btn btn-primary btn-sm" href="{{ url_for('report_card', student_id=child.id) }}?academic_year_id={{ active_year.id if active_year else '' }}">Report Card</a>
+                <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('transcript', student_id=child.id) }}">Transcript</a>
+              </div>
+              <div class="w-100 parent-pro-chip">
+                <i class="fas fa-qrcode me-1"></i>
+                You can also scan the <strong>Parent Report QR</strong> on the printed report card and verify with your PIN or phone last 4 digits.
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="alert alert-warning mb-0">
+        No student is linked to your email yet. Ask the registrar to use <strong>{{ current_user.email }}</strong> as the parent email on your child's record.
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

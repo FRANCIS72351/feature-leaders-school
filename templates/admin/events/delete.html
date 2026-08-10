@@ -1,0 +1,16 @@
+{% extends 'admin/events/base.html' %}
+{% block admin_page_title %}Delete Event{% endblock %}
+{% block admin_page_content %}
+  <div class="card shadow-sm border-danger">
+    <div class="card-body">
+      <h2 class="h4 text-danger">Confirm Deletion</h2>
+      <p>Are you sure you want to permanently remove <strong>{{ event.title }}</strong> scheduled for {{ event.date.strftime('%b %d, %Y') }}?</p>
+      <p class="text-muted small">This action cannot be undone.</p>
+      <form method="POST" class="d-flex gap-2">
+        {{ form.hidden_tag() }}
+        <a href="{{ url_for('admin_events_list') }}" class="btn btn-outline-secondary">Cancel</a>
+        <button type="submit" class="btn btn-danger">Delete Event</button>
+      </form>
+    </div>
+  </div>
+{% endblock %}

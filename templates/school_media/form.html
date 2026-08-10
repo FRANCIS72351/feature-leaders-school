@@ -1,0 +1,153 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit' if item else 'Add' }} School Media{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <h1 class="fw-bold text-primary mb-4">{{ 'Edit' if item else 'Add' }} School Media</h1>
+
+  {% if registrar_media_only %}
+  <div class="alert alert-info col-lg-8 mb-3">
+    <i class="fas fa-info-circle me-1"></i>
+    As Registrar, you can publish <strong>Entrance Exam</strong> notices and <strong>Academic Year Info Sheets</strong> (documents only).
+    Advertisement videos must be posted by Principal, VPA, or Admin.
+  </div>
+  {% else %}
+  <div class="alert alert-light border col-lg-8 mb-3 small">
+    <i class="fas fa-lightbulb me-1 text-warning"></i>
+    <strong>Promo videos (2–3 minutes)</strong> → choose <em>Video</em> + <em>Advertisement / Promo Video</em>, then upload MP4 (recommended).
+    <strong>Entrance exam notices</strong> → upload a PDF/document only.
+  </div>
+  {% endif %}
+
+  <form method="POST" enctype="multipart/form-data" class="card shadow-sm p-4 bg-light col-lg-8" id="school-media-form">
+    {{ form.hidden_tag() }}
+
+    <div class="mb-3">
+      {{ form.title.label(class="form-label fw-semibold") }}
+      {{ form.title(class="form-control", placeholder="e.g., 2025-2026 School Promo") }}
+    </div>
+
+    <div class="mb-3">
+      {{ form.description.label(class="form-label fw-semibold") }}
+      {{ form.description(class="form-control", rows=3, placeholder="Short description for parents and students") }}
+    </div>
+
+    <div class="row g-3 mb-3">
+      <div class="col-md-6">
+        {{ form.media_type.label(class="form-label fw-semibold") }}
+        {{ form.media_type(class="form-select", id="media-type-select") }}
+      </div>
+      <div class="col-md-6">
+        {{ form.category.label(class="form-label fw-semibold") }}
+        {{ form.category(class="form-select", id="media-category-select") }}
+      </div>
+    </div>
+
+    <div class="mb-3">
+      {{ form.academic_year.label(class="form-label fw-semibold") }}
+      {{ form.academic_year(class="form-select") }}
+    </div>
+
+    <div class="mb-3" id="video-link-group">
+      {{ form.external_url.label(class="form-label fw-semibold") }}
+      {{ form.external_url(class="form-control", placeholder="https://www.youtube.com/watch?v=...") }}
+      <div class="form-text">Optional: paste a YouTube link instead of uploading a large file.</div>
+    </div>
+
+    <div class="mb-3" id="video-upload-group">
+      {{ form.media_file.label(class="form-label fw-semibold") }}
+      {{ form.media_file(class="form-control", id="media-file-input", accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov") }}
+      <div class="form-text" id="media-file-help">
+        Photos: JPG/PNG · Videos: MP4 (best), WebM, MOV · Documents: PDF, Word, Excel
+      </div>
+      <div class="form-text text-primary fw-semibold d-none" id="video-duration-help">
+        Upload a school promo clip up to <strong>{{ school_video_max_minutes }} minutes</strong>
+        (max {{ school_video_max_mb }} MB). MP4 at 720p works well for 2–3 minute videos.
+      </div>
+      <div class="alert alert-warning py-2 px-3 small d-none mt-2 mb-0" id="video-duration-warning"></div>
+      {% if item and item.static_file_path %}
+      <div class="small text-muted mt-1">Current file: {{ item.static_file_path }}
+        {% if item.duration_seconds %} · Duration: {{ format_video_duration(item.duration_seconds) }}{% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="form-check mb-4">
+      {{ form.is_published(class="form-check-input") }}
+      {{ form.is_published.label(class="form-check-label") }}
+    </div>
+
+    <div class="d-flex justify-content-between">
+      <a href="{{ url_for('school_media_manage') }}" class="btn btn-outline-secondary">Cancel</a>
+      {{ form.submit(class="btn btn-primary") }}
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const maxVideoSeconds = {{ school_video_max_minutes * 60 }};
+  const typeSelect = document.getElementById('media-type-select');
+  const fileInput = document.getElementById('media-file-input');
+  const videoHelp = document.getElementById('video-duration-help');
+  const videoWarning = document.getElementById('video-duration-warning');
+  const videoLinkGroup = document.getElementById('video-link-group');
+
+  function syncVideoUi() {
+    const isVideo = typeSelect && typeSelect.value === 'video';
+    if (videoHelp) videoHelp.classList.toggle('d-none', !isVideo);
+    if (videoLinkGroup) videoLinkGroup.classList.toggle('d-none', !isVideo);
+    if (fileInput && isVideo) {
+      fileInput.setAttribute('accept', 'video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov');
+    }
+  }
+
+  function showVideoWarning(message) {
+    if (!videoWarning) return;
+    if (message) {
+      videoWarning.textContent = message;
+      videoWarning.classList.remove('d-none');
+    } else {
+      videoWarning.textContent = '';
+      videoWarning.classList.add('d-none');
+    }
+  }
+
+  function checkVideoDuration(file) {
+    showVideoWarning('');
+    if (!file || !typeSelect || typeSelect.value !== 'video') return;
+
+    const url = URL.createObjectURL(file);
+    const probe = document.createElement('video');
+    probe.preload = 'metadata';
+    probe.onloadedmetadata = function () {
+      URL.revokeObjectURL(url);
+      const duration = probe.duration || 0;
+      if (duration > maxVideoSeconds + 1) {
+        showVideoWarning(
+          'This clip is about ' + Math.ceil(duration / 60) +
+          ' minutes. Please upload a video up to {{ school_video_max_minutes }} minutes.'
+        );
+        fileInput.value = '';
+      }
+    };
+    probe.onerror = function () {
+      URL.revokeObjectURL(url);
+    };
+    probe.src = url;
+  }
+
+  if (typeSelect) {
+    typeSelect.addEventListener('change', syncVideoUi);
+    syncVideoUi();
+  }
+  if (fileInput) {
+    fileInput.addEventListener('change', function () {
+      const file = fileInput.files && fileInput.files[0];
+      checkVideoDuration(file);
+    });
+  }
+})();
+</script>
+{% endblock %}

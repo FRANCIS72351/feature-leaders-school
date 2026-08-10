@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3>Classes</h3>
+<a class="btn btn-success" href="{{ url_for('class_create') }}">Create Class</a>
+<ul>
+{% for c in classes %}<li>{{ c.name }} — {{ c.description }}</li>{% else %}<li>No classes</li>{% endfor %}
+</ul>
+{% endblock %}

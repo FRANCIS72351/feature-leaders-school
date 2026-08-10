@@ -1,0 +1,247 @@
+{% extends 'base.html' %}
+{% block title %}Contact Institutional Support - Future Leaders Preparatory Academy{% endblock %}
+
+{% block content %}
+<style>
+    /* Brand Theme Palette */
+    :root {
+        --flpa-red: #BA2026;       /* Primary Cardinal Red */
+        --flpa-navy: #0E1B2E;      /* Outer Ring Deep Navy */
+        --flpa-gold: #F5B014;      /* Mascot Gold Accent */
+        --flpa-bg: #F8FAFC;        /* Clean Canvas */
+        --flpa-card-bg: #FFFFFF;
+        --flpa-border: #E2E8F0;
+    }
+
+    body {
+        background-color: var(--flpa-bg);
+        color: var(--flpa-navy);
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    .brand-text-red { color: var(--flpa-red); }
+    .brand-text-navy { color: var(--flpa-navy); }
+    
+    .portal-card {
+        background: var(--flpa-card-bg);
+        border: 1px solid var(--flpa-border);
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(14, 27, 46, 0.05);
+        transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+    .portal-card:hover {
+        border-color: var(--flpa-red);
+        box-shadow: 0 6px 16px rgba(186, 32, 38, 0.1);
+    }
+
+    /* Form Inputs */
+    .form-portal {
+        background-color: #FFFFFF;
+        border: 1px solid #CBD5E1;
+        color: var(--flpa-navy);
+        border-radius: 6px;
+        padding: 10px 14px;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .form-portal:focus {
+        border-color: var(--flpa-red);
+        box-shadow: 0 0 0 3px rgba(186, 32, 38, 0.15);
+        outline: none;
+    }
+
+    /* Icon Backdrops */
+    .icon-backdrop {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(186, 32, 38, 0.08);
+        border-radius: 8px;
+        color: var(--flpa-red);
+    }
+
+    /* Buttons */
+    .btn-flpa-primary {
+        background-color: var(--flpa-red);
+        color: #FFFFFF;
+        border: none;
+        transition: background-color 0.2s ease;
+    }
+    .btn-flpa-primary:hover {
+        background-color: #96181E;
+        color: #FFFFFF;
+    }
+
+    .motto-banner {
+        background-color: var(--flpa-navy);
+        color: #FFFFFF;
+        border-left: 4px solid var(--flpa-gold);
+    }
+
+    /* Animations */
+    .fade-glide-in {
+        opacity: 0;
+        transform: translateY(15px);
+        animation: contactFadeGlide 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .delay-1 { animation-delay: 0.1s; }
+    .delay-2 { animation-delay: 0.2s; }
+
+    @keyframes contactFadeGlide {
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+</style>
+
+<div class="container py-5 px-md-5">
+    
+    <!-- Institutional Brand Header -->
+    <div class="text-center mb-5 pb-3 border-bottom fade-glide-in">
+        <div class="d-flex align-items-center justify-content-center mb-3 flex-wrap gap-2">
+            <img src="{{ url_for('static', filename='images/logo-removebg-preview.png') }}" 
+                 alt="Future Leaders Preparatory Academy Logo" 
+                 class="me-md-3" 
+                 style="max-height: 65px; width: auto;" 
+                 onerror="this.style.display='none'">
+            <div class="text-start">
+                <h2 class="fw-bold mb-0 brand-text-navy">Future Leaders Preparatory Academy</h2>
+                <span class="badge px-2 py-1 fw-semibold" style="background-color: var(--flpa-red); color: white;">F.L.P.A. Portal Support</span>
+            </div>
+        </div>
+        <p class="text-muted mx-auto mb-0" style="max-width: 650px;">
+            Have inquiries regarding student records, portals, or general administration? Submit your ticket directly to our support desk below.
+        </p>
+    </div>
+
+    <div class="row g-5 align-items-stretch">
+        
+        <!-- Contact Information -->
+        <div class="col-lg-6 d-flex flex-column justify-content-between fade-glide-in delay-1">
+            <div>
+                <h4 class="fw-bold brand-text-navy mb-3">Institutional Contacts</h4>
+                <p class="text-muted mb-4">
+                    Reach out to our administrative team via phone, email, or by visiting our campus facilities.
+                </p>
+
+                <!-- Principal Contact -->
+                <div class="d-flex align-items-start mb-4">
+                    <div class="icon-backdrop me-3 mt-1">
+                        <i class="fas fa-phone-alt fa-lg"></i>
+                    </div>
+                    <div>
+                        <span class="text-muted small fw-bold text-uppercase d-block mb-1">Voice Support Line</span>
+                        <h6 class="fw-bold brand-text-navy mb-0">Mr. Holt <span class="text-muted fw-normal fs-7">(Principal)</span></h6>
+                        <a href="tel:+231777287456" class="fw-semibold brand-text-navy text-decoration-none">+231 777-287-456</a>
+                    </div>
+                </div>
+
+                <!-- Proprietor Contact -->
+                <div class="d-flex align-items-start mb-4">
+                    <div class="icon-backdrop me-3 mt-1">
+                        <i class="fas fa-user-shield fa-lg"></i>
+                    </div>
+                    <div>
+                        <span class="text-muted small fw-bold text-uppercase d-block mb-1">Voice Support Line</span>
+                        <h6 class="fw-bold brand-text-navy mb-0">Mr. Agyei <span class="text-muted fw-normal fs-7">(Proprietor)</span></h6>
+                        <a href="tel:+231776476607" class="fw-semibold brand-text-navy text-decoration-none">+231 776-476-607</a>
+                    </div>
+                </div>
+
+                <!-- Email Contact -->
+                <div class="d-flex align-items-start mb-4">
+                    <div class="icon-backdrop me-3 mt-1">
+                        <i class="fas fa-envelope fa-lg"></i>
+                    </div>
+                    <div>
+                        <span class="text-muted small fw-bold text-uppercase d-block mb-1">Official Support Email</span>
+                        <a href="mailto:flpacardinals@gmail.com" class="fw-semibold brand-text-navy text-decoration-none">xhangocharm@gmail.com</a>
+                    </div>
+                </div>
+
+                <!-- Location Contact -->
+                <div class="d-flex align-items-start mb-4">
+                    <div class="icon-backdrop me-3 mt-1">
+                        <i class="fas fa-map-marker-alt fa-lg"></i>
+                    </div>
+                    <div>
+                        <span class="text-muted small fw-bold text-uppercase d-block mb-1">Campus Address</span>
+                        <div class="fw-semibold brand-text-navy">Salt Beach PHP Community, Monrovia, Liberia</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Operating Hours & Motto -->
+            <div class="mt-4">
+                <div class="p-3 mb-3 rounded-3 motto-banner shadow-sm">
+                    <small class="text-uppercase fw-bold text-warning d-block mb-1" style="font-size: 0.7rem; letter-spacing: 1px;">Academy Core Motto</small>
+                    <p class="mb-0 small fst-italic">"Character. Community. Excellence. Service. Discipline. Success."</p>
+                </div>
+
+                <div class="p-4 border rounded-3 bg-white shadow-sm">
+                    <h6 class="fw-bold brand-text-navy mb-3"><i class="far fa-clock brand-text-red me-2"></i>Administration Hours</h6>
+                    <div class="d-flex justify-content-between small text-muted mb-2">
+                        <span>Monday – Friday:</span>
+                        <span class="brand-text-navy fw-semibold">8:00 AM – 5:00 PM</span>
+                    </div>
+                    <div class="d-flex justify-content-between small text-muted">
+                        <span>Saturday:</span>
+                        <span class="brand-text-navy fw-semibold">9:00 AM – 1:00 PM</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Contact Form -->
+        <div class="col-lg-6 d-flex fade-glide-in delay-2">
+            <div class="card portal-card p-4 p-md-5 w-100 d-flex flex-column justify-content-center">
+                <h4 class="fw-bold brand-text-navy mb-1">Send Support Ticket</h4>
+                <p class="text-muted small mb-4">Complete this form to submit your inquiry directly to administrative officers.</p>
+                
+                <form action="{{ url_for('contact') if 'contact' in self._Template__functions else '#' }}" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined }}">
+                    
+                    <div class="mb-3">
+                        <label for="name" class="form-label small fw-bold text-secondary">Full Name</label>
+                        <input type="text" id="name" name="name" class="form-control form-portal" placeholder="e.g., Parent or Student Name" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="email" class="form-label small fw-bold text-secondary">Email Address</label>
+                        <input type="email" id="email" name="email" class="form-control form-portal" placeholder="name@domain.com" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="subject" class="form-label small fw-bold text-secondary">Subject Category</label>
+                        <input type="text" id="subject" name="subject" class="form-control form-portal" placeholder="e.g., Portal Access, Grade Verification, Admissions" required>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="message" class="form-label small fw-bold text-secondary">Inquiry Details</label>
+                        <textarea id="message" name="message" class="form-control form-portal" rows="4" placeholder="Please describe your issue or question..." required></textarea>
+                    </div>
+
+                    <button type="submit" class="btn btn-flpa-primary w-100 py-2.5 fw-bold shadow-sm rounded-2">
+                        <i class="fas fa-paper-plane me-2"></i>Submit Support Request
+                    </button>
+                </form>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Map View -->
+    <div class="row mt-5 pt-3 fade-glide-in delay-2">
+        <div class="col-12">
+            <div class="ratio ratio-21x9 shadow-sm rounded-3 border" style="overflow: hidden; max-height: 380px;">
+                <iframe src="https://maps.google.com/maps?q=Monrovia%20Liberia&t=&z=14&ie=UTF8&iwloc=&output=embed"
+                        width="100%" height="100%" style="border:0;" allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

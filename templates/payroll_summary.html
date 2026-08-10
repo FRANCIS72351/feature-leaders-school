@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Payroll Summary{% endblock %}
+{% block content %}
+<div class="container py-5">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h1 class="fw-bold text-primary">Payroll Summary</h1>
+      <p class="text-muted mb-0">Overview of staff payroll payments.</p>
+    </div>
+    <a class="btn btn-outline-secondary" href="{{ url_for('business_management') }}">Back to Business Management</a>
+  </div>
+
+  <div class="row g-4 mb-4">
+    <div class="col-md-6">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-body">
+          <h5 class="text-success">Total Paid</h5>
+          <p class="display-6 fw-bold">₱{{ total_paid | round(2) }}</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-body">
+          <h5 class="text-warning">Total Pending</h5>
+          <p class="display-6 fw-bold">₱{{ total_pending | round(2) }}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm border-0">
+    <div class="card-header bg-dark text-white">
+      <h5 class="mb-0">Payroll Records</h5>
+    </div>
+    <div class="card-body p-0">
+      <table class="table table-striped mb-0">
+        <thead class="table-light">
+          <tr>
+            <th scope="col">Staff</th>
+            <th scope="col">Occupation</th>
+            <th scope="col">Month</th>
+            <th scope="col">Salary</th>
+            <th scope="col">Status</th>
+            <th scope="col">Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for record in payroll_records %}
+          <tr>
+            <td>{{ record.staff.full_name if record.staff else 'N/A' }}</td>
+            <td>{{ record.occupation }}</td>
+            <td>{{ record.month }}</td>
+            <td>₱{{ record.salary_amount | round(2) }}</td>
+            <td>
+              {% if record.paid %}
+              <span class="badge bg-success">Paid</span>
+              {% else %}
+              <span class="badge bg-warning text-dark">Pending</span>
+              {% endif %}
+            </td>
+            <td>{{ record.created_on.strftime('%Y-%m-%d') if record.created_on else '—' }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" class="text-center py-4">No payroll records yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block title %}Manage School Media{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h1 class="fw-bold text-primary mb-1">Manage School Media</h1>
+      <p class="text-muted mb-0">
+        {% if registrar_media_only %}
+        Manage entrance exam notices and academic year information sheets.
+        {% else %}
+        Post photos, videos, entrance info, and academic year documents.
+        {% endif %}
+      </p>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('school_media_gallery') }}" class="btn btn-outline-secondary">View Public Gallery</a>
+      <a href="{{ url_for('school_media_create', type='video', category='advertisement') }}" class="btn btn-info text-white"><i class="fas fa-video me-1"></i> Upload Video</a>
+      <a href="{{ url_for('school_media_create') }}" class="btn btn-success">+ Add Media</a>
+    </div>
+  </div>
+
+  {% if items %}
+  <div class="table-responsive">
+    <table class="table table-striped align-middle shadow-sm">
+      <thead class="table-primary">
+        <tr>
+          <th>Title</th>
+          <th>Type</th>
+          <th>Category</th>
+          <th>Duration</th>
+          <th>Year</th>
+          <th>Status</th>
+          <th>Posted</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td class="fw-semibold">{{ item.title }}</td>
+          <td>{{ item.media_type|title }}</td>
+          <td>{{ item.category|replace('_', ' ')|title }}</td>
+          <td>
+            {% if item.media_type == 'video' and item.duration_seconds %}
+            {{ format_video_duration(item.duration_seconds) }}
+            {% else %}
+            —
+            {% endif %}
+          </td>
+          <td>{{ item.academic_year.name if item.academic_year else '—' }}</td>
+          <td>
+            {% if item.is_published %}
+            <span class="badge bg-success">Published</span>
+            {% else %}
+            <span class="badge bg-secondary">Draft</span>
+            {% endif %}
+          </td>
+          <td>{{ item.created_at.strftime('%b %d, %Y') }}</td>
+          <td class="text-end">
+            <div class="btn-group btn-group-sm">
+              <a href="{{ url_for('school_media_edit', item_id=item.id) }}" class="btn btn-outline-primary">Edit</a>
+              <a href="{{ url_for('school_media_delete', item_id=item.id) }}" class="btn btn-outline-danger">Delete</a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center bg-light py-5 rounded">
+    <p class="lead text-muted mb-3">No media posted yet.</p>
+    <a href="{{ url_for('school_media_create') }}" class="btn btn-primary">Add your first item</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

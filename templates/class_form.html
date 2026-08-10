@@ -1,0 +1,148 @@
+{% extends 'base.html' %}
+{% block title %}Class Management{% endblock %}
+{% block content %}
+<div class="container mt-4">
+  <h2>Class Management</h2>
+
+  <div class="row">
+    <div class="col-lg-4">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="mb-0">Create New Class</h5>
+        </div>
+        <div class="card-body">
+          <form method="post">
+            {{ form.hidden_tag() }}
+            <div class="mb-3">
+              {{ form.name.label(class_='form-label') }}
+              {{ form.name(class_='form-control', placeholder='Grade 7 A') }}
+            </div>
+            <div class="mb-3">
+              {{ form.description.label(class_='form-label') }}
+              {{ form.description(class_='form-control', rows=3, placeholder='Homeroom class for Grade 7 A') }}
+            </div>
+            <div class="mb-3">
+              {{ form.yearly_fee.label(class_='form-label') }}
+              {{ form.yearly_fee(class_='form-control', placeholder='0.00') }}
+            </div>
+            <div class="mb-3">
+              {{ form.teacher_id.label(class_='form-label') }}
+              {{ form.teacher_id(class_='form-select') }}
+              <div class="form-text">Assign the homeroom teacher (optional)</div>
+            </div>
+            <div class="mb-3">
+              {{ form.sponsor_id.label(class_='form-label') }}
+              {{ form.sponsor_id(class_='form-select') }}
+              <div class="form-text">Attach a class sponsor (optional)</div>
+            </div>
+            <div class="d-grid">
+              {{ form.submit(class_='btn btn-primary') }}
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-8">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="mb-0">Assign/Change Homeroom Teacher</h5>
+        </div>
+        <div class="card-body">
+          <form method="post" action="{{ url_for('assign_teacher') }}" id="assignTeacherForm">
+            {{ assign_form.hidden_tag() }}
+            <div class="row g-3 align-items-end">
+              <div class="col-md-6">
+                {{ assign_form.class_id.label(class_='form-label') }}
+                {{ assign_form.class_id(class_='form-select', choices=assign_form.class_id.choices) }}
+              </div>
+              <div class="col-md-6">
+                {{ assign_form.teacher_id.label(class_='form-label') }}
+                {{ assign_form.teacher_id(class_='form-select') }}
+              </div>
+            </div>
+            <div class="d-grid d-md-flex justify-content-md-end mt-3">
+              <button type="submit" class="btn btn-outline-primary">Assign Teacher</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0">Existing Classes</h5>
+          <span class="badge bg-light text-dark">{{ classes|length }} total</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-striped align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Yearly Fee</th>
+                <th>Teacher</th>
+                <th>Sponsor</th>
+                <th>Description</th>
+                <th>Students</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in classes %}
+              <tr>
+                <td class="fw-semibold">{{ c.name }}</td>
+                <td>₱{{ "{:,.2f}".format(c.yearly_fee or 0) }}</td>
+                <td>
+                  {% if c.teacher %}
+                    {{ c.teacher.first_name }} {{ c.teacher.last_name }}
+                  {% else %}
+                    <span class="text-muted">Unassigned</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if c.sponsor %}
+                    {{ c.sponsor.full_name or '—' }}
+                  {% else %}
+                    <span class="text-muted">None</span>
+                  {% endif %}
+                </td>
+                <td>{{ c.description or '—' }}</td>
+                <td>{{ c.students.count() if c.students else 0 }}</td>
+                <td>
+                  <div class="d-flex flex-column flex-lg-row gap-2">
+                    <form method="post" action="{{ url_for('assign_teacher') }}" class="d-flex flex-column flex-lg-row gap-2">
+                      {{ assign_form.csrf_token }}
+                      <input type="hidden" name="class_id" value="{{ c.id }}">
+                      <select name="teacher_id" class="form-select form-select-sm">
+                        <option value="">Select Teacher</option>
+                        {% for t_id, t_name in teacher_choices %}
+                        <option value="{{ t_id }}" {% if c.teacher_id == t_id %}selected{% endif %}>{{ t_name }}</option>
+                        {% endfor %}
+                      </select>
+                      <button class="btn btn-sm btn-outline-primary">Assign</button>
+                    </form>
+                    <form method="post" action="{{ url_for('class_set_sponsor', class_id=c.id) }}" class="d-flex flex-column flex-lg-row gap-2">
+                      {{ form.csrf_token }}
+                      <select name="sponsor_id" class="form-select form-select-sm">
+                        {% for s_id, s_name in sponsor_choices %}
+                        <option value="{{ s_id }}" {% if c.sponsor_id == s_id %}selected{% endif %}>{{ s_name }}</option>
+                        {% endfor %}
+                      </select>
+                      <button class="btn btn-sm btn-outline-success">Set Sponsor</button>
+                    </form>
+                    <a href="{{ url_for('class_edit', class_id=c.id) }}" class="btn btn-sm btn-warning">Edit</a>
+                  </div>
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="6" class="text-center py-4 text-muted">No classes created yet.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,37 @@
+# Git / IDE
+.git
+.gitignore
+.vscode
+.idea
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+.pytest_cache
+.venv
+venv
+env
+
+# Secrets and local env (never bake into image)
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Local databases and uploads (mount volumes in production)
+instance
+*.db
+*.sqlite3
+static/uploads/*
+!static/uploads/placeholder.txt
+
+# Docs / deploy helpers not needed in runtime image
+*.md
+!README.md
+deploy/pythonanywhere
+scripts/_login_smoke.py
+
+# OS
+.DS_Store
+Thumbs.db

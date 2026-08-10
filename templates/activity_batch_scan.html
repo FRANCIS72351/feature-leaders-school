@@ -1,0 +1,367 @@
+{% extends 'base.html' %}
+{% block title %}Batch Scan — {{ activity.title }}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/grading_hub.css') }}">
+<div class="container-fluid px-3 px-md-4 py-3 batch-scan-page" style="max-width: 960px;">
+
+    <div class="batch-scan-hero mb-4">
+        <a href="{{ url_for('activity_detail', assessment_id=activity.id) }}" class="text-white-50 small text-decoration-none d-inline-block mb-2">
+            <i class="bi bi-arrow-left me-1"></i>Back to Submissions
+        </a>
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+            <div>
+                <h1 class="h4 fw-bold text-white mb-1">
+                    <i class="bi bi-upc-scan me-2 text-cyan"></i>Batch Activity Scanner
+                </h1>
+                <p class="text-muted small mb-2">{{ activity.title }} · {{ activity.subject_name }} · Max {{ activity.max_score or 100 }} pts</p>
+                {% if klass %}<span class="meta-chip"><i class="bi bi-people me-1"></i>{{ klass.name }} · {{ class_students|length }} students</span>{% endif %}
+            </div>
+            <span class="badge {% if ocr_available %}bg-success{% elif ocr_libraries_installed %}bg-warning text-dark{% else %}bg-secondary{% endif %} align-self-start">
+                {% if ocr_available %}Scanner ready{% elif ocr_libraries_installed %}Needs Tesseract{% else %}Setup required{% endif %}
+            </span>
+        </div>
+    </div>
+
+    {% if not ocr_available %}
+    <div class="alert {% if ocr_libraries_installed %}alert-warning{% else %}alert-secondary{% endif %} border-0 shadow-sm mb-4">
+        <strong><i class="bi bi-tools me-1"></i>Scanner setup</strong>
+        <ul class="small mb-0 mt-2 ps-3">
+            {% for step in (ocr_setup_status.install_steps or []) %}
+            <li>{{ step }}</li>
+            {% else %}
+            <li>Install <code>pytesseract</code>, <code>Pillow</code>, and Tesseract OCR, then restart the server.</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <div class="batch-scan-workflow mb-4">
+        <ol class="workflow-steps">
+            <li><span class="step-num">1</span> Photograph answer sheets (QR/UUID visible)</li>
+            <li><span class="step-num">2</span> Review matched scores — edit if needed</li>
+            <li><span class="step-num">3</span> Save as <strong>Draft</strong> or <strong>Publish</strong> to grade sheet</li>
+        </ol>
+    </div>
+
+    {% if ocr_available %}
+    <div class="batch-scan-capture card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <div>
+                    <strong class="text-white"><i class="bi bi-camera me-2"></i>Capture or Upload</strong>
+                    <p class="small text-muted mb-0">Select many photos at once — ideal for a full class stack (40+ sheets).</p>
+                </div>
+            </div>
+
+            <div class="batch-drop-zone" id="batchDropZone">
+                <input type="file" id="batchPhotoInput" class="d-none" accept="image/*" capture="environment" multiple>
+                <div class="batch-drop-inner text-center py-4 px-3">
+                    <i class="bi bi-images fs-1 text-cyan mb-2 d-block"></i>
+                    <p class="mb-2 fw-semibold text-white">Tap to photograph or choose photos</p>
+                    <p class="small text-muted mb-3">JPG / PNG · multiple files supported</p>
+                    <button type="button" class="btn btn-cyber-primary btn-sm" id="batchPickBtn">
+                        <i class="bi bi-plus-circle me-1"></i>Add Photos
+                    </button>
+                </div>
+            </div>
+
+            <div id="batchFileList" class="bulk-file-list mt-3 d-none"></div>
+
+            <div class="d-flex flex-wrap gap-2 mt-3">
+                <button type="button" class="btn btn-cyber-primary flex-grow-1" id="batchScanBtn" disabled>
+                    <i class="bi bi-lightning-charge me-1"></i>Scan All Photos
+                </button>
+                <button type="button" class="btn btn-outline-light btn-sm" id="batchClearBtn" disabled>Clear</button>
+            </div>
+
+            <div id="batchScanProgress" class="small text-muted mt-2 d-none">
+                <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                Processing photos…
+            </div>
+        </div>
+    </div>
+
+    <div id="batchResultsPanel" class="d-none">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <div>
+                <h2 class="h6 fw-bold text-white mb-0">Scan Results</h2>
+                <p class="small text-muted mb-0" id="batchResultsSummary"></p>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="saveDraftBtn">
+                    <i class="bi bi-save me-1"></i>Save Draft
+                </button>
+                <button type="button" class="btn btn-success btn-sm" id="savePublishBtn">
+                    <i class="bi bi-megaphone me-1"></i>Publish All
+                </button>
+            </div>
+        </div>
+
+        <div id="batchResultsList" class="batch-results-list"></div>
+    </div>
+    {% endif %}
+
+    <details class="batch-roster-details mt-4">
+        <summary class="batch-roster-summary">
+            <i class="bi bi-qr-code me-2"></i>Submission UUID codes ({{ roster_rows|length }})
+            <span class="text-muted fw-normal ms-1">— for printed answer sheets</span>
+        </summary>
+        <div class="pt-3">
+            <p class="small text-muted">Each student has a unique submission code. Print or share these QR codes on answer sheets so batch scan can match photos automatically.</p>
+            <div class="row g-2">
+                {% for row in roster_rows %}
+                <div class="col-6 col-md-4 col-lg-3">
+                    <div class="batch-roster-chip">
+                        {% if row.qr_data_uri %}
+                        <img src="{{ row.qr_data_uri }}" alt="QR" class="batch-roster-qr" width="64" height="64">
+                        {% endif %}
+                        <div class="batch-roster-meta">
+                            <div class="fw-semibold small text-truncate">{{ row.student.full_name }}</div>
+                            <code class="scan-code-label">{{ row.scan_code or '—' }}</code>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </details>
+
+    {% if scan_keyword_list %}
+    <div class="mt-3 small text-muted">
+        <strong>Answer keywords:</strong>
+        {% for kw in scan_keyword_list %}<span class="scan-kw-chip">{{ kw }}</span>{% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert-info border-0 small mt-3 mb-0">
+        <i class="bi bi-info-circle me-1"></i>
+        Add answer keywords on the <a href="{{ url_for('activity_detail', assessment_id=activity.id) }}">submissions page</a> for automatic score suggestions.
+    </div>
+    {% endif %}
+</div>
+
+{% if ocr_available %}
+<script>
+(function() {
+    const assessmentId = {{ activity.id }};
+    const maxScore = {{ activity.max_score or 100 }};
+    const csrfToken = {{ csrf_token()|tojson }};
+    const processUrl = '/teacher/activity/' + assessmentId + '/batch-scan/process';
+    const saveUrl = '/teacher/activity/' + assessmentId + '/batch-scan/save';
+
+    const photoInput = document.getElementById('batchPhotoInput');
+    const pickBtn = document.getElementById('batchPickBtn');
+    const dropZone = document.getElementById('batchDropZone');
+    const fileList = document.getElementById('batchFileList');
+    const scanBtn = document.getElementById('batchScanBtn');
+    const clearBtn = document.getElementById('batchClearBtn');
+    const progressEl = document.getElementById('batchScanProgress');
+    const resultsPanel = document.getElementById('batchResultsPanel');
+    const resultsList = document.getElementById('batchResultsList');
+    const resultsSummary = document.getElementById('batchResultsSummary');
+    const saveDraftBtn = document.getElementById('saveDraftBtn');
+    const savePublishBtn = document.getElementById('savePublishBtn');
+
+    let selectedFiles = [];
+    let scanResults = [];
+
+    function formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function renderFileList() {
+        if (!selectedFiles.length) {
+            fileList.classList.add('d-none');
+            fileList.innerHTML = '';
+            scanBtn.disabled = true;
+            clearBtn.disabled = true;
+            return;
+        }
+        fileList.classList.remove('d-none');
+        fileList.innerHTML = selectedFiles.map(function(file, idx) {
+            return '<div class="bulk-file-row">' +
+                '<span class="bulk-file-name">' + file.name + '</span>' +
+                '<span class="bulk-file-size">' + formatSize(file.size) + '</span>' +
+                '<button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" data-remove="' + idx + '">&times;</button>' +
+                '</div>';
+        }).join('');
+        scanBtn.disabled = false;
+        clearBtn.disabled = false;
+        fileList.querySelectorAll('[data-remove]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                const i = parseInt(btn.dataset.remove, 10);
+                selectedFiles.splice(i, 1);
+                renderFileList();
+            });
+        });
+    }
+
+    function addFiles(fileListLike) {
+        Array.from(fileListLike || []).forEach(function(file) {
+            if (file.type && file.type.indexOf('image/') === 0) {
+                selectedFiles.push(file);
+            }
+        });
+        renderFileList();
+    }
+
+    pickBtn.addEventListener('click', function() { photoInput.click(); });
+    dropZone.addEventListener('click', function(e) {
+        if (e.target.closest('#batchPickBtn') || e.target === dropZone || e.target.closest('.batch-drop-inner')) {
+            if (!e.target.closest('[data-remove]')) photoInput.click();
+        }
+    });
+    photoInput.addEventListener('change', function() {
+        addFiles(photoInput.files);
+        photoInput.value = '';
+    });
+
+    clearBtn.addEventListener('click', function() {
+        selectedFiles = [];
+        scanResults = [];
+        renderFileList();
+        resultsPanel.classList.add('d-none');
+        resultsList.innerHTML = '';
+    });
+
+    function statusBadge(status) {
+        if (status === 'matched') return '<span class="badge bg-success">Matched</span>';
+        if (status === 'unmatched') return '<span class="badge bg-warning text-dark">Unmatched</span>';
+        return '<span class="badge bg-danger">Error</span>';
+    }
+
+    function renderResults(data) {
+        scanResults = data.results || [];
+        const matched = data.matched || 0;
+        const processed = data.processed || 0;
+        resultsSummary.textContent = matched + ' of ' + processed + ' photos matched to students.';
+        resultsPanel.classList.remove('d-none');
+
+        resultsList.innerHTML = scanResults.map(function(row, idx) {
+            const scoreVal = row.suggested_score != null ? row.suggested_score : '';
+            const studentBlock = row.status === 'matched'
+                ? '<div class="fw-semibold">' + row.student_name + '</div>' +
+                  '<div class="small text-muted font-monospace">' + (row.student_code || '') + '</div>' +
+                  '<code class="small">' + (row.scan_code || '') + '</code>'
+                : '<div class="text-muted small">' + (row.message || 'No match') + '</div>';
+
+            const scoreField = row.status === 'matched'
+                ? '<input type="number" class="form-control form-control-sm batch-score-input text-center" ' +
+                  'data-idx="' + idx + '" step="0.1" min="0" max="' + maxScore + '" value="' + scoreVal + '" style="width:88px">'
+                : '—';
+
+            const kwInfo = row.keywords_matched && row.keywords_matched.length
+                ? '<div class="small text-success">Matched: ' + row.keywords_matched.join(', ') + '</div>'
+                : '';
+
+            return '<div class="batch-result-card ' + row.status + '" data-idx="' + idx + '">' +
+                '<div class="d-flex justify-content-between align-items-start gap-2 mb-2">' +
+                '<div class="small text-muted text-truncate">' + row.filename + '</div>' +
+                statusBadge(row.status) +
+                '</div>' +
+                '<div class="row g-2 align-items-center">' +
+                '<div class="col-sm-5">' + studentBlock + kwInfo + '</div>' +
+                '<div class="col-sm-3 text-sm-center"><label class="small text-muted d-block">Score</label>' + scoreField + '</div>' +
+                '<div class="col-sm-4">' +
+                (row.status === 'matched'
+                    ? '<div class="btn-group btn-group-sm w-100">' +
+                      '<button type="button" class="btn btn-outline-secondary batch-save-one" data-idx="' + idx + '" data-publish="0">Draft</button>' +
+                      '<button type="button" class="btn btn-success batch-save-one" data-idx="' + idx + '" data-publish="1">Publish</button>' +
+                      '</div>'
+                    : '') +
+                '</div></div></div>';
+        }).join('');
+
+        resultsList.querySelectorAll('.batch-save-one').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                saveEntries([buildEntry(parseInt(btn.dataset.idx, 10))], btn.dataset.publish === '1' ? 'publish' : 'draft');
+            });
+        });
+    }
+
+    function buildEntry(idx) {
+        const row = scanResults[idx];
+        const input = resultsList.querySelector('.batch-score-input[data-idx="' + idx + '"]');
+        const score = input ? parseFloat(input.value) : row.suggested_score;
+        return {
+            student_id: row.student_id,
+            score: score,
+            from_scan: true,
+        };
+    }
+
+    function collectMatchedEntries() {
+        const entries = [];
+        scanResults.forEach(function(row, idx) {
+            if (row.status !== 'matched') return;
+            entries.push(buildEntry(idx));
+        });
+        return entries;
+    }
+
+    async function saveEntries(entries, publishAction) {
+        if (!entries.length) {
+            alert('No matched scores to save.');
+            return;
+        }
+        try {
+            const response = await fetch(saveUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken,
+                },
+                body: JSON.stringify({
+                    entries: entries,
+                    publish_action: publishAction,
+                }),
+            });
+            const data = await response.json();
+            if (data.status !== 'Success') {
+                alert(data.message || 'Save failed.');
+                return;
+            }
+            const msg = data.published
+                ? 'Saved ' + data.saved + ' score(s), ' + data.published + ' published to grade sheets.'
+                : 'Saved ' + data.saved + ' draft score(s).';
+            alert(msg);
+        } catch (err) {
+            alert('Save request failed. Check your connection.');
+        }
+    }
+
+    scanBtn.addEventListener('click', async function() {
+        if (!selectedFiles.length) return;
+        const formData = new FormData();
+        selectedFiles.forEach(function(file) { formData.append('photos', file); });
+        formData.append('csrf_token', csrfToken);
+        progressEl.classList.remove('d-none');
+        scanBtn.disabled = true;
+        try {
+            const response = await fetch(processUrl, { method: 'POST', body: formData });
+            const data = await response.json();
+            if (data.status !== 'Success') {
+                alert(data.message || 'Scan failed.');
+                return;
+            }
+            renderResults(data);
+        } catch (err) {
+            alert('Scan request failed. Check your connection.');
+        } finally {
+            progressEl.classList.add('d-none');
+            scanBtn.disabled = false;
+        }
+    });
+
+    saveDraftBtn.addEventListener('click', function() {
+        saveEntries(collectMatchedEntries(), 'draft');
+    });
+    savePublishBtn.addEventListener('click', function() {
+        if (!confirm('Publish all matched scores to student grade sheets?')) return;
+        saveEntries(collectMatchedEntries(), 'publish');
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

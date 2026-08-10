@@ -1,0 +1,480 @@
+{% extends 'base.html' %}
+{% block title %}Attendance — {{ klass.name }}{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/grading_hub.css') }}">
+<div class="container-fluid py-4 teacher-attendance-page">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+        <div>
+            <a href="{{ url_for('teacher_dashboard') }}" class="text-blue small text-decoration-none">
+                <i class="bi bi-arrow-left me-1"></i>Teacher Dashboard
+            </a>
+            <h2 class="text-white fw-bold mt-2 mb-1">
+                <i class="bi bi-calendar-check text-cyan me-2"></i>Class Attendance
+            </h2>
+            <p class="text-blue mb-2 small">
+                {{ klass.name }} · Grade {{ klass.grade_level }}{% if klass.stream %} · {{ klass.stream }}{% endif %}
+            </p>
+            {% if active_year %}
+            <span class="badge att-session-badge">
+                <i class="bi bi-mortarboard me-1"></i>Current Session: {{ active_year.name }}
+            </span>
+            {% endif %}
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('teacher_class_folder', class_id=klass.id) }}" class="btn btn-cyber-sm btn-sm">
+                <i class="bi bi-people me-1"></i>Roster
+            </a>
+            <a href="{{ url_for('manual_activity_grades', class_id=klass.id) }}" class="btn btn-cyber-sm btn-sm">
+                <i class="bi bi-pencil-square me-1"></i>Grade Activities
+            </a>
+            <a href="{{ url_for('class_grading_hub', class_id=klass.id) }}" class="btn btn-outline-light btn-sm">
+                <i class="bi bi-mortarboard me-1"></i>Grade Review
+            </a>
+        </div>
+    </div>
+
+    {% if teacher_class_tabs|length > 1 %}
+    <div class="att-class-tabs mb-4">
+        {% for tab in teacher_class_tabs %}
+        <a href="{{ tab.url }}"
+           class="att-class-tab {% if tab.id == klass.id %}active{% endif %}">
+            {{ tab.name }}
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="att-kpi-card">
+                <div class="att-kpi-label">Students</div>
+                <div class="att-kpi-value">{{ total_students }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="att-kpi-card att-kpi-present">
+                <div class="att-kpi-label">Present</div>
+                <div class="att-kpi-value" id="kpiPresent">{{ counts.present + counts.late + counts.excused }}</div>
+                <div class="att-kpi-sub"><span id="kpiLate">{{ counts.late }}</span> late · <span id="kpiExcused">{{ counts.excused }}</span> excused</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="att-kpi-card att-kpi-absent">
+                <div class="att-kpi-label">Absent</div>
+                <div class="att-kpi-value" id="kpiAbsent">{{ counts.absent }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="att-kpi-card att-kpi-marked">
+                <div class="att-kpi-label">Saved Today</div>
+                <div class="att-kpi-value">{{ marked_today }}/{{ total_students }}</div>
+                <div class="att-kpi-sub">Session date roll</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="att-card">
+                <div class="att-card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <h5 class="mb-0 text-white"><i class="bi bi-clipboard-check me-2 text-cyan"></i>Attendance Roll</h5>
+                    <form method="GET" action="{{ url_for('teacher_class_attendance', class_id=klass.id) }}" class="d-flex gap-2 align-items-center att-date-form">
+                        <label class="text-blue small mb-0 fw-semibold" for="attDatePicker">Session Date</label>
+                        <input type="date" id="attDatePicker" name="date" value="{{ attendance_date }}" class="form-control form-control-sm form-cyber att-date-input" onchange="this.form.submit()">
+                    </form>
+                </div>
+                <div class="att-card-body p-0">
+                    <form method="POST" action="{{ url_for('teacher_class_attendance', class_id=klass.id) }}" id="attendanceForm">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="attendance_date" value="{{ attendance_date }}">
+
+                        <div class="att-toolbar px-3 py-2 d-flex flex-wrap gap-2 align-items-center justify-content-between border-bottom border-cyber-dim">
+                            <span class="text-blue small">Quick mark entire class:</span>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button type="button" class="btn btn-sm att-quick-btn att-q-present" data-mark-all="present">
+                                    <i class="bi bi-check-circle me-1"></i>All Present
+                                </button>
+                                <button type="button" class="btn btn-sm att-quick-btn att-q-late" data-mark-all="late">
+                                    <i class="bi bi-clock me-1"></i>All Late
+                                </button>
+                                <button type="button" class="btn btn-sm att-quick-btn att-q-absent" data-mark-all="absent">
+                                    <i class="bi bi-x-circle me-1"></i>All Absent
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table att-table mb-0">
+                                <thead>
+                                    <tr>
+                                        <th class="ps-4">#</th>
+                                        <th>Student</th>
+                                        <th>Status</th>
+                                        <th>30-day Rate</th>
+                                        <th class="pe-4">Note</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in roster %}
+                                    <tr class="att-row" data-student-id="{{ row.student.id }}">
+                                        <td class="ps-4 text-blue">{{ loop.index }}</td>
+                                        <td>
+                                            <div class="fw-semibold text-white">{{ row.student.full_name }}</div>
+                                            <small class="text-blue">{{ row.student.student_id or row.student.id }}</small>
+                                            {% if not row.is_marked %}
+                                            <span class="badge bg-dark border border-secondary text-secondary ms-1 att-unmarked-badge">Not saved</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <div class="att-status-group" role="group" aria-label="Attendance status for {{ row.student.full_name }}">
+                                                {% for value, label, icon in [
+                                                    ('present', 'Present', 'check-circle'),
+                                                    ('late', 'Late', 'clock'),
+                                                    ('absent', 'Absent', 'x-circle'),
+                                                    ('excused', 'Excused', 'shield-check')
+                                                ] %}
+                                                <label class="att-status-chip att-chip-{{ value }} {% if row.attendance_status == value %}active{% endif %}">
+                                                    <input type="radio"
+                                                           name="attendance_{{ row.student.id }}"
+                                                           value="{{ value }}"
+                                                           {% if row.attendance_status == value %}checked{% endif %}
+                                                           class="att-status-input">
+                                                    <i class="bi bi-{{ icon }}"></i>
+                                                    <span>{{ label }}</span>
+                                                </label>
+                                                {% endfor %}
+                                            </div>
+                                        </td>
+                                        <td class="text-blue">
+                                            {% if row.attendance_rate is not none %}{{ row.attendance_rate }}%{% else %}—{% endif %}
+                                        </td>
+                                        <td class="pe-4">
+                                            <input type="text"
+                                                   name="notes_{{ row.student.id }}"
+                                                   value="{{ row.notes or '' }}"
+                                                   class="form-control form-control-sm form-cyber"
+                                                   placeholder="Optional note">
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="5" class="text-center text-blue py-5">No students in this class for the active year.</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {% if roster %}
+                        <div class="p-3 border-top border-cyber-dim d-flex flex-wrap justify-content-between align-items-center gap-2">
+                            <span class="text-blue small"><i class="bi bi-info-circle me-1"></i>Changes apply to <strong class="text-white">{{ attendance_date }}</strong> only.</span>
+                            <button type="submit" class="btn btn-cyber-primary">
+                                <i class="bi bi-save me-1"></i>Save Attendance
+                            </button>
+                        </div>
+                        {% endif %}
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="att-card mb-4">
+                <div class="att-card-header">
+                    <h6 class="mb-0 text-white"><i class="bi bi-bar-chart me-2 text-cyan"></i>Recent History</h6>
+                </div>
+                <div class="att-card-body p-0">
+                    <div class="att-history-list">
+                        {% for day in history %}
+                        <a href="{{ url_for('teacher_class_attendance', class_id=klass.id, date=day.date) }}"
+                           class="att-history-item {% if day.date == attendance_date %}active{% endif %}">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="text-white fw-medium">{{ day.label }}</span>
+                                {% if day.date == attendance_date %}
+                                <span class="badge bg-cyan text-dark">Selected</span>
+                                {% elif day.marked %}
+                                <span class="text-blue small">{{ day.marked }}/{{ day.total }} marked</span>
+                                {% else %}
+                                <span class="text-muted small">No record</span>
+                                {% endif %}
+                            </div>
+                            {% if day.marked %}
+                            <div class="att-history-bar mt-2">
+                                <span class="seg seg-present" style="width: {{ (day.present / day.total * 100) if day.total else 0 }}%" title="Present"></span>
+                                <span class="seg seg-late" style="width: {{ (day.late / day.total * 100) if day.total else 0 }}%" title="Late"></span>
+                                <span class="seg seg-excused" style="width: {{ (day.excused / day.total * 100) if day.total else 0 }}%" title="Excused"></span>
+                                <span class="seg seg-absent" style="width: {{ (day.absent / day.total * 100) if day.total else 0 }}%" title="Absent"></span>
+                            </div>
+                            {% endif %}
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="att-card">
+                <div class="att-card-header">
+                    <h6 class="mb-0 text-white"><i class="bi bi-lightbulb me-2 text-warning"></i>Guidelines</h6>
+                </div>
+                <div class="att-card-body">
+                    <ul class="att-guidelines mb-0 ps-3">
+                        <li>Take attendance at the start of each teaching session.</li>
+                        <li><strong class="text-success">Present</strong> — in class on time.</li>
+                        <li><strong class="text-warning">Late</strong> — arrived after roll call.</li>
+                        <li><strong class="text-danger">Absent</strong> — not in class.</li>
+                        <li><strong class="text-info">Excused</strong> — approved absence (medical, official leave).</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if monthly_summary and monthly_summary.rows %}
+    <div class="att-card mb-4" id="monthlyAttendanceReport">
+        <div class="att-card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h6 class="mb-0 text-white"><i class="bi bi-grid-3x3 me-2 text-cyan"></i>Monthly Summary — {{ monthly_summary.month_label }}</h6>
+            <button type="button" class="btn btn-cyber-sm btn-sm" onclick="window.print()">
+                <i class="bi bi-printer me-1"></i>Print / Export
+            </button>
+        </div>
+        <div class="att-card-body p-0">
+            <div class="table-responsive att-monthly-scroll">
+                <table class="table att-table att-monthly-table mb-0">
+                    <thead>
+                        <tr>
+                            <th class="ps-3 sticky-col">Student</th>
+                            {% for day_num in monthly_summary.day_numbers %}
+                            <th class="text-center att-day-col">{{ day_num }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in monthly_summary.rows %}
+                        <tr>
+                            <td class="ps-3 sticky-col">
+                                <div class="fw-semibold text-white small">{{ row.student.full_name }}</div>
+                            </td>
+                            {% for day_key in monthly_summary.days %}
+                            {% set status = row.cells[day_key] %}
+                            <td class="text-center att-day-col">
+                                {% if status == 'present' %}<span class="att-cell p" title="Present">P</span>
+                                {% elif status == 'late' %}<span class="att-cell l" title="Late">L</span>
+                                {% elif status == 'absent' %}<span class="att-cell a" title="Absent">A</span>
+                                {% elif status == 'excused' %}<span class="att-cell e" title="Excused">E</span>
+                                {% else %}<span class="att-cell u">·</span>{% endif %}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="px-3 py-2 border-top border-cyber-dim">
+                <span class="text-blue small"><strong class="text-white">P</strong>=Present · <strong class="text-warning">L</strong>=Late · <strong class="text-danger">A</strong>=Absent · <strong class="text-info">E</strong>=Excused</span>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+    body { background: #0b0f19; }
+    .teacher-attendance-page .text-blue { color: #38bdf8 !important; }
+    .teacher-attendance-page .text-cyan { color: #00f2ff !important; }
+    .att-card, .att-kpi-card {
+        background: rgba(13, 13, 33, 0.92);
+        border: 1px solid rgba(0, 242, 255, 0.18);
+        border-radius: 12px;
+        color: #e2e8f0;
+    }
+    .att-card-header {
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid rgba(0, 242, 255, 0.12);
+    }
+    .att-card-body { padding: 1rem 1.25rem; }
+    .att-kpi-card { padding: 1rem 1.25rem; }
+    .att-kpi-label { font-size: 0.72rem; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.04em; }
+    .att-kpi-value { font-size: 1.75rem; font-weight: 700; color: #fff; }
+    .att-kpi-sub { font-size: 0.72rem; color: #64748b; }
+    .att-kpi-present .att-kpi-value { color: #4ade80; }
+    .att-kpi-absent .att-kpi-value { color: #f87171; }
+    .att-kpi-marked .att-kpi-value { color: #00f2ff; }
+    .att-table th {
+        color: #00f2ff;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        border-color: rgba(0, 242, 255, 0.1);
+        background: rgba(0, 0, 0, 0.25);
+    }
+    .att-table td { border-color: rgba(0, 242, 255, 0.08); vertical-align: middle; }
+    .form-cyber {
+        background: #070a12 !important;
+        border: 1px solid #374151 !important;
+        color: #fff !important;
+    }
+    .border-cyber-dim { border-color: rgba(0, 242, 255, 0.12) !important; }
+    .btn-cyber-primary {
+        background: linear-gradient(135deg, #00f2ff, #0ea5e9);
+        border: none;
+        color: #0b0f19;
+        font-weight: 600;
+    }
+    .btn-cyber-sm {
+        background: rgba(0, 242, 255, 0.12);
+        border: 1px solid rgba(0, 242, 255, 0.35);
+        color: #00f2ff;
+        font-size: 0.85rem;
+    }
+    .att-date-input { max-width: 11rem; }
+    .att-session-badge {
+        background: rgba(0, 242, 255, 0.12);
+        border: 1px solid rgba(0, 242, 255, 0.35);
+        color: #00f2ff;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        padding: 0.4rem 0.75rem;
+    }
+    .att-date-form label { white-space: nowrap; }
+    .att-status-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+    }
+    .att-status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        background: rgba(15, 23, 42, 0.8);
+        color: #94a3b8;
+        font-size: 0.72rem;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        user-select: none;
+    }
+    .att-status-chip input { position: absolute; opacity: 0; pointer-events: none; }
+    .att-status-chip.active.att-chip-present { border-color: #4ade80; color: #4ade80; background: rgba(74, 222, 128, 0.12); }
+    .att-status-chip.active.att-chip-late { border-color: #fbbf24; color: #fbbf24; background: rgba(251, 191, 36, 0.12); }
+    .att-status-chip.active.att-chip-absent { border-color: #f87171; color: #f87171; background: rgba(248, 113, 113, 0.12); }
+    .att-status-chip.active.att-chip-excused { border-color: #38bdf8; color: #38bdf8; background: rgba(56, 189, 248, 0.12); }
+    .att-quick-btn {
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        background: rgba(15, 23, 42, 0.8);
+        color: #cbd5e1;
+    }
+    .att-q-present:hover, .att-q-present:focus { border-color: #4ade80; color: #4ade80; }
+    .att-q-late:hover, .att-q-late:focus { border-color: #fbbf24; color: #fbbf24; }
+    .att-q-absent:hover, .att-q-absent:focus { border-color: #f87171; color: #f87171; }
+    .att-class-tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .att-class-tab {
+        padding: 0.35rem 0.85rem;
+        border-radius: 999px;
+        border: 1px solid rgba(0, 242, 255, 0.25);
+        color: #94a3b8;
+        text-decoration: none;
+        font-size: 0.85rem;
+    }
+    .att-class-tab.active, .att-class-tab:hover {
+        border-color: #00f2ff;
+        color: #00f2ff;
+        background: rgba(0, 242, 255, 0.08);
+    }
+    .att-history-list { max-height: 420px; overflow-y: auto; }
+    .att-history-item {
+        display: block;
+        padding: 0.75rem 1.25rem;
+        border-bottom: 1px solid rgba(0, 242, 255, 0.08);
+        text-decoration: none;
+    }
+    .att-history-item:hover, .att-history-item.active { background: rgba(0, 242, 255, 0.06); }
+    .att-history-bar {
+        display: flex;
+        height: 4px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(148, 163, 184, 0.2);
+    }
+    .att-history-bar .seg-present { background: #4ade80; }
+    .att-history-bar .seg-late { background: #fbbf24; }
+    .att-history-bar .seg-excused { background: #38bdf8; }
+    .att-history-bar .seg-absent { background: #f87171; }
+    .att-guidelines { color: #94a3b8; font-size: 0.85rem; }
+    .att-guidelines li { margin-bottom: 0.45rem; }
+    .att-unmarked-badge { font-size: 0.65rem; }
+    .att-monthly-scroll { max-height: 480px; overflow: auto; }
+    .att-monthly-table .att-day-col { min-width: 1.6rem; font-size: 0.68rem; padding: 0.35rem 0.15rem; }
+    .att-monthly-table .sticky-col {
+        position: sticky;
+        left: 0;
+        background: rgba(13, 13, 33, 0.98);
+        z-index: 2;
+        min-width: 9rem;
+    }
+    .att-cell { font-weight: 700; font-size: 0.65rem; }
+    .att-cell.p { color: #4ade80; }
+    .att-cell.l { color: #fbbf24; }
+    .att-cell.a { color: #f87171; }
+    .att-cell.e { color: #38bdf8; }
+    .att-cell.u { color: #475569; }
+    @media print {
+        body * { visibility: hidden; }
+        #monthlyAttendanceReport, #monthlyAttendanceReport * { visibility: visible; }
+        #monthlyAttendanceReport { position: absolute; left: 0; top: 0; width: 100%; }
+    }
+</style>
+
+<script>
+(function () {
+    const form = document.getElementById('attendanceForm');
+    if (!form) return;
+
+    function updateKpis() {
+        const counts = { present: 0, late: 0, absent: 0, excused: 0 };
+        form.querySelectorAll('.att-row').forEach(function (row) {
+            const checked = row.querySelector('.att-status-input:checked');
+            if (checked && counts.hasOwnProperty(checked.value)) {
+                counts[checked.value] += 1;
+            }
+        });
+        const presentEl = document.getElementById('kpiPresent');
+        const lateEl = document.getElementById('kpiLate');
+        const excusedEl = document.getElementById('kpiExcused');
+        const absentEl = document.getElementById('kpiAbsent');
+        if (presentEl) presentEl.textContent = counts.present + counts.late + counts.excused;
+        if (lateEl) lateEl.textContent = counts.late;
+        if (excusedEl) excusedEl.textContent = counts.excused;
+        if (absentEl) absentEl.textContent = counts.absent;
+    }
+
+    function setChipActive(input) {
+        const group = input.closest('.att-status-group');
+        if (!group) return;
+        group.querySelectorAll('.att-status-chip').forEach(function (chip) {
+            chip.classList.toggle('active', chip.contains(input) && input.checked);
+        });
+    }
+
+    form.querySelectorAll('.att-status-input').forEach(function (input) {
+        input.addEventListener('change', function () {
+            setChipActive(input);
+            updateKpis();
+        });
+    });
+
+    form.querySelectorAll('[data-mark-all]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const value = btn.getAttribute('data-mark-all');
+            form.querySelectorAll('.att-status-input[value="' + value + '"]').forEach(function (input) {
+                input.checked = true;
+                setChipActive(input);
+            });
+            updateKpis();
+        });
+    });
+})();
+</script>
+{% endblock %}

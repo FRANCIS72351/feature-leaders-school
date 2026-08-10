@@ -1,0 +1,278 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+    .staff-shell { background: #f8fbff; color: #1f2937; border-radius: 12px; padding: 1.5rem; border: 1px solid #dbe7f3; }
+    .staff-shell .table { color: #1f2937; }
+    .staff-shell .table th { color: #0369a1; border-color: #dbe7f3; background: #f3f8fd; }
+    .staff-shell .table td { border-color: #e5edf6; vertical-align: middle; }
+    .badge-active { background: rgba(16,185,129,.15); color: #10b981; border: 1px solid rgba(16,185,129,.3); }
+    .badge-inactive { background: rgba(244,63,94,.12); color: #f43f5e; border: 1px solid rgba(244,63,94,.25); }
+    .staff-warning { background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.25); color: #fbbf24; }
+
+    /* Create Account form — scoped high-contrast cyber theme */
+    .staff-create-account .form-label,
+    .staff-create-account label {
+        color: #1f2937 !important;
+        font-weight: 500;
+    }
+    .staff-create-account .form-control,
+    .staff-create-account .form-select {
+        background-color: #ffffff !important;
+        border: 1px solid #cfe0ef !important;
+        color: #1f2937 !important;
+        border-radius: 8px !important;
+    }
+    .staff-create-account .form-control:focus,
+    .staff-create-account .form-select:focus {
+        border-color: #0ea5e9 !important;
+        box-shadow: 0 0 0 0.2rem rgba(14, 165, 233, 0.2) !important;
+        color: #1f2937 !important;
+    }
+    .staff-create-account .form-control::placeholder {
+        color: #7a95ad !important;
+        opacity: 0.9;
+    }
+    .staff-create-account .form-select option {
+        background-color: #ffffff;
+        color: #1f2937;
+    }
+    .staff-create-account .form-text,
+    .staff-create-account .text-muted,
+    .staff-create-account small {
+        color: #5f7892 !important;
+    }
+    .staff-create-account .invalid-feedback,
+    .staff-create-account .text-danger {
+        color: #dc2626 !important;
+    }
+    .staff-create-account input[type="file"].form-control {
+        color: #1f2937 !important;
+    }
+    .staff-create-account input[type="file"].form-control::file-selector-button {
+        background-color: #edf5fc;
+        border: 1px solid #cfe0ef;
+        color: #1f2937;
+        border-radius: 6px;
+        padding: 0.25rem 0.75rem;
+        margin-right: 0.75rem;
+    }
+    .staff-create-account input[type="file"].form-control::-webkit-file-upload-button {
+        background-color: #edf5fc;
+        border: 1px solid #cfe0ef;
+        color: #1f2937;
+        border-radius: 6px;
+        padding: 0.25rem 0.75rem;
+        margin-right: 0.75rem;
+    }
+</style>
+
+<div class="staff-shell mb-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h2 class="h4 mb-1"><i class="fas fa-users-cog me-2 text-info"></i>Staff & Account Lifecycle</h2>
+            <p class="text-muted small mb-0">Deactivate staff, transfer roles, and manage portal access securely.</p>
+        </div>
+        <span class="badge bg-light border border-secondary text-dark px-3 py-2">
+            <i class="fas fa-shield-alt text-success me-1"></i> Credential revocation uses random hashes
+        </span>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <div class="col-lg-7">
+            <div class="card bg-white border-secondary border-opacity-25 h-100 staff-create-account">
+                <div class="card-header border-secondary border-opacity-25 text-info fw-semibold">
+                    <i class="fas fa-user-plus me-1"></i> Create Account
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data">
+                        {{ form.hidden_tag() }}
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                {{ form.email.label(class="form-label") }}
+                                {{ form.email(class="form-control", placeholder="user@school.edu") }}
+                            </div>
+                            <div class="col-md-6">
+                                {{ form.full_name.label(class="form-label") }}
+                                {{ form.full_name(class="form-control", placeholder="Full legal name") }}
+                            </div>
+                            <div class="col-md-6">
+                                {{ form.password.label(class="form-label") }}
+                                {{ form.password(class="form-control", placeholder="••••••••") }}
+                            </div>
+                            <div class="col-md-6">
+                                {{ form.role.label(class="form-label") }}
+                                {{ form.role(class="form-select") }}
+                            </div>
+                            <div class="col-md-6">
+                                {{ form.home_address.label(class="form-label") }}
+                                {{ form.home_address(class="form-control", placeholder="Street address") }}
+                            </div>
+                            <div class="col-md-6">
+                                {{ form.telephone_number.label(class="form-label") }}
+                                {{ form.telephone_number(class="form-control", placeholder="e.g. +231 123 456 789") }}
+                            </div>
+                            <div class="col-md-6">
+                                {{ form.photo.label(class="form-label") }}
+                                {{ form.photo(class="form-control") }}
+                                <div class="form-text">JPG, JPEG, PNG, or GIF</div>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary mt-3">{{ form.submit.label.text }}</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="card bg-white border-warning border-opacity-25 h-100">
+                <div class="card-header border-warning border-opacity-25 text-warning fw-semibold">
+                    <i class="fas fa-exchange-alt me-1"></i> Transfer Business Manager
+                </div>
+                <div class="card-body">
+                    <p class="small text-muted">Previous Business Manager accounts are deactivated and credentials revoked automatically.</p>
+                    <form method="POST" action="{{ url_for('transfer_role') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="role" value="business">
+                        <div class="mb-3">
+                            <label class="form-label">New Business Manager</label>
+                            <select name="to_user_id" class="form-select bg-white text-dark border-secondary" required>
+                                <option value="">— Select staff member —</option>
+                                {% for user in users if user.is_account_active() %}
+                                <option value="{{ user.id }}">{{ user.full_name }} ({{ user.role }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <button type="button" class="btn btn-warning w-100" data-bs-toggle="modal" data-bs-target="#transferRoleModal">
+                            <i class="fas fa-user-shield me-1"></i> Review & Transfer Role
+                        </button>
+                        <div class="modal fade" id="transferRoleModal" tabindex="-1" aria-hidden="true">
+                            <div class="modal-dialog">
+                                <div class="modal-content bg-dark text-white border-secondary">
+                                    <div class="modal-header border-secondary">
+                                        <h5 class="modal-title text-warning"><i class="fas fa-exclamation-triangle me-2"></i>Confirm Role Transfer</h5>
+                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <p>This will assign the <strong>Business Manager</strong> role to the selected user and <strong>deactivate</strong> any current Business Manager(s), revoking their login credentials.</p>
+                                    </div>
+                                    <div class="modal-footer border-secondary">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <button type="submit" class="btn btn-warning">Confirm Transfer</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h3 class="h5 mb-3"><i class="fas fa-id-badge me-2 text-info"></i>All Portal Accounts</h3>
+    <div class="table-responsive rounded border border-secondary border-opacity-25">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr class="{% if not user.is_account_active() %}table-secondary{% endif %}" style="{% if not user.is_account_active() %}opacity:.75{% endif %}">
+                    <td>{{ user.id }}</td>
+                    <td class="fw-semibold">{{ user.full_name }}</td>
+                    <td>{{ user.email }}</td>
+                    <td><span class="badge bg-secondary">{{ user.role }}</span></td>
+                    <td>
+                        {% if user.is_account_active() %}
+                        <span class="badge badge-active"><i class="fas fa-circle me-1" style="font-size:.5rem;"></i>Active</span>
+                        {% else %}
+                        <span class="badge badge-inactive"><i class="fas fa-ban me-1"></i>Inactive</span>
+                        {% if user.deactivated_at %}
+                        <div class="small text-muted mt-1">{{ user.deactivated_at.strftime('%Y-%m-%d') }}</div>
+                        {% endif %}
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        <div class="btn-group btn-group-sm">
+                            <a href="{{ url_for('edit_user', user_id=user.id) }}" class="btn btn-outline-info">Edit</a>
+                            {% if user.is_account_active() and user.id != current_user.id %}
+                            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deactivateModal{{ user.id }}">
+                                Deactivate
+                            </button>
+                            {% elif not user.is_account_active() %}
+                            <form method="POST" action="{{ url_for('unlock_user', user_id=user.id) }}" class="d-inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-outline-success" onclick="return confirm('Reactivate this account? They will need a new password.')">Reactivate</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                        {% if user.is_account_active() and user.id != current_user.id %}
+                        <div class="modal fade" id="deactivateModal{{ user.id }}" tabindex="-1" aria-hidden="true">
+                            <div class="modal-dialog">
+                                <div class="modal-content bg-white text-dark border-danger border-opacity-50">
+                                    <div class="modal-header border-secondary">
+                                        <h5 class="modal-title text-danger"><i class="fas fa-user-slash me-2"></i>Deactivate {{ user.full_name }}</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <form method="POST" action="{{ url_for('deactivate_staff_user', user_id=user.id) }}">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <div class="modal-body">
+                                            <div class="staff-warning rounded p-3 mb-3 small">
+                                                <strong>Warning:</strong> This revokes login credentials, marks the account inactive, and releases class-teacher assignments if applicable.
+                                            </div>
+                                            <label class="form-label">Reason (optional)</label>
+                                            <input type="text" name="reason" class="form-control bg-white text-dark border-secondary" placeholder="e.g. End of contract, termination">
+                                        </div>
+                                        <div class="modal-footer border-secondary">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                            <button type="submit" class="btn btn-danger">Deactivate Account</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if homeroom_matrix %}
+    <h3 class="h5 mt-5 mb-3"><i class="fas fa-chalkboard-teacher me-2 text-info"></i>Homeroom Teacher Reassignment</h3>
+    <div class="table-responsive rounded border border-secondary border-opacity-25">
+        <table class="table mb-0">
+            <thead><tr><th>Class</th><th>Current Homeroom</th><th>Reassign</th></tr></thead>
+            <tbody>
+                {% for row in homeroom_matrix %}
+                <tr>
+                    <td class="fw-semibold">{{ row.klass.name }}</td>
+                    <td>
+                        {% if row.homeroom_teacher %}
+                        {{ row.homeroom_teacher.full_name }}
+                        {% else %}
+                        <span class="text-muted">Unassigned</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <form method="POST" action="{{ url_for('registrar_reassign_class_teacher', class_id=row.klass.id) }}" class="d-flex gap-2 align-items-center">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="next" value="admin_users">
+                            <select name="teacher_id" class="form-select form-select-sm bg-white text-dark border-secondary" style="max-width:220px;">
+                                <option value="0">— Clear / Unassigned —</option>
+                                {% for t in teachers %}
+                                <option value="{{ t.id }}" {% if row.klass.teacher_id == t.id %}selected{% endif %}>{{ t.full_name }}</option>
+                                {% endfor %}
+                            </select>
+                            <button type="submit" class="btn btn-sm btn-outline-info">Save</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

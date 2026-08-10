@@ -1,0 +1,269 @@
+{% extends 'base.html' %}
+{% block title %}Academic Years{% endblock %}
+{% block content %}
+{% set year_links = year_links or {} %}
+<div class="container mt-4">
+  <h2>Academic Years</h2>
+  <div class="alert alert-info d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-4">
+    <div>
+      <strong>Modern year rollover:</strong> Use the guided wizard to end a term, activate the next year, promote classes, reset fees, and re-enroll students.
+    </div>
+    <a href="{{ url_for('academic_year_rollover') }}" class="btn btn-warning btn-sm fw-semibold">
+      <i class="fas fa-arrows-rotate me-1"></i> Open Rollover Wizard
+    </a>
+  </div>
+  <div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h5 class="mb-0">Create New Academic Year</h5>
+      <div class="text-muted small">Keep your calendar up to date</div>
+    </div>
+    <div class="card-body">
+      <form method="POST" class="row g-3">
+        {{ form.hidden_tag() }}
+        <div class="col-md-4">
+          {{ form.name.label(class_='form-label') }}
+          {{ form.name(class_='form-control', placeholder='2025-2026') }}
+        </div>
+        <div class="col-md-3">
+          {{ form.start_date.label(class_='form-label') }}
+          {{ form.start_date(class_='form-control') }}
+        </div>
+        <div class="col-md-3">
+          {{ form.end_date.label(class_='form-label') }}
+          {{ form.end_date(class_='form-control') }}
+        </div>
+        <div class="col-md-1 d-flex align-items-end">
+          <div class="form-check form-switch">
+            {{ form.is_active(class_='form-check-input', id='is_active_toggle') }}
+            <label class="form-check-label" for="is_active_toggle">Active</label>
+          </div>
+        </div>
+        <div class="col-md-1 d-flex align-items-end">
+          {{ form.submit(class_='btn btn-primary w-100') }}
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h5 class="mb-0">Academic Year History</h5>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-striped align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Start</th>
+            <th>End</th>
+            <th>Status</th>
+            <th style="width: 340px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for y in years %}
+          <tr>
+            <td>
+              <div class="fw-semibold">{{ y.name }}</div>
+              <div class="text-muted small">Created {{ y.created_on.strftime('%b %d, %Y') if y.created_on else '—' }}</div>
+            </td>
+            <td>{{ y.start_date.strftime('%b %d, %Y') if y.start_date else '-' }}</td>
+            <td>{{ y.end_date.strftime('%b %d, %Y') if y.end_date else '—' }}</td>
+            <td>
+              {% if y.is_active %}
+                <span class="badge bg-success">Active</span>
+              {% else %}
+                <span class="badge bg-secondary">Ended</span>
+                {% set archived_links = year_links.get(y.id, {}) %}
+                {% if archived_links.get('total', 0) > 0 %}
+                  <span class="badge bg-info text-dark ms-1" title="Historical records preserved">Archived</span>
+                {% endif %}
+              {% endif %}
+            </td>
+            <td>
+              <div class="d-flex flex-wrap gap-2">
+                {% if y.is_active %}
+                  <a href="{{ url_for('edit_academic_year', year_id=y.id) }}" class="btn btn-sm btn-outline-primary">Edit Year</a>
+                  <form method="POST" action="{{ url_for('end_academic_year', year_id=y.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Mark {{ y.name }} as ended?')">End Year</button>
+                  </form>
+                  <form method="POST" action="{{ url_for('reregister_students') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-outline-warning" onclick="return confirm('Quick re-register only updates year tags. Use Rollover Wizard for full lifecycle?')">Quick Re-register</button>
+                  </form>
+                  <a href="{{ url_for('academic_year_rollover') }}" class="btn btn-sm btn-warning">Rollover Wizard</a>
+                {% else %}
+                  <a href="{{ url_for('edit_academic_year', year_id=y.id) }}" class="btn btn-sm btn-outline-primary">Edit Year</a>
+                  <form method="POST" action="{{ url_for('activate_academic_year', year_id=y.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-success" onclick="return confirm('Set {{ y.name }} as the active academic year?')">Activate</button>
+                  </form>
+                {% endif %}
+                {% if not y.is_active %}
+                {% set links = year_links.get(y.id, {}) %}
+                {% set link_total = links.get('total', 0) %}
+                {% if link_total > 0 %}
+                <button type="button"
+                        class="btn btn-sm btn-outline-dark btn-purge-year"
+                        title="Linked records must be purged or year kept as archive"
+                        data-year-id="{{ y.id }}"
+                        data-year-name="{{ y.name|e }}"
+                        data-links='{{ links|tojson }}'>
+                  Delete
+                </button>
+                {% else %}
+                <form method="POST" action="{{ url_for('delete_academic_year', year_id=y.id) }}" class="d-inline year-delete-form">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="button" class="btn btn-sm btn-outline-dark btn-delete-empty-year"
+                          data-year-name="{{ y.name|e }}">
+                    Delete
+                  </button>
+                </form>
+                {% endif %}
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="5" class="text-center py-4 text-muted">
+              No academic years yet. Start by creating one above.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="yearPurgeModal" tabindex="-1" aria-labelledby="yearPurgeModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title text-danger" id="yearPurgeModalLabel">Permanent purge required</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2" id="year-purge-summary"></p>
+        <p class="text-muted small mb-3">
+          Ended years are normally kept as archived records. Permanent purge is only for mistaken or test years.
+          This removes all linked grades, payments, fee schedules, and assessments. Students are kept but their year tag is cleared.
+        </p>
+        <label for="year-purge-confirm-input" class="form-label fw-semibold">
+          Type the year name exactly to confirm:
+        </label>
+        <input type="text" class="form-control" id="year-purge-confirm-input" autocomplete="off" spellcheck="false">
+        <div class="invalid-feedback" id="year-purge-mismatch">Year name does not match.</div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="year-purge-submit" disabled>Permanently delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<form id="year-purge-form" method="POST" action="" class="d-none">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="confirm_cascade" value="1">
+</form>
+
+<script>
+(function () {
+  const deleteUrlTemplate = {{ url_for('delete_academic_year', year_id=0)|tojson }};
+  const purgeModalEl = document.getElementById('yearPurgeModal');
+  const purgeModal = purgeModalEl ? new bootstrap.Modal(purgeModalEl) : null;
+  const purgeSummaryEl = document.getElementById('year-purge-summary');
+  const purgeInputEl = document.getElementById('year-purge-confirm-input');
+  const purgeSubmitEl = document.getElementById('year-purge-submit');
+  const purgeMismatchEl = document.getElementById('year-purge-mismatch');
+  const purgeForm = document.getElementById('year-purge-form');
+  let pendingPurge = null;
+
+  function buildLinkSummary(links) {
+    const parts = [];
+    if (links.grades) parts.push(links.grades + ' grade record(s)');
+    if (links.students) parts.push(links.students + ' student(s)');
+    if (links.payments) parts.push(links.payments + ' payment(s)');
+    if (links.fees) parts.push(links.fees + ' fee schedule(s)');
+    if (links.assessments) parts.push(links.assessments + ' assessment(s)');
+    if (links.media) parts.push(links.media + ' media item(s)');
+    return parts.join(', ');
+  }
+
+  function clearPurgeInputs() {
+    if (purgeInputEl) {
+      purgeInputEl.value = '';
+      purgeInputEl.classList.remove('is-invalid');
+    }
+    if (purgeSubmitEl) purgeSubmitEl.disabled = true;
+    if (purgeMismatchEl) purgeMismatchEl.style.display = 'none';
+  }
+
+  function resetPurgeModal() {
+    pendingPurge = null;
+    clearPurgeInputs();
+  }
+
+  function openPurgeModal(yearId, yearName, links) {
+    if (!purgeModal) return;
+    pendingPurge = { yearId: yearId, yearName: yearName };
+    const summary = buildLinkSummary(links);
+    purgeSummaryEl.textContent =
+      'Cannot delete "' + yearName + '" — ' + summary + ' are linked to this year.';
+    clearPurgeInputs();
+    purgeModal.show();
+    window.setTimeout(function () { purgeInputEl && purgeInputEl.focus(); }, 200);
+  }
+
+  document.querySelectorAll('.btn-delete-empty-year').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const yearName = btn.getAttribute('data-year-name') || 'this year';
+      const form = btn.closest('form');
+      if (!form) return;
+      if (window.confirm('Delete empty academic year ' + yearName + '? This cannot be undone.')) {
+        form.submit();
+      }
+    });
+  });
+
+  document.querySelectorAll('.btn-purge-year').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const yearId = parseInt(btn.getAttribute('data-year-id'), 10);
+      const yearName = btn.getAttribute('data-year-name') || '';
+      let links = {};
+      try {
+        links = JSON.parse(btn.getAttribute('data-links') || '{}');
+      } catch (err) {
+        links = {};
+      }
+      openPurgeModal(yearId, yearName, links);
+    });
+  });
+
+  if (purgeInputEl && purgeSubmitEl) {
+    purgeInputEl.addEventListener('input', function () {
+      const matches = pendingPurge && purgeInputEl.value === pendingPurge.yearName;
+      purgeSubmitEl.disabled = !matches;
+      purgeInputEl.classList.toggle('is-invalid', purgeInputEl.value.length > 0 && !matches);
+      if (purgeMismatchEl) {
+        purgeMismatchEl.style.display = (purgeInputEl.value.length > 0 && !matches) ? 'block' : 'none';
+      }
+    });
+
+    purgeSubmitEl.addEventListener('click', function () {
+      if (!pendingPurge || purgeInputEl.value !== pendingPurge.yearName || !purgeForm) return;
+      purgeForm.action = deleteUrlTemplate.replace('/0', '/' + pendingPurge.yearId);
+      purgeForm.submit();
+    });
+  }
+
+  if (purgeModalEl) {
+    purgeModalEl.addEventListener('hidden.bs.modal', resetPurgeModal);
+  }
+})();
+</script>
+
+{% endblock %}

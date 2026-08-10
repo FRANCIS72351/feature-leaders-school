@@ -1,0 +1,458 @@
+{% extends 'base.html' %}
+{% block title %}Grade: {{ activity.title }}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/grading_hub.css') }}">
+<div class="container my-4 activity-grade-page">
+
+    <div class="activity-grade-header">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+            <div>
+                {% if activity.klass %}
+                <a href="{{ url_for('class_grading_hub', class_id=activity.klass_id, subject=activity.subject_name, period=activity.marking_period or 1, hub_tab='activities') }}" class="text-white-50 small text-decoration-none d-inline-block mb-2">
+                    <i class="bi bi-arrow-left me-1"></i>Back to Activity Review
+                </a>
+                {% else %}
+                <a href="{{ url_for('teacher_dashboard', tab='grades') }}" class="text-white-50 small text-decoration-none d-inline-block mb-2">
+                    <i class="bi bi-arrow-left me-1"></i>Back to Grade Review
+                </a>
+                {% endif %}
+                <h1 class="h4 fw-bold mb-2">{{ activity.title }}</h1>
+                <div class="d-flex flex-wrap">
+                    <span class="meta-chip"><i class="bi bi-book me-1"></i>{{ activity.subject_name or 'Subject' }}</span>
+                    <span class="meta-chip"><i class="bi bi-calendar3 me-1"></i>{{ (activity.marking_period or 1) | marking_period_label }}</span>
+                    <span class="meta-chip"><i class="bi bi-tag me-1"></i>{{ activity.activity_type or 'Assignment' }}</span>
+                    <span class="meta-chip activity-delivery-badge {% if activity.is_classroom_activity %}classroom{% else %}digital{% endif %}">
+                        <i class="bi {% if activity.is_classroom_activity %}bi-easel{% else %}bi-cloud-upload{% endif %} me-1"></i>{{ activity.delivery_badge }}
+                    </span>
+                    <span class="meta-chip"><i class="bi bi-star me-1"></i>Max {{ activity.max_score or 100 }} pts</span>
+                    {% if activity.klass %}
+                    <span class="meta-chip"><i class="bi bi-people me-1"></i>{{ activity.klass.name }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                {% if activity.klass %}
+                <a href="{{ url_for('class_grading_hub', class_id=activity.klass_id, subject=activity.subject_name, period=activity.marking_period or 1, hub_tab='moe') }}"
+                   class="btn btn-light btn-sm fw-semibold">
+                    <i class="bi bi-grid-3x3-gap me-1"></i>Period Grades
+                </a>
+                {% endif %}
+                {% if ocr_available %}
+                <a href="{{ url_for('activity_batch_scan', assessment_id=activity.id) }}" class="btn btn-cyber-primary btn-sm fw-semibold">
+                    <i class="bi bi-upc-scan me-1"></i>Batch Scan
+                </a>
+                {% endif %}
+                {% if activity.file_name %}
+                <a href="{{ url_for('teacher_download_activity', assessment_id=activity.id) }}" class="btn btn-outline-light btn-sm">
+                    <i class="bi bi-download me-1"></i>Task File
+                </a>
+                {% endif %}
+                {% if activity.external_url %}
+                <a href="{{ activity.external_url }}" target="_blank" rel="noopener" class="btn btn-outline-light btn-sm">
+                    <i class="bi bi-google me-1"></i>Shared Link
+                </a>
+                {% endif %}
+                {% if activity.is_classroom_activity %}
+                <a href="{{ url_for('manual_activity_grades', class_id=activity.klass_id, subject=activity.subject_name, period=activity.marking_period or 1, assessment_id=activity.id) }}" class="btn btn-light btn-sm fw-semibold">
+                    <i class="bi bi-pencil-square me-1"></i>Enter Grades
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% if activity.classroom_notes %}
+        <div class="mt-3 p-3 rounded-3 border border-cyan border-opacity-25 bg-dark bg-opacity-50">
+            <strong class="text-cyan small d-block mb-1"><i class="bi bi-easel me-1"></i>Classroom Notes</strong>
+            <p class="mb-0 small opacity-90" style="white-space: pre-wrap;">{{ activity.classroom_notes }}</p>
+        </div>
+        {% elif activity.description %}
+        <p class="mb-0 mt-3 small opacity-90">{{ activity.description }}</p>
+        {% endif %}
+    </div>
+
+    <div class="grading-stat-row mb-4">
+        <div class="grading-stat-card">
+            <div class="stat-value">{{ class_students|length }}</div>
+            <div class="stat-label">Students</div>
+        </div>
+        <div class="grading-stat-card">
+            <div class="stat-value text-success">{{ class_students|length - pending_grades }}</div>
+            <div class="stat-label">Graded</div>
+        </div>
+        <div class="grading-stat-card">
+            <div class="stat-value text-warning">{{ pending_grades }}</div>
+            <div class="stat-label">Needs Grading</div>
+        </div>
+    </div>
+
+    {% if ocr_available %}
+    <div class="ai-scanner-panel mb-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+            <div>
+                <strong class="text-white"><i class="bi bi-camera me-2"></i>AI Paper Scanner</strong>
+                <p class="small text-blue mb-0 mt-1">
+                    Photograph student work or scan their uploaded image. The system reads text with OCR and suggests a score from your answer keywords.
+                </p>
+            </div>
+            <span class="badge bg-success">Scanner ready</span>
+        </div>
+        <form method="POST" action="{{ url_for('update_activity_scan_keywords', assessment_id=activity.id) }}" class="row g-2 align-items-end">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="col-lg-9">
+                <label for="scan_keywords" class="form-label small text-blue mb-1">Answer keywords (comma-separated)</label>
+                <input type="text" id="scan_keywords" name="scan_keywords" class="form-control custom-input"
+                       value="{{ activity.scan_keywords or '' }}"
+                       placeholder="e.g. Liberia, Monrovia, 1847, Atlantic Ocean">
+                <div class="form-text text-blue small">
+                    Each keyword found in the scan earns an equal share of the max score ({{ activity.max_score or 100 }} pts).
+                </div>
+            </div>
+            <div class="col-lg-3">
+                <button type="submit" class="btn btn-cyber-primary w-100">
+                    <i class="bi bi-save me-1"></i>Save Keywords
+                </button>
+            </div>
+        </form>
+        {% if scan_keyword_list %}
+        <div class="scan-keyword-chips mt-2">
+            {% for kw in scan_keyword_list %}
+            <span class="scan-kw-chip">{{ kw }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    {% elif ocr_libraries_installed %}
+    <div class="alert alert-warning border-0 shadow-sm mb-4">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        <strong>AI Scanner needs Tesseract OCR.</strong>
+        {% if ocr_setup_status and ocr_setup_status.install_steps %}
+        <ul class="small mb-0 mt-2 ps-3">
+            {% for step in ocr_setup_status.install_steps %}
+            <li>{{ step }}</li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        Install <a href="https://github.com/UB-Mannheim/tesseract/wiki" target="_blank" rel="noopener">Tesseract</a> on this computer, add it to PATH or set <code>TESSERACT_CMD</code>, then restart the server.
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="alert alert-secondary border-0 shadow-sm mb-4">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>Enable the AI scanner:</strong>
+        <code>pip install pytesseract Pillow</code> plus install
+        <a href="https://github.com/UB-Mannheim/tesseract/wiki" target="_blank" rel="noopener">Tesseract OCR</a>
+        on the server, then restart.
+    </div>
+    {% endif %}
+
+    {% if class_students %}
+    <form method="POST" action="{{ url_for('bulk_grade_activity', assessment_id=activity.id) }}" id="gradeAllForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <p class="text-muted small mb-0">
+                Enter scores (0–{{ activity.max_score or 100 }}). Use <strong>Scan</strong> or <strong>Batch Scan</strong> for photos. Review every suggestion before saving.
+            </p>
+            <div class="d-flex flex-wrap gap-2">
+                {% if ocr_available %}
+                <a href="{{ url_for('activity_batch_scan', assessment_id=activity.id) }}" class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-upc-scan me-1"></i>Batch Scan
+                </a>
+                {% endif %}
+                <button type="submit" name="publish_action" value="draft" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-save me-1"></i>Save Draft
+                </button>
+                <button type="submit" name="publish_action" value="publish" class="btn btn-success btn-sm">
+                    <i class="bi bi-megaphone me-1"></i>Publish Scores
+                </button>
+            </div>
+        </div>
+
+        <div class="d-none d-lg-block">
+            <div class="card border-0 shadow-sm">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-4">Student</th>
+                                <th>Submission</th>
+                                <th>Status</th>
+                                <th>Current</th>
+                                {% if ocr_available %}<th>AI Scan</th>{% endif %}
+                                <th class="pe-2">Score</th>
+                                <th>Feedback</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for student in class_students %}
+                            {% set submission = submission_by_student.get(student.id) %}
+                            <tr data-student-id="{{ student.id }}">
+                                <td class="ps-4">
+                                    <div class="fw-semibold">{{ student.full_name }}</div>
+                                    <div class="small text-muted font-monospace">{{ student.student_id }}</div>
+                                </td>
+                                <td class="small text-muted">
+                                    {% if submission and submission.submission_text %}
+                                        <span title="{{ submission.submission_text }}">{{ submission.submission_text[:80] }}{% if submission.submission_text|length > 80 %}…{% endif %}</span>
+                                    {% elif submission and submission.file_path %}
+                                        <a href="{{ url_for('teacher_download_submission', submission_id=submission.id) }}" class="text-decoration-none">
+                                            <i class="bi bi-download me-1"></i>Download
+                                        </a>
+                                    {% else %}
+                                        <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if submission and submission.is_graded and submission.score_published %}
+                                    <span class="badge bg-success">Published</span>
+                                    {% elif submission and submission.is_graded %}
+                                    <span class="badge bg-secondary">Draft</span>
+                                    {% elif submission and (submission.file_path or submission.submission_text) %}
+                                    <span class="badge bg-warning text-dark">Pending</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">Open</span>
+                                    {% endif %}
+                                </td>
+                                <td class="font-monospace small">
+                                    {% if submission and submission.is_graded %}{{ submission.score }}/{{ activity.max_score or 100 }}{% else %}—{% endif %}
+                                </td>
+                                {% if ocr_available %}
+                                <td>
+                                    <div class="d-flex flex-wrap gap-1">
+                                        <label class="btn btn-sm btn-outline-primary scan-upload-btn mb-0">
+                                            <i class="bi bi-camera me-1"></i>Photo
+                                            <input type="file" class="d-none scan-file-input" accept="image/*"
+                                                   data-student-id="{{ student.id }}">
+                                        </label>
+                                        {% if submission and submission.file_path %}
+                                        <button type="button" class="btn btn-sm btn-outline-secondary scan-submission-btn"
+                                                data-student-id="{{ student.id }}">
+                                            <i class="bi bi-file-earmark-image me-1"></i>Upload
+                                        </button>
+                                        {% endif %}
+                                    </div>
+                                    <div class="scan-status small text-muted mt-1" id="scan-status-{{ student.id }}"></div>
+                                </td>
+                                {% endif %}
+                                <td class="pe-2">
+                                    <input type="number" name="score_{{ student.id }}" id="score-input-{{ student.id }}"
+                                           step="0.1" min="0" max="{{ activity.max_score or 100 }}"
+                                           value="{{ submission.score if submission and submission.is_graded else '' }}"
+                                           class="form-control form-control-sm score-field" style="width:90px" placeholder="Score">
+                                </td>
+                                <td>
+                                    <input type="text" name="feedback_{{ student.id }}" id="feedback-input-{{ student.id }}"
+                                           class="form-control form-control-sm"
+                                           value="{{ submission.teacher_feedback if submission and submission.teacher_feedback else '' }}"
+                                           placeholder="Optional feedback">
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-lg-none">
+            {% for student in class_students %}
+            {% set submission = submission_by_student.get(student.id) %}
+            <div class="student-grade-card {% if submission and submission.is_graded %}status-graded{% elif submission and (submission.file_path or submission.submission_text) %}status-pending{% else %}status-missing{% endif %}" data-student-id="{{ student.id }}">
+                <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                    <div>
+                        <div class="student-name">{{ student.full_name }}</div>
+                        <div class="student-id">{{ student.student_id }}</div>
+                    </div>
+                    {% if submission and submission.is_graded and submission.score_published %}
+                    <span class="badge bg-success">Published</span>
+                    {% elif submission and submission.is_graded %}
+                    <span class="badge bg-secondary">Draft</span>
+                    {% elif submission and (submission.file_path or submission.submission_text) %}
+                    <span class="badge bg-warning text-dark">Pending</span>
+                    {% else %}
+                    <span class="badge bg-secondary">Open</span>
+                    {% endif %}
+                </div>
+                {% if submission and submission.file_path %}
+                <a href="{{ url_for('teacher_download_submission', submission_id=submission.id) }}" class="small d-block mb-2">
+                    <i class="bi bi-download me-1"></i>Download work
+                </a>
+                {% endif %}
+                {% if ocr_available %}
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                    <label class="btn btn-sm btn-outline-primary scan-upload-btn mb-0">
+                        <i class="bi bi-camera me-1"></i>Scan photo
+                        <input type="file" class="d-none scan-file-input" accept="image/*" data-student-id="{{ student.id }}">
+                    </label>
+                    {% if submission and submission.file_path %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary scan-submission-btn" data-student-id="{{ student.id }}">
+                        Scan upload
+                    </button>
+                    {% endif %}
+                </div>
+                <div class="scan-status small text-muted mb-2" id="scan-status-mobile-{{ student.id }}"></div>
+                {% endif %}
+                <div class="grade-input-group">
+                    <input type="number" name="score_{{ student.id }}" id="score-input-mobile-{{ student.id }}"
+                           step="0.1" min="0" max="{{ activity.max_score or 100 }}"
+                           value="{{ submission.score if submission and submission.is_graded else '' }}"
+                           class="form-control form-control-sm score-field" placeholder="Score">
+                    <input type="text" name="feedback_{{ student.id }}" class="form-control form-control-sm"
+                           value="{{ submission.teacher_feedback if submission and submission.teacher_feedback else '' }}"
+                           placeholder="Feedback">
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="text-end mt-4 d-flex flex-wrap justify-content-end gap-2">
+            <button type="submit" name="publish_action" value="draft" class="btn btn-outline-secondary px-4">
+                <i class="bi bi-save me-1"></i>Save Draft
+            </button>
+            <button type="submit" name="publish_action" value="publish" class="btn btn-success px-4">
+                <i class="bi bi-megaphone me-1"></i>Publish Scores
+            </button>
+        </div>
+    </form>
+    {% else %}
+    <div class="text-center text-muted py-5 bg-light rounded">
+        <i class="bi bi-people d-block fs-1 mb-2 opacity-50"></i>
+        No students enrolled in this class yet.
+    </div>
+    {% endif %}
+</div>
+
+{% if ocr_available and class_students %}
+<div class="modal fade" id="scanResultModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-camera me-2"></i>AI Scan Result</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="scanResultSummary" class="mb-3"></div>
+                <label class="form-label small text-muted">Extracted text</label>
+                <pre id="scanResultText" class="scan-result-text p-3 rounded small mb-0"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="applyScanScoreBtn">
+                    <i class="bi bi-check2 me-1"></i>Apply suggested score
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const assessmentId = {{ activity.id }};
+    const csrfToken = {{ csrf_token()|tojson }};
+    const scanUrl = function(studentId) {
+        return '/teacher/activity/' + assessmentId + '/scan/' + studentId;
+    };
+    let pendingScan = { studentId: null, suggestedScore: null };
+
+    function statusEl(studentId) {
+        return document.getElementById('scan-status-' + studentId)
+            || document.getElementById('scan-status-mobile-' + studentId);
+    }
+
+    function scoreInput(studentId) {
+        return document.getElementById('score-input-' + studentId)
+            || document.getElementById('score-input-mobile-' + studentId);
+    }
+
+    function feedbackInput(studentId) {
+        return document.getElementById('feedback-input-' + studentId);
+    }
+
+    function showScanModal(data, studentId) {
+        pendingScan.studentId = studentId;
+        pendingScan.suggestedScore = data.suggested_score;
+
+        const summary = document.getElementById('scanResultSummary');
+        let html = '';
+        if (data.suggested_score !== null && data.suggested_score !== undefined) {
+            html += '<div class="alert alert-success py-2 mb-2">Suggested score: <strong>'
+                + data.suggested_score + ' / ' + data.max_score + '</strong></div>';
+            if (data.keywords_matched && data.keywords_matched.length) {
+                html += '<div class="small mb-1"><strong>Matched:</strong> ' + data.keywords_matched.join(', ') + '</div>';
+            }
+            if (data.keywords_missed && data.keywords_missed.length) {
+                html += '<div class="small text-muted"><strong>Missing:</strong> ' + data.keywords_missed.join(', ') + '</div>';
+            }
+        } else {
+            html += '<div class="alert alert-info py-2 mb-0">'
+                + (data.hint || 'Add answer keywords above to get an automatic score suggestion.') + '</div>';
+        }
+        summary.innerHTML = html;
+        document.getElementById('scanResultText').textContent = data.detected_text || data.detected_text_snippet || '';
+
+        const modalEl = document.getElementById('scanResultModal');
+        if (window.bootstrap && bootstrap.Modal) {
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
+        }
+    }
+
+    async function runScan(studentId, formData) {
+        const el = statusEl(studentId);
+        if (el) el.textContent = 'Scanning…';
+        formData.append('csrf_token', csrfToken);
+
+        try {
+            const response = await fetch(scanUrl(studentId), {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await response.json();
+            if (data.status !== 'Success') {
+                if (el) el.textContent = data.message || 'Scan failed';
+                alert(data.message || 'Scan failed');
+                return;
+            }
+            if (el) el.textContent = 'Scan complete';
+            showScanModal(data, studentId);
+        } catch (err) {
+            if (el) el.textContent = 'Scan error';
+            alert('Scan request failed. Check your connection.');
+        }
+    }
+
+    document.querySelectorAll('.scan-file-input').forEach(function(input) {
+        input.addEventListener('change', function() {
+            if (!input.files || !input.files.length) return;
+            const studentId = input.dataset.studentId;
+            const formData = new FormData();
+            formData.append('assignment', input.files[0]);
+            runScan(studentId, formData);
+            input.value = '';
+        });
+    });
+
+    document.querySelectorAll('.scan-submission-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const studentId = btn.dataset.studentId;
+            const formData = new FormData();
+            formData.append('use_submission', '1');
+            runScan(studentId, formData);
+        });
+    });
+
+    document.getElementById('applyScanScoreBtn').addEventListener('click', function() {
+        if (pendingScan.studentId == null || pendingScan.suggestedScore == null) {
+            bootstrap.Modal.getInstance(document.getElementById('scanResultModal')).hide();
+            return;
+        }
+        const input = scoreInput(pendingScan.studentId);
+        if (input) input.value = pendingScan.suggestedScore;
+        const fb = feedbackInput(pendingScan.studentId);
+        if (fb && !fb.value) {
+            fb.value = 'AI scan suggestion — please review';
+        }
+        bootstrap.Modal.getInstance(document.getElementById('scanResultModal')).hide();
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

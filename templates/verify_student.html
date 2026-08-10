@@ -1,0 +1,125 @@
+{% extends 'base.html' %}
+{% block title %}Student Verification{% endblock %}
+{% block content %}
+<style>
+    .verify-wrap {
+        max-width: 520px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+    }
+    .verify-card {
+        background: linear-gradient(145deg, #111827 0%, #0b0f19 100%);
+        border: 1px solid rgba(0, 242, 255, 0.2);
+        border-radius: 16px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+        overflow: hidden;
+    }
+    .verify-header {
+        background: rgba(0, 242, 255, 0.08);
+        border-bottom: 1px solid rgba(0, 242, 255, 0.15);
+        padding: 1.25rem 1.5rem;
+    }
+    .verify-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+    }
+    .verify-badge.ok {
+        background: rgba(16, 185, 129, 0.15);
+        color: #6ee7b7;
+        border: 1px solid rgba(16, 185, 129, 0.35);
+    }
+    .verify-badge.fail {
+        background: rgba(244, 63, 94, 0.12);
+        color: #fda4af;
+        border: 1px solid rgba(244, 63, 94, 0.3);
+    }
+    .verify-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.65rem 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        font-size: 0.95rem;
+    }
+    .verify-row:last-child { border-bottom: none; }
+    .verify-label { color: #94a3b8; }
+    .verify-value { color: #fff; font-weight: 600; text-align: right; }
+    .verify-staff {
+        margin-top: 1rem;
+        padding: 1rem;
+        border-radius: 10px;
+        background: rgba(59, 130, 246, 0.08);
+        border: 1px solid rgba(59, 130, 246, 0.2);
+        font-size: 0.85rem;
+        color: #bfdbfe;
+    }
+</style>
+
+<div class="verify-wrap">
+    <div class="verify-card">
+        <div class="verify-header">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h1 class="h5 text-white mb-0"><i class="fas fa-shield-check me-2 text-cyan"></i>Student Verification</h1>
+                {% if verified %}
+                <span class="verify-badge ok"><i class="fas fa-check-circle"></i> Verified Record</span>
+                {% else %}
+                <span class="verify-badge fail"><i class="fas fa-times-circle"></i> Not Found</span>
+                {% endif %}
+            </div>
+            <p class="text-muted small mb-0 mt-2">Official school identity check — scan QR or barcode on student ID card.</p>
+        </div>
+
+        <div class="p-4">
+            {% if verified and student %}
+            <div class="text-center mb-4">
+                <div class="text-muted small text-uppercase mb-1">Student Code</div>
+                <div class="display-6 fw-bold text-cyan">{{ student.student_code }}</div>
+            </div>
+
+            <div class="verify-row">
+                <span class="verify-label">Full Name</span>
+                <span class="verify-value">{{ student.full_name }}</span>
+            </div>
+            <div class="verify-row">
+                <span class="verify-label">Academic Level</span>
+                <span class="verify-value">{{ student.level or '—' }}</span>
+            </div>
+            <div class="verify-row">
+                <span class="verify-label">Class</span>
+                <span class="verify-value">{{ class_display_name or (klass.name if klass else 'Unassigned') }}</span>
+            </div>
+            <div class="verify-row">
+                <span class="verify-label">Academic Year</span>
+                <span class="verify-value">{{ display_year.name if display_year else '—' }}</span>
+            </div>
+            <div class="verify-row">
+                <span class="verify-label">Enrollment Status</span>
+                <span class="verify-value">{{ registration_label }}</span>
+            </div>
+
+            {% if staff_view %}
+            <div class="verify-staff">
+                <strong><i class="fas fa-user-shield me-1"></i>Staff view</strong><br>
+                Internal ID: {{ student.id }} · Status: {{ student.status or 'ACTIVE' }}
+                {% if student.parent_email %}<br>Parent contact: {{ student.parent_email }}{% endif %}
+            </div>
+            {% endif %}
+
+            <p class="text-muted small mt-4 mb-0 text-center">
+                This page confirms the student is registered with the school. It does not display grades, fees, or private data.
+            </p>
+            {% else %}
+            <p class="text-white mb-2">No matching student record was found for this verification code.</p>
+            <p class="text-muted small mb-0">The QR code may be expired, invalid, or not yet issued. Contact the registrar office for assistance.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

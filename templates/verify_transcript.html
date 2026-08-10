@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% block title %}Transcript Verification{% endblock %}
+
+{% block content %}
+<div class="container py-5" style="max-width: 640px;">
+    {% if valid %}
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-4 p-md-5 text-center">
+            <div class="rounded-circle bg-success bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-3" style="width:72px;height:72px;">
+                <i class="fas fa-check-circle text-success fa-2x"></i>
+            </div>
+            <h1 class="h4 fw-bold text-success mb-2">Transcript Verified</h1>
+            <p class="text-muted small mb-4">This academic record is registered with our school management system.</p>
+
+            <div class="text-start bg-light rounded-3 p-4 mb-4">
+                <div class="row g-3 small">
+                    <div class="col-sm-6">
+                        <div class="text-muted text-uppercase" style="font-size:0.68rem;letter-spacing:0.05em;">Student Name</div>
+                        <div class="fw-semibold">{{ student.full_name }}</div>
+                    </div>
+                    <div class="col-sm-6">
+                        <div class="text-muted text-uppercase" style="font-size:0.68rem;letter-spacing:0.05em;">Student ID</div>
+                        <div class="fw-semibold">{{ student.student_id }}</div>
+                    </div>
+                    <div class="col-sm-6">
+                        <div class="text-muted text-uppercase" style="font-size:0.68rem;letter-spacing:0.05em;">Overall GPA</div>
+                        <div class="fw-semibold">{{ overall_gpa | round(2) }}</div>
+                    </div>
+                    <div class="col-sm-6">
+                        <div class="text-muted text-uppercase" style="font-size:0.68rem;letter-spacing:0.05em;">Grades on File</div>
+                        <div class="fw-semibold">{{ grade_count }}</div>
+                    </div>
+                    {% if student.klass %}
+                    <div class="col-sm-6">
+                        <div class="text-muted text-uppercase" style="font-size:0.68rem;letter-spacing:0.05em;">Class</div>
+                        <div class="fw-semibold">{{ student.klass.name }}</div>
+                    </div>
+                    {% endif %}
+                    {% if active_year %}
+                    <div class="col-sm-6">
+                        <div class="text-muted text-uppercase" style="font-size:0.68rem;letter-spacing:0.05em;">Active Year</div>
+                        <div class="fw-semibold">{{ active_year.name }}</div>
+                    </div>
+                    {% endif %}
+                    <div class="col-12">
+                        <div class="text-muted text-uppercase" style="font-size:0.68rem;letter-spacing:0.05em;">Verified At</div>
+                        <div class="fw-semibold">{{ verified_at.strftime('%B %d, %Y %H:%M UTC') }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <p class="text-muted small mb-0">
+                <i class="fas fa-shield-alt me-1"></i>
+                Scanned from an official school transcript QR code.
+            </p>
+        </div>
+    </div>
+    {% else %}
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-4 p-md-5 text-center">
+            <div class="rounded-circle bg-danger bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-3" style="width:72px;height:72px;">
+                <i class="fas fa-times-circle text-danger fa-2x"></i>
+            </div>
+            <h1 class="h4 fw-bold text-danger mb-2">Verification Failed</h1>
+            <p class="text-muted mb-0">{{ error }}</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

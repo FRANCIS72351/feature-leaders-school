@@ -1,0 +1,236 @@
+{% extends 'base.html' %}
+{% block title %}Business Class Roster - {{ klass.name }}{% endblock %}
+{% block content %}
+
+<style>
+    /* System Global Workspace Theme Variables */
+    body {
+        color: #1f2937;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    .text-cyan { color: #0ea5e9 !important; }
+    .text-emerald { color: #059669 !important; }
+    .text-amber { color: #d97706 !important; }
+    .text-muted { color: #5f7892 !important; }
+
+    /* Core Application Glow Title Accentuation */
+    .glow-title {
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        color: #0f172a;
+        text-shadow: none;
+    }
+
+    /* Modern Glassmorphic Container Nodes */
+    .sec-card {
+        background: #ffffff;
+        border: 1px solid #dbe7f3;
+        border-radius: 12px !important;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+        transition: border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .sec-card:hover {
+        border-color: rgba(14, 165, 233, 0.35);
+    }
+
+    /* Sleek Polished Datatables */
+    .table-cyber { color: #1f2937 !important; font-size: 0.9rem; }
+    .table-cyber th {
+        background-color: #f3f8fd !important;
+        color: #0369a1 !important;
+        border-color: #dbe7f3 !important;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        padding: 14px 12px;
+    }
+    .table-cyber td { 
+        background-color: #ffffff !important; 
+        border-color: #e5edf6 !important; 
+        padding: 14px 12px; 
+    }
+    .table-cyber tbody tr { 
+        transition: background-color 0.2s ease; 
+    }
+    .table-cyber tbody tr:hover { 
+        background-color: #f8fbff !important; 
+    }
+
+    /* Cyber Button Configurations */
+    .btn-cyber-outline {
+        border: 1px solid #cfe0ef;
+        color: #5f7892;
+        background: transparent;
+        transition: all 0.2s ease;
+    }
+    .btn-cyber-outline:hover {
+        border-color: #0ea5e9;
+        color: #0369a1;
+        background: #edf5fc;
+    }
+
+    .btn-pay {
+        background: rgba(16, 185, 129, 0.1);
+        color: #10b981;
+        border: 1px solid rgba(16, 185, 129, 0.2);
+        transition: all 0.2s ease;
+    }
+    .btn-pay:hover {
+        background: #10b981;
+        color: #ffffff;
+        box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
+    }
+
+    /* Hardware Accelerated Animation Framework */
+    .fade-glide-in {
+        opacity: 0;
+        transform: translateY(15px);
+        animation: dashboardFadeGlide 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .delay-1 { animation-delay: 0.1s; }
+
+    @keyframes dashboardFadeGlide { to { opacity: 1; transform: translateY(0); } }
+</style>
+
+<div class="container-fluid py-4 px-md-4 business-class-page">
+    
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4 pb-3 border-bottom border-secondary border-opacity-10 fade-glide-in">
+        <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="badge bg-emerald bg-opacity-10 text-emerald border border-emerald border-opacity-10 uppercase tracking-wider px-2 py-1" style="font-size: 0.65rem;">Institutional Revenue Hub</span>
+                {% if active_year %}
+                    <span class="text-muted small">| Active Session: {{ active_year.name }}</span>
+                {% endif %}
+            </div>
+            <h2 class="glow-title mb-1"><i class="fas fa-wallet text-emerald me-2"></i>Class Financial Matrix: {{ klass.name }}</h2>
+            <p class="text-muted small mb-0">Processing institutional revenue streams and tuition clearance for {{ klass.name }} directory.</p>
+        </div>
+        <div class="mt-3 mt-md-0">
+            <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-cyber-outline rounded-3 px-3 py-2 fw-semibold fs-7">
+                <i class="fas fa-arrow-left-long me-2"></i>Back to Finance Terminal
+            </a>
+        </div>
+    </div>
+
+    <div class="card sec-card p-4 fade-glide-in delay-1">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4">
+            <div>
+                <h5 class="text-dark font-weight-bold mb-0">Student Payment Ledger</h5>
+                <p class="text-muted small mb-0">Real-time tuition verification and revenue ingestion gateway.</p>
+            </div>
+            <div class="d-flex gap-3">
+                <div class="bg-light border border-secondary border-opacity-20 px-3 py-2 rounded-3 text-center">
+                    <span class="text-muted d-block tracking-wider uppercase mb-1" style="font-size: 0.6rem;">Enrollment</span>
+                    <span class="text-cyan font-monospace fw-bold">{{ students|length }} Nodes</span>
+                </div>
+                <div class="bg-light border border-secondary border-opacity-20 px-3 py-2 rounded-3 text-center">
+                    <span class="text-muted d-block tracking-wider uppercase mb-1" style="font-size: 0.6rem;">Total Revenue Ingested</span>
+                    {% set total_class_paid = students|sum(attribute='total_paid') %}
+                    <span class="text-emerald font-monospace fw-bold">${{ "{:,.2f}".format(total_class_paid|float) }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="table-responsive rounded-3 border border-secondary border-opacity-10">
+            <table class="table table-cyber align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Operator</th>
+                        <th>Student ID</th>
+                        <th>Identity</th>
+                        <th>Status</th>
+                        <th>Total Paid</th>
+                        <th>Transactions</th>
+                        <th class="text-end">Operation</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for student in students %}
+                    <tr>
+                        <td>
+                            <div style="width: 40px; height: 40px;">
+                                <img src="{{ student.photo_url }}" alt="Avatar" class="w-100 h-100 object-fit-cover rounded border border-secondary border-opacity-20" />
+                            </div>
+                        </td>
+                        <td class="font-monospace text-cyan" style="font-size: 0.8rem;">#{{ student.student_id }}</td>
+                        <td>
+                            <div class="fw-bold text-dark">{{ student.full_name }}</div>
+                            <div class="text-muted" style="font-size: 0.75rem;">{{ student.email }}</div>
+                        </td>
+                        <td>
+                            <div class="d-flex flex-wrap gap-1">
+                                {% if student.is_registered %}
+                                <span class="badge bg-emerald bg-opacity-10 text-emerald border border-emerald border-opacity-10 px-2 py-1" style="font-size: 0.65rem;">REGISTERED</span>
+                                {% else %}
+                                <span class="badge bg-amber bg-opacity-10 text-amber border border-amber border-opacity-10 px-2 py-1" style="font-size: 0.65rem;">PENDING</span>
+                                {% endif %}
+                                {% if student.is_promoted %}
+                                <span class="badge bg-cyan bg-opacity-10 text-cyan border border-cyan border-opacity-10 px-2 py-1" style="font-size: 0.65rem;">PROMOTED</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="font-monospace fw-semibold text-emerald">
+                            ${{ "{:,.2f}".format(student.total_paid|float) }}
+                        </td>
+                        <td>
+                            <span class="badge bg-light border border-secondary border-opacity-30 text-muted px-2 py-1 font-monospace">
+                                {{ student.payment_count }} TXs
+                            </span>
+                        </td>
+                        <td class="text-end">
+                            <div class="d-flex flex-wrap gap-1 justify-content-end">
+                                {% if not student.is_registered %}
+                                <button type="button" class="btn btn-sm btn-outline-info rounded-3 px-2 py-1 fw-bold"
+                                        data-bs-toggle="modal" data-bs-target="#activateModal{{ student.id }}">
+                                    <i class="fas fa-unlock me-1"></i>Activate
+                                </button>
+                                {% endif %}
+                                <a href="{{ url_for('business_management', student_id=student.id, year_id=student.academic_year_id) }}" class="btn btn-sm btn-pay rounded-3 px-3 py-1.5 fw-bold" title="Ingest Payment">
+                                    <i class="fas fa-hand-holding-dollar me-1.5"></i>Record Payment
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="text-center py-5 text-muted small">
+                            <div class="mb-2"><i class="fas fa-folder-open opacity-25 fa-2x"></i></div>
+                            No structural student array nodes initialized inside this directory.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+{% for student in students %}
+{% if not student.is_registered %}
+<div class="modal fade" id="activateModal{{ student.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-white border border-secondary text-dark">
+            <div class="modal-header border-secondary border-opacity-25">
+                <h5 class="modal-title"><i class="fas fa-unlock text-cyan me-2"></i>Activate Registration</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Confirm registration fee clearance for <strong>{{ student.full_name }}</strong> ({{ student.student_id }}).</p>
+            </div>
+            <div class="modal-footer border-secondary border-opacity-25">
+                <button type="button" class="btn btn-cyber-outline" data-bs-dismiss="modal">Cancel</button>
+                <form method="post" action="{{ url_for('finance_activate_student', student_id=student.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="next" value="{{ url_for('business_class_students', class_id=klass.id) }}">
+                    <button type="submit" class="btn btn-pay">Confirm Activation</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endfor %}
+
+{% endblock %}

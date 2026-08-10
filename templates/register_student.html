@@ -1,0 +1,193 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h3 class="text-white border-bottom border-secondary border-opacity-25 pb-2">
+                <i class="fas fa-user-plus text-cyan me-2"></i>Register / Update Student Identity
+            </h3>
+        </div>
+    </div>
+
+    <div class="card bg-dark border-secondary border-opacity-25 rounded-3 mb-5 shadow-sm">
+        <div class="card-header bg-transparent border-bottom border-secondary border-opacity-10 py-3">
+            <h5 class="card-title text-white-50 mb-0"><i class="fas fa-sliders-h me-2 text-cyan"></i>Data Configuration Fields</h5>
+        </div>
+        <div class="card-body">
+            <form method="post" enctype="multipart/form-data" novalidate>
+                {{ form.hidden_tag() }}
+
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        {{ form.student_id.label(class="form-label text-white-50 small") }}
+                        {{ form.student_id(class="form-control bg-dark border-secondary text-white font-monospace") }}
+                        {% if form.student_id.errors %}
+                            <div class="text-danger small mt-1">{% for error in form.student_id.errors %}{{ error }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-4">
+                        {{ form.first_name.label(class="form-label text-white-50 small") }}
+                        {{ form.first_name(class="form-control bg-dark border-secondary text-white") }}
+                        {% if form.first_name.errors %}
+                            <div class="text-danger small mt-1">{% for error in form.first_name.errors %}{{ error }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-4">
+                        {{ form.last_name.label(class="form-label text-white-50 small") }}
+                        {{ form.last_name(class="form-control bg-dark border-secondary text-white") }}
+                        {% if form.last_name.errors %}
+                            <div class="text-danger small mt-1">{% for error in form.last_name.errors %}{{ error }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-md-3">
+                        {{ form.dob.label(class="form-label text-white-50 small") }}
+                        {{ form.dob(class="form-control bg-dark border-secondary text-white", type="date") }}
+                        {% if form.dob.errors %}
+                            <div class="text-danger small mt-1">{% for error in form.dob.errors %}{{ error }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-3">
+                        {{ form.gender.label(class="form-label text-white-50 small") }}
+                        {{ form.gender(class="form-select bg-dark border-secondary text-white") }}
+                    </div>
+                    <div class="col-md-3">
+                        {{ form.level.label(class="form-label text-white-50 small") }}
+                        {{ form.level(class="form-select bg-dark border-secondary text-white") }}
+                    </div>
+                    <div class="col-md-3">
+                        {{ form.klass.label(class="form-label text-white-50 small") }}
+                        {{ form.klass(class="form-select bg-dark border-secondary text-white") }}
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-3 p-3 bg-secondary bg-opacity-5 rounded border border-secondary border-opacity-10">
+                    <div class="col-12 mb-1">
+                        <span class="text-cyan small fw-bold"><i class="fas fa-shield-alt me-1"></i> Optional System Login Profile</span>
+                    </div>
+                    <div class="col-md-6">
+                        {{ form.email.label(class="form-label text-white-50 small") }}
+                        {{ form.email(class="form-control bg-dark border-secondary text-white", placeholder="Optional student profile login email") }}
+                        {% if form.email.errors %}
+                            <div class="text-danger small mt-1">{% for error in form.email.errors %}{{ error }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-6">
+                        {{ form.password.label(class="form-label text-white-50 small") }}
+                        {{ form.password(class="form-control bg-dark border-secondary text-white", placeholder="Assign initial login credential") }}
+                        {% if form.password.errors %}
+                            <div class="text-danger small mt-1">{% for error in form.password.errors %}{{ error }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-4">
+                    <div class="col-md-4">
+                        {{ form.parent_email.label(class="form-label text-white-50 small") }}
+                        {{ form.parent_email(class="form-control bg-dark border-secondary text-white") }}
+                    </div>
+                    <div class="col-md-3">
+                        {{ form.academic_year.label(class="form-label text-white-50 small") }}
+                        {{ form.academic_year(class="form-select bg-dark border-secondary text-white") }}
+                    </div>
+                    <div class="col-md-2">
+                        {{ form.registration_fees.label(class="form-label text-white-50 small") }}
+                        {{ form.registration_fees(class="form-control bg-dark border-secondary text-white") }}
+                    </div>
+                    <div class="col-md-3">
+                        {{ form.photo.label(class="form-label text-white-50 small") }}
+                        {{ form.photo(class="form-control bg-dark border-secondary text-white") }}
+                    </div>
+                </div>
+
+                <div class="text-end">
+                    {{ form.submit(class="btn btn-cyan px-4 py-2 rounded-3 text-dark fw-bold") }}
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <h4 class="text-white-50 mb-3"><i class="fas fa-database text-cyan me-2"></i>Active Records Ledger Blueprint</h4>
+            
+            <div class="table-responsive rounded-3 border border-secondary border-opacity-10 shadow-sm">
+                <table class="table table-cyber align-middle mb-0 text-white">
+                    <thead class="bg-dark text-white-50">
+                        <tr>
+                            <th>Photo Node</th>
+                            <th>Index Keys</th>
+                            <th>Full Identity</th>
+                            <th>Class Room</th>
+                            <th>Secure Email Address</th>
+                            <th>Academic Session</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in students %}
+                        <tr>
+                            <td>
+                                <div style="width: 44px; height: 44px;">
+                                    {% if s.photo %}
+                                        <img src="{{ url_for('static', filename=s.photo) }}" 
+                                             alt="Student Array Photo" class="w-100 h-100 object-fit-cover rounded border border-secondary border-opacity-20">
+                                    {% else %}
+                                        <div class="bg-secondary text-white rounded d-flex align-items-center justify-content-center w-100 h-100 border border-secondary border-opacity-20 small fw-bold">
+                                            {{ s.first_name[0] | upper }}{{ s.last_name[0] | upper }}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </td>
+
+                            <td class="font-monospace text-cyan" style="font-size:0.8rem;">#{{ s.student_id }}</td>
+                            
+                            <td>
+                                <span class="fw-bold text-white d-block">{{ s.first_name }} {{ s.last_name }}</span>
+                                <small class="text-muted" style="font-size: 0.75rem;">Type: {{ s.registration_type if s.registration_type else 'New' }}</small>
+                            </td>
+
+                            <td>
+                                <span class="text-white-50">
+                                    <i class="fas fa-folder text-cyan opacity-25 me-1.5 small"></i>
+                                    {{ s.klass.name if s.klass else 'Unallocated' }}
+                                </span>
+                            </td>
+
+                            <td class="text-muted" style="font-size:0.8rem;">
+                                {{ s.user.email if s.user else (s.parent_email if s.parent_email else 'No Email Assigned') }}
+                            </td>
+
+                            <td>
+                                <span class="badge bg-secondary bg-opacity-10 text-white-50 border border-secondary border-opacity-10 px-2 py-1">
+                                    {{ s.academic_year.name if s.academic_year else '-' }}
+                                </span>
+                            </td>
+
+                            <td class="text-end">
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <a href="{{ url_for('edit_student', student_id=s.id) }}" class="btn btn-sm btn-warning rounded-start px-2.5 py-1" style="font-size:0.75rem;">
+                                        <i class="fas fa-user-gear me-1"></i>Edit
+                                    </a>
+                                    <a href="#" class="btn btn-sm btn-outline-info px-2.5 py-1" style="font-size:0.75rem;" title="View Ledger Account">
+                                        <i class="fas fa-receipt"></i> Finances
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center py-4 text-muted small">
+                                <i class="fas fa-inbox opacity-25 me-1.5"></i>No structural student nodes initialized inside this directory frame yet.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

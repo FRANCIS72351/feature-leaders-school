@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+{% block title %}System License Control{% endblock %}
+{% block content %}
+
+<style>
+    .system-control-page { color: #1f2937; }
+    .system-control-page .text-white-50,
+    .system-control-page .text-white { color: #5f7892 !important; }
+    .sec-card { background: #ffffff; border: 1px solid #dbe7f3; border-radius: 14px; box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08); }
+    .form-cyber { background: #ffffff !important; border: 1px solid #cfe0ef !important; color: #0f172a !important; }
+    .status-active { color: #1cc88a; }
+    .status-hold { color: #f43f5e; }
+</style>
+
+<div class="container py-4 system-control-page">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline-secondary text-dark rounded-3">
+                <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+            </a>
+            <h3 class="text-dark fw-bold mt-3 mb-1">System License Control</h3>
+            <p class="text-muted small mb-0">Activate or deactivate the entire school platform for all users.</p>
+        </div>
+        <div class="text-end">
+            <div class="small text-muted text-uppercase">Current Status</div>
+            {% if settings.system_active %}
+            <div class="h4 status-active mb-0"><i class="fas fa-circle-check me-2"></i>ACTIVE</div>
+            {% else %}
+            <div class="h4 status-hold mb-0"><i class="fas fa-pause-circle me-2"></i>ON HOLD</div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if not settings.system_active %}
+    <div class="alert alert-danger border-danger bg-danger bg-opacity-10 mb-4">
+        <strong>System is on hold.</strong> Teachers, students, principals, and all other roles are blocked.
+        Only administrators can sign in until you activate the system again.
+        {% if settings.deactivated_at %}
+        <div class="small mt-1 opacity-75">Deactivated: {{ settings.deactivated_at.strftime('%Y-%m-%d %H:%M UTC') }}</div>
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="alert alert-success border-success bg-success bg-opacity-10 mb-4">
+        <strong>System is active.</strong> All users with valid accounts can access the platform.
+    </div>
+    {% endif %}
+
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <div class="card sec-card p-4">
+                <h5 class="text-dark mb-3"><i class="fas fa-power-off me-2 text-warning"></i>Activation Controls</h5>
+                <p class="text-muted small">
+                    Use this when a school has not paid for the next academic year. Deactivating locks out
+                    everyone except admin. Reactivate after payment is received.
+                </p>
+                {% set toggle_csrf = csrf_token() %}
+                {% if settings.system_active %}
+                <form method="POST" action="{{ url_for('admin_system_deactivate') }}" class="d-inline"
+                      onsubmit="return confirm('Place the ENTIRE system on hold? All non-admin users will be locked out immediately.');">
+                    <input type="hidden" name="csrf_token" value="{{ toggle_csrf }}">
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-pause me-2"></i>Deactivate System (Hold)
+                    </button>
+                </form>
+                {% else %}
+                <form method="POST" action="{{ url_for('admin_system_activate') }}" class="d-inline"
+                      onsubmit="return confirm('Restore full system access for all users?');">
+                    <input type="hidden" name="csrf_token" value="{{ toggle_csrf }}">
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-play me-2"></i>Activate System
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card sec-card p-4">
+                <h5 class="text-dark mb-3"><i class="fas fa-address-book me-2 text-info"></i>Hold Page Contact Info</h5>
+                <p class="text-muted small mb-3">
+                    Shown to schools when the system is on hold. Official architect:
+                    <strong class="text-dark">{{ system_architect_name }}</strong>
+                </p>
+                <form method="POST" action="{{ url_for('admin_system_control') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="save_contact">
+
+                    <div class="mb-3">
+                        <label class="form-label text-white-50 small">Architect Email</label>
+                        <input type="email" name="admin_contact_email" class="form-control form-cyber"
+                               value="{{ settings.admin_contact_email }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-white-50 small">WhatsApp Number</label>
+                        <input type="text" name="admin_contact_phone" class="form-control form-cyber"
+                               value="{{ settings.admin_contact_phone or '' }}" placeholder="0889358194">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-white-50 small">Message for locked-out users</label>
+                        <textarea name="hold_message" class="form-control form-cyber" rows="4" required>{{ settings.hold_message }}</textarea>
+                    </div>
+                    <button type="submit" class="btn btn-outline-info w-100">Save Contact Details</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

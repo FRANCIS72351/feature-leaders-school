@@ -1,0 +1,48 @@
+{% extends 'admin/events/base.html' %}
+{% block admin_page_title %}Manage Events{% endblock %}
+{% block admin_page_content %}
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <p class="text-muted mb-0">
+      {{ events|length }} event{{ events|length != 1 and 's' or '' }} scheduled.
+    </p>
+    <a href="{{ url_for('admin_events_create') }}" class="btn btn-success">+ Add Event</a>
+  </div>
+
+  {% if events %}
+    <div class="table-responsive">
+      <table class="table table-striped align-middle shadow-sm">
+        <thead class="table-primary">
+          <tr>
+            <th>Title</th>
+            <th class="w-50">Description</th>
+            <th>Type</th>
+            <th>Date</th>
+            <th>Location</th>
+            <th class="text-center">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in events %}
+            <tr>
+              <td class="fw-semibold">{{ event.title }}</td>
+              <td class="text-muted">{{ event.description[:100] }}{% if event.description|length > 100 %}…{% endif %}</td>
+              <td><span class="badge bg-info text-dark">{{ (event.event_type or 'general')|replace('_', ' ')|title }}</span></td>
+              <td>{{ event.date.strftime('%b %d, %Y') }}</td>
+              <td>{{ event.location or '—' }}</td>
+              <td class="text-center">
+                <div class="btn-group" role="group">
+                  <a href="{{ url_for('admin_events_edit', event_id=event.id) }}" class="btn btn-outline-primary btn-sm">Edit</a>
+                  <a href="{{ url_for('admin_events_delete', event_id=event.id) }}" class="btn btn-outline-danger btn-sm">Delete</a>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="text-center bg-light py-5 rounded shadow-sm">
+      <p class="lead text-muted mb-0">No events yet. Start by creating your first event.</p>
+    </div>
+  {% endif %}
+{% endblock %}

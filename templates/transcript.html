@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}Transcript - {{ student.full_name }}{% endblock %}
+{% block content %}
+<h2>Academic Transcript for {{ student.full_name }}</h2>
+
+<p><strong>Student ID:</strong> {{ student.student_id }}</p>
+<p><strong>Overall GPA:</strong> {{ overall_gpa | round(2) }}</p>
+
+{% for year, grades in grades_by_year.items() %}
+<h3>{{ year }}</h3>
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>Period</th>
+            <th>Subject</th>
+            <th>Score</th>
+            <th>Grade</th>
+            <th>Remarks</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for grade in grades %}
+        <tr>
+            <td>{{ grade.period }}</td>
+            <td>{{ grade.subject or 'N/A' }}</td>
+            <td>{{ grade.score or '-' }}</td>
+            <td>{{ grade.score | default(0) | grade_letter }}</td>
+            <td>{{ grade.score | default(0) | remarks }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endfor %}
+
+<h3>Grading Legend</h3>
+<ul>
+    <li>A: 90-100 (Excellent)</li>
+    <li>B: 80-89 (Very Good)</li>
+    <li>C: 70-79 (Good)</li>
+    <li>D: 60-69 (Satisfactory)</li>
+    <li>F: Below 60 (Failing)</li>
+</ul>
+
+<!-- QR Code for verification -->
+<div class="mt-4 p-3 border rounded bg-light d-inline-block text-center">
+    <img src="data:image/png;base64,{{ qr_code }}" alt="Verification QR Code" class="mb-2">
+    <p class="small text-muted mb-1">Scan to verify authenticity on the school website</p>
+    {% if verify_url %}
+    <p class="small mb-0"><a href="{{ verify_url }}" target="_blank" rel="noopener">{{ verify_url }}</a></p>
+    {% endif %}
+</div>
+{% endblock %}

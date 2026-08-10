@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3>Record Attendance</h3>
+<form method="post">
+  {{ form.hidden_tag() }}
+  <div class="mb-3">{{ form.student_id.label }} {{ form.student_id(class_="form-control") }}</div>
+  <div class="mb-3">{{ form.date.label }} {{ form.date(class_="form-control") }}</div>
+  <div class="mb-3">{{ form.status.label }} {{ form.status(class_="form-control") }}</div>
+  <div class="mb-3">{{ form.notes.label }} {{ form.notes(class_="form-control") }}</div>
+  <div>{{ form.submit(class_="btn btn-primary") }}</div>
+</form>
+{% endblock %}

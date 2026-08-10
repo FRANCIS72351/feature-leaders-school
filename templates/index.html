@@ -1,0 +1,551 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="landing-scope">
+  <header class="hero-wrapper position-relative overflow-hidden d-flex align-items-center">
+    <div class="hero-bg" style="background-image: url('{{ url_for('static', filename='images/background.png') }}');"></div>
+    <div class="hero-overlay"></div>
+    
+    <div class="container py-5 position-relative text-white" style="z-index: 3;">
+      <div class="row align-items-center g-5">
+        <div class="col-lg-6" data-aos="fade-right">
+          <span class="badge bg-brand-light text-brand fw-bold mb-3 px-3 py-2 text-uppercase tracking-wider">Future Leaders Preparatory Academy (F.L.P.A)</span>
+          <h1 class="display-4 fw-extrabold text-brand mb-3">Character. Community. Excellence.</h1>
+          <p class="lead text-brand mb-4 opacity-90 fw-medium">Empowering future leaders through Service, Discipline, and Success. Established since 2013 on Lounge Street, South America.</p>
+          <div class="d-flex flex-wrap gap-3">
+            <a href="{{ url_for('login') }}" class="btn btn-action-primary btn-lg"><i class="fas fa-sign-in-alt me-2"></i>Access Portal</a>
+            <a href="{{ url_for('about') }}" class="btn btn-action-outline btn-lg">Discover More</a>
+          </div>
+        </div>
+        
+        <div class="col-lg-5 ms-auto" data-aos="fade-left">
+          <div class="highlight-card shadow-lg p-4 border-0">
+            <div class="d-flex align-items-center gap-2 text-brand fw-bold text-uppercase small tracking-wider mb-3">
+              <span class="pulse-indicator"></span> Next Key Institutional Event
+            </div>
+            {% if highlighted_event %}
+              <h3 class="h4 fw-bold text-dark mb-2">{{ highlighted_event.title }}</h3>
+              <p class="text-muted small mb-4 row-limit-3">{{ highlighted_event.description[:160] }}{% if highlighted_event.description|length > 160 %}…{% endif %}</p>
+              <div class="d-flex align-items-center justify-content-between pt-2 border-top border-light">
+                <span class="badge badge-date font-monospace"><i class="far fa-calendar-alt me-1"></i>{{ highlighted_event.date.strftime('%b %d, %Y') }}</span>
+                <a href="{{ url_for('events_list') }}" class="btn btn-sm btn-link text-brand p-0 fw-bold text-decoration-none">View all events <i class="fas fa-arrow-right ms-1"></i></a>
+              </div>
+            {% else %}
+              <div class="py-4 text-center">
+                <i class="far fa-calendar-times text-muted fa-2x mb-2"></i>
+                <p class="text-muted small mb-0">No upcoming events are scheduled at this time.</p>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section class="container py-5" data-aos="fade-up">
+    <div id="homeImageSlider" class="carousel slide carousel-fade home-visual-slider shadow-sm" data-bs-ride="carousel" data-bs-interval="6200">
+      <div class="carousel-indicators">
+        <button type="button" data-bs-target="#homeImageSlider" data-bs-slide-to="0" class="active" aria-current="true" aria-label="Slide 1"></button>
+        <button type="button" data-bs-target="#homeImageSlider" data-bs-slide-to="1" aria-label="Slide 2"></button>
+        <button type="button" data-bs-target="#homeImageSlider" data-bs-slide-to="2" aria-label="Slide 3"></button>
+        <button type="button" data-bs-target="#homeImageSlider" data-bs-slide-to="3" aria-label="Slide 4"></button>
+      </div>
+
+      <div class="carousel-inner">
+        <div class="carousel-item active">
+          <img src="{{ url_for('static', filename='images/TIT.png') }}" class="d-block w-100 home-slider-image" alt="Students on campus">
+          <div class="carousel-caption home-slider-caption d-none d-md-block">
+            <h3>Campus Life</h3>
+            <p>Building confidence, character, and academic excellence every day.</p>
+          </div>
+        </div>
+        <div class="carousel-item">
+          <img src="{{ url_for('static', filename='images/background.png') }}" class="d-block w-100 home-slider-image" alt="Back on campus campaign">
+          <div class="carousel-caption home-slider-caption d-none d-md-block">
+            <h3>Back On Campus</h3>
+            <p>A vibrant and welcoming environment for learning.</p>
+          </div>
+        </div>
+        <div class="carousel-item">
+          <img src="{{ url_for('static', filename='images/slider1.png') }}" class="d-block w-100 home-slider-image" alt="School highlight image 1">
+        </div>
+        <div class="carousel-item">
+          <img src="{{ url_for('static', filename='images/slider2.png') }}" class="d-block w-100 home-slider-image" alt="School highlight image 2">
+        </div>
+      </div>
+
+      <button class="carousel-control-prev" type="button" data-bs-target="#homeImageSlider" data-bs-slide="prev">
+        <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+        <span class="visually-hidden">Previous</span>
+      </button>
+      <button class="carousel-control-next" type="button" data-bs-target="#homeImageSlider" data-bs-slide="next">
+        <span class="carousel-control-next-icon" aria-hidden="true"></span>
+        <span class="visually-hidden">Next</span>
+      </button>
+    </div>
+  </section>
+
+  <section class="container py-6">
+    <div class="row g-4">
+      <div class="col-md-4" data-aos="zoom-in" data-aos-delay="100">
+        <div class="info-card p-4 h-100 border-0 bg-white">
+          <div class="icon-avatar-frame bg-brand-light text-brand mb-3">
+            <i class="fas fa-user-shield"></i>
+          </div>
+          <h5 class="fw-bold text-dark mb-2">For Administrators</h5>
+          <p class="text-muted small mb-0">Audit classes, coordinate instructor workflows, and audit real-time rosters with multi-tiered role access permissions.</p>
+        </div>
+      </div>
+      <div class="col-md-4" data-aos="zoom-in" data-aos-delay="200">
+        <div class="info-card p-4 h-100 border-0 bg-white">
+          <div class="icon-avatar-frame bg-accent-light text-accent mb-3">
+            <i class="fas fa-chalkboard-teacher"></i>
+          </div>
+          <h5 class="fw-bold text-dark mb-2">For Instructors</h5>
+          <p class="text-muted small mb-0">Upload computational grades, record real-time attendance matrix, and sync communication with guardians instantly.</p>
+        </div>
+      </div>
+      <div class="col-md-4" data-aos="zoom-in" data-aos-delay="300">
+        <div class="info-card p-4 h-100 border-0 bg-white">
+          <div class="icon-avatar-frame bg-navy-light text-navy mb-3">
+            <i class="fas fa-wallet"></i>
+          </div>
+          <h5 class="fw-bold text-dark mb-2">For Financial Offices</h5>
+          <p class="text-muted small mb-0">Reconcile transaction registries, manage custom fee rules, and automate business ledger audits for key stakeholders.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {% if entrance_highlights or info_sheet_highlights %}
+  <section class="container pb-5">
+    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mb-4">
+      <div>
+        <h2 class="fw-bold text-dark mb-1">📢 Admissions &amp; Academic Year Updates</h2>
+        <p class="text-muted small mb-0">Downloadable entrance exam notices and academic year information sheets.</p>
+      </div>
+      <a href="{{ url_for('school_media_gallery') }}" class="btn btn-action-outline-brand px-4 btn-sm rounded-3 fw-bold">View All School Media</a>
+    </div>
+
+    <div class="row g-4">
+      {% for item in entrance_highlights %}
+      <div class="col-md-6" data-aos="fade-up">
+        <div class="card h-100 border-0 shadow-sm bg-white">
+          <div class="card-body p-4">
+            <span class="badge bg-brand text-white mb-2">Entrance Exam</span>
+            <h3 class="h5 fw-bold text-dark">{{ item.title }}</h3>
+            {% if item.description %}<p class="text-muted small mb-3">{{ item.description[:180] }}{% if item.description|length > 180 %}…{% endif %}</p>{% endif %}
+            {% if item.static_file_path %}
+            <a href="{{ url_for('school_media_download', item_id=item.id) }}" class="btn btn-sm btn-action-primary"><i class="fas fa-download me-1"></i>Download Notice</a>
+            {% elif item.external_url %}
+            <a href="{{ item.external_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-action-outline-brand">Learn More</a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+
+      {% for item in info_sheet_highlights %}
+      <div class="col-md-4" data-aos="fade-up" data-aos-delay="100">
+        <div class="card h-100 border-0 shadow-sm bg-white">
+          <div class="card-body p-4 d-flex flex-column">
+            <span class="badge bg-navy text-white mb-2">Info Sheet</span>
+            <h3 class="h6 fw-bold text-dark">{{ item.title }}</h3>
+            {% if item.academic_year %}<div class="small text-muted mb-2">{{ item.academic_year.name }}</div>{% endif %}
+            <div class="mt-auto">
+              {% if item.static_file_path %}
+              <a href="{{ url_for('school_media_download', item_id=item.id) }}" class="btn btn-sm btn-action-outline-brand w-100"><i class="fas fa-file-download me-1"></i>Download Sheet</a>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if latest_announcements %}
+  <section class="container pb-6">
+    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mb-4">
+      <div>
+        <h2 class="fw-bold text-dark mb-1">📢 School Announcements</h2>
+        <p class="text-muted small mb-0">Latest notices and updates from the school administration.</p>
+      </div>
+      <a href="{{ url_for('login') }}" class="btn btn-action-outline-brand px-4 btn-sm rounded-3 fw-bold">Staff Login to Post</a>
+    </div>
+
+    <div class="row g-4">
+      {% for item in latest_announcements %}
+      <div class="col-md-6 col-lg-4" data-aos="fade-up" data-aos-delay="{{ loop.index0 * 80 }}">
+        <div class="card h-100 border-0 shadow-sm bg-white">
+          <div class="card-body p-4 d-flex flex-column">
+            <div class="d-flex flex-wrap gap-2 mb-2">
+              {% if item.category == 'deadline' %}
+              <span class="badge bg-brand text-white">Deadline</span>
+              {% elif item.category == 'warning' %}
+              <span class="badge bg-danger">Alert</span>
+              {% elif item.category == 'business_finance' %}
+              <span class="badge bg-navy text-white">Finance</span>
+              {% else %}
+              <span class="badge bg-brand-light text-brand">General</span>
+              {% endif %}
+              <span class="badge bg-light text-dark border text-uppercase">{{ item.target_role or 'all' }}</span>
+            </div>
+            <h3 class="h6 fw-bold text-dark mb-2">{{ item.title }}</h3>
+            <p class="text-muted small flex-grow-1 mb-3" style="white-space: pre-line;">{{ item.content[:200] }}{% if item.content|length > 200 %}…{% endif %}</p>
+            <div class="small text-muted mt-auto pt-2 border-top">
+              <i class="fas fa-user-pen me-1"></i>{{ item.author or 'School Office' }}
+              {% if item.created_at %}
+              <span class="ms-2"><i class="far fa-clock me-1"></i>{{ item.formatted_date }}</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <section id="upcoming-schedule" class="container pb-6">
+    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mb-4">
+      <div>
+        <h2 class="fw-bold text-dark mb-1">📅 Upcoming Academic Schedule</h2>
+        <p class="text-muted small mb-0">Track upcoming terminal schedules, operational events, and session markers.</p>
+      </div>
+      <a href="{{ url_for('events_list') }}" class="btn btn-outline-secondary px-4 btn-sm rounded-3 fw-bold text-dark">View Entire Calendar</a>
+    </div>
+    
+    {% if events %}
+      <div class="row g-4">
+        {% for event in events %}
+        <div class="col-md-4" data-aos="fade-up" data-aos-delay="{{ loop.index0 * 100 }}">
+          <div class="card event-card h-100 border-0 bg-white">
+            <div class="card-body p-4 d-flex flex-column">
+              <div class="mb-3"><span class="badge badge-date font-monospace text-brand"><i class="far fa-clock me-1"></i>{{ event.date.strftime('%b %d, %Y') }}</span></div>
+              <h5 class="card-title text-dark fw-bold h6 mb-2">{{ event.title }}</h5>
+              <p class="card-text text-muted small mb-4 flex-grow-1">{{ event.description[:140] }}{% if event.description|length > 140 %}…{% endif %}</p>
+              <a href="{{ url_for('events_list') }}" class="stretched-link text-brand small fw-bold text-decoration-none d-inline-flex align-items-center gap-1">See Event Parameters <i class="fas fa-chevron-right style-micro"></i></a>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="card border-0 p-5 text-center text-muted shadow-sm bg-white" data-aos="fade-up">
+        <i class="fas fa-calendar-alt fa-2x text-light mb-2"></i>
+        <p class="mb-0 small">No active internal calendar parameters populated. Check back shortly.</p>
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="bg-slate-100 py-6 border-top border-bottom border-light">
+    <div class="container">
+      <div class="row align-items-center g-5">
+        <div class="col-lg-6" data-aos="fade-right">
+          <div class="position-relative overflow-hidden rounded-4 shadow-md bg-white">
+            <img src="{{ url_for('static', filename='images/TIT.png') }}" class="w-100 object-cover d-block" alt="System Dashboard Blueprint Display" style="max-height: 400px;">
+          </div>
+        </div>
+        <div class="col-lg-6" data-aos="fade-left">
+          <h2 class="fw-bold text-dark mb-3">Enterprise Capabilities Built For Real-World Scale</h2>
+          <p class="text-muted small mb-4">A single unified code design that aggregates school data vectors securely while lowering local operational friction points.</p>
+          
+          <div class="d-flex flex-column gap-3">
+            <div class="d-flex gap-3 align-items-start">
+              <div class="feature-bullet-index bg-brand text-white shadow-sm">1</div>
+              <div>
+                <h6 class="fw-bold text-dark mb-0">Centralized Registration Core</h6>
+                <p class="text-muted small mb-0">Isolate historical academic profiles, demographics, and registration logs safely.</p>
+              </div>
+            </div>
+            <div class="d-flex gap-3 align-items-start">
+              <div class="feature-bullet-index bg-brand text-white shadow-sm">2</div>
+              <div>
+                <h6 class="fw-bold text-dark mb-0">Unified Ledger Accounts Dashboards</h6>
+                <p class="text-muted small mb-0">Track fee status arrays, record balance points, and generate clear status visibility statements.</p>
+              </div>
+            </div>
+            <div class="d-flex gap-3 align-items-start">
+              <div class="feature-bullet-index bg-brand text-white shadow-sm">3</div>
+              <div>
+                <h6 class="fw-bold text-dark mb-0">Encrypted Role Hierarchy Blueprints</h6>
+                <p class="text-muted small mb-0">Enforce strict data integrity with invisible administrative controls and session token verification logic.</p>
+              </div>
+            </div>
+          </div>
+          <a href="{{ url_for('about') }}" class="btn btn-action-primary mt-4 px-4">Analyze Product Matrix</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="container py-5" data-aos="fade-up">
+    <div class="card border-0 shadow-sm bg-white p-4 p-md-5 text-center">
+      <h2 class="fw-bold text-dark mb-2">School Media Updates</h2>
+      <p class="text-muted mb-3">Latest photos, videos, and campus updates are available in the media gallery.</p>
+      <div>
+        <a href="{{ url_for('school_media_gallery') }}" class="btn btn-outline-secondary btn-sm rounded-3 fw-bold">Open Media Gallery</a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer-bg text-slate-300 py-5 border-top border-brand-dark position-relative overflow-hidden">
+    <div class="container position-relative" style="z-index: 2;">
+      <div class="row g-4 align-items-center text-center text-md-start mb-4">
+        <div class="col-md-6">
+          <h5 class="fw-bold text-brand mb-1">Future Leaders Preparatory Academy (F.L.P.A)</h5>
+          <p class="small text-brand mb-2 font-monospace">Established Since 2013 | Lounge Street, South America</p>
+          <p class="small text-brand mb-0"><em>"Character. Community. Excellence. Service. Discipline. Success."</em></p>
+        </div>
+        <div class="col-md-6 text-center text-md-end">
+          <a href="{{ url_for('login') }}" class="btn btn-action-primary btn-sm me-2">Portal Access</a>
+          <a href="{{ url_for('about') }}" class="btn btn-action-outline btn-sm">About Academy</a>
+        </div>
+      </div>
+      <hr class="border-secondary opacity-25 my-3">
+      <div class="text-center">
+        <p class="mb-1 text-brand small">&copy; {{ current_year }} Future Leaders Preparatory Academy. Powered by SoftnetAfrica.</p>
+        <p class="style-micro text-brand mb-0">Empowering the Next Generation of Systems.</p>
+      </div>
+    </div>
+  </footer>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+  /* Base Landing Styles */
+  .landing-scope {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: #f8fafc;
+    color: #334155;
+  }
+  
+  /* Color Palette derived from Logo: Crimson Red (#C81D25), Deep Navy (#0B192C), Gold Accent (#D4AF37) */
+  :root {
+    --brand-red: #C81D25;
+    --brand-red-hover: #9E131A;
+    --brand-navy: #0B192C;
+    --brand-gold: #D4AF37;
+  }
+
+  .text-brand { color: var(--brand-red) !important; }
+  .bg-brand { background-color: var(--brand-red) !important; }
+  .bg-brand-light { background-color: rgba(200, 29, 37, 0.15); }
+  
+  .text-navy { color: var(--brand-navy) !important; }
+  .bg-navy { background-color: var(--brand-navy) !important; }
+  .bg-navy-light { background-color: rgba(11, 25, 44, 0.08); }
+
+  .text-accent { color: var(--brand-gold) !important; }
+  .bg-accent-light { background-color: rgba(212, 175, 55, 0.12); }
+
+  .footer-bg { background-color: #07101D; }
+  .border-brand-dark { border-color: rgba(200, 29, 37, 0.3) !important; }
+
+  /* Utility Spacing Extensions */
+  .py-6 { padding-top: 5.5rem; padding-bottom: 5.5rem; }
+  .pb-6 { padding-bottom: 5.5rem; }
+  .bg-slate-100 { background-color: #f1f5f9; }
+  .text-slate-300 { color: #cbd5e1; }
+  .text-slate-400 { color: #94a3b8; }
+  .fw-extrabold { font-weight: 800; }
+  .style-micro { font-size: 0.75rem; }
+
+  /* Custom Hero Display Configurations */
+  .hero-wrapper {
+    min-height: 80vh;
+    background-color: var(--brand-navy);
+  }
+  .hero-bg {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    filter: scale(1.05) contrast(1.1) brightness(0.25);
+    z-index: 1;
+  }
+  .hero-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(200, 29, 37, 0.35) 0%, rgba(11, 25, 44, 0.92) 100%);
+    z-index: 2;
+  }
+  
+  /* Buttons */
+  .btn-action-primary {
+    background-color: var(--brand-red);
+    color: #ffffff !important;
+    font-weight: 600;
+    font-size: 0.95rem;
+    padding: 0.75rem 1.75rem;
+    border-radius: 10px !important;
+    border: none;
+    transition: all 0.25s ease;
+  }
+  .btn-action-primary:hover {
+    background-color: var(--brand-red-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(200, 29, 37, 0.3);
+  }
+  .btn-action-outline {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #ffffff !important;
+    font-weight: 600;
+    font-size: 0.95rem;
+    padding: 0.75rem 1.75rem;
+    border-radius: 10px !important;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    backdrop-filter: blur(4px);
+    transition: all 0.25s ease;
+  }
+  .btn-action-outline:hover {
+    background-color: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-2px);
+  }
+
+  .btn-action-outline-brand {
+    border: 1px solid var(--brand-red);
+    color: var(--brand-red) !important;
+    font-weight: 600;
+    transition: all 0.25s ease;
+  }
+  .btn-action-outline-brand:hover {
+    background-color: var(--brand-red);
+    color: #ffffff !important;
+  }
+
+  /* Structural Content Highlight Cards */
+  .highlight-card {
+    background: rgba(255, 255, 255, 0.96);
+    border-radius: 18px;
+    backdrop-filter: blur(10px);
+  }
+  
+  .pulse-indicator {
+    width: 8px;
+    height: 8px;
+    background-color: var(--brand-red);
+    border-radius: 50%;
+    display: inline-block;
+    animation: simplePulse 2s infinite ease-in-out;
+  }
+  @keyframes simplePulse {
+    0% { transform: scale(0.9); opacity: 0.6; }
+    50% { transform: scale(1.2); opacity: 1; }
+    100% { transform: scale(0.9); opacity: 0.6; }
+  }
+
+  /* Cards Overhaul */
+  .info-card {
+    border-radius: 16px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.02);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
+  }
+  .info-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 16px 35px rgba(0, 0, 0, 0.06);
+  }
+  .icon-avatar-frame {
+    width: 46px;
+    height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    font-size: 1.2rem;
+  }
+
+  .event-card {
+    border-radius: 16px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.03);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .event-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.07);
+  }
+  .badge-date {
+    background-color: rgba(200, 29, 37, 0.08);
+    color: var(--brand-red);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  
+  .feature-bullet-index {
+    width: 28px;
+    height: 28px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .row-limit-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .home-visual-slider {
+    border-radius: 20px;
+    overflow: hidden;
+    border: 1px solid rgba(200, 29, 37, 0.2);
+    background: #fff;
+  }
+
+  .home-slider-image {
+    height: clamp(240px, 46vw, 520px);
+    object-fit: cover;
+    object-position: center;
+    filter: contrast(1.02) saturate(1.04);
+  }
+
+  .home-slider-caption {
+    background: linear-gradient(135deg, rgba(11, 25, 44, 0.85), rgba(200, 29, 37, 0.75));
+    border-radius: 12px;
+    padding: 0.9rem 1rem;
+    text-align: left;
+    max-width: 420px;
+  }
+
+  .home-slider-caption h3 {
+    margin: 0 0 0.2rem;
+    font-size: 1.15rem;
+    color: #fffaf6 !important;
+  }
+
+  .home-slider-caption p {
+    margin: 0;
+    font-size: 0.86rem;
+    color: rgba(255, 255, 255, 0.94);
+  }
+
+  .home-visual-slider .carousel-indicators [data-bs-target] {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.82);
+  }
+
+  .home-visual-slider .carousel-indicators .active {
+    background: var(--brand-red);
+  }
+
+  .home-visual-slider .carousel-control-prev,
+  .home-visual-slider .carousel-control-next {
+    width: 8%;
+  }
+</style>
+{% endblock %}

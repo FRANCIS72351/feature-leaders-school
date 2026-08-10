@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Report Card - {{ data.student_name }}</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        :root {
+            --moe-blue: #002d62;
+            --moe-blue-light: #f0f4f8;
+            --moe-accent: #d9534f;
+            --text-main: #1a202c;
+            --text-muted: #4a5568;
+            --border-color: #cbd5e1;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: #f1f5f9;
+            color: var(--text-main);
+            margin: 0;
+            padding: 40px 20px;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        /* Interactive Controls Area */
+        .action-bar {
+            max-width: 950px;
+            margin: 0 auto 20px auto;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .btn-print {
+            background-color: var(--moe-blue);
+            color: #ffffff;
+            border: none;
+            padding: 10px 24px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 6px -1px rgba(0, 2d, 62, 0.15);
+            transition: all 0.2s ease;
+        }
+
+        .btn-print:hover {
+            background-color: #001f45;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 12px -1px rgba(0, 2d, 62, 0.25);
+        }
+
+        /* Elegant Academic Transcript Container Card */
+        .report-card {
+            background: #ffffff;
+            padding: 50px;
+            max-width: 950px;
+            margin: auto;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
+            border: 1px solid #e2e8f0;
+            position: relative;
+            box-sizing: border-box;
+            
+            /* Professional Web Entrance Fade-In Animation */
+            animation: cardEntrance 0.6s cubic-bezier(0.16, 1, 0.3, 1) ease;
+        }
+
+        @keyframes cardEntrance {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Ministry Institutional Header Layout */
+        .moe-header {
+            text-align: center;
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--moe-blue);
+            padding-bottom: 18px;
+        }
+
+        .moe-header img {
+            margin-bottom: 8px;
+            width: 50px;
+        }
+
+        .moe-header h2 {
+            font-size: 1.2rem;
+            font-weight: 800;
+            margin: 2px 0;
+            color: var(--moe-blue);
+            letter-spacing: 0.4px;
+        }
+
+        .moe-header h3 {
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin: 2px 0;
+            color: var(--moe-accent);
+            letter-spacing: 0.8px;
+        }
+
+        .report-title-badge {
+            display: inline-block;
+            background-color: var(--moe-blue-light);
+            color: var(--moe-blue);
+            font-weight: 700;
+            font-size: 0.75rem;
+            padding: 4px 12px;
+            border-radius: 16px;
+            margin-top: 10px;
+            letter-spacing: 0.4px;
+        }
+
+        /* Identity Profile Meta Matrix Blocks */
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 25px;
+            background: #f8fafc;
+            padding: 15px 20px;
+            border-radius: 10px;
+            border: 1px solid #edf2f7;
+            text-align: left;
+        }
+
+        .meta-item {
+            font-size: 0.88rem;
+            color: var(--text-muted);
+        }
+
+        .meta-item strong {
+            color: var(--text-main);
+            font-weight: 600;
+        }
+
+        /* High-Definition Analytical Ledger Table Styling */
+        .transcript-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 24px;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            word-break: break-word;
+            table-layout: fixed;
+        }
+
+        .transcript-table th {
+            background-color: var(--moe-blue);
+            color: #ffffff;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            padding: 10px 6px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .transcript-table td {
+            border: 1px solid var(--border-color);
+            font-size: 0.8rem;
+            height: 32px;
+            text-align: center;
+            padding: 4px 5px;
+            color: var(--text-main);
+        }
+
+        .transcript-table tbody tr {
+            transition: background-color 0.15s ease;
+        }
+
+        .transcript-table tbody tr:hover {
+            background-color: #f8fafc;
+        }
+
+        .subject-name {
+            text-align: left;
+            padding-left: 10px !important;
+            font-weight: 600;
+            color: #2d3748;
+            background-color: #fafafa;
+            width: 23%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Monospace alignment for Grades columns */
+        .grade-cell {
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: 600;
+            width: 6%;
+            padding: 3px 4px;
+        }
+
+        .final-avg-cell {
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: 700;
+            color: var(--moe-blue);
+            background-color: var(--moe-blue-light);
+            width: 8%;
+            padding: 3px 4px;
+        }
+
+        /* Clean Signature Validation Sections */
+        .footer-signatures {
+            margin-top: 40px;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+        }
+
+        .senior-sheet {
+            border: 1px solid #111827;
+            padding: 14px 14px 10px;
+            border-radius: 4px;
+        }
+
+        .senior-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .senior-header .senior-logo {
+            width: 56px;
+            height: 56px;
+            object-fit: contain;
+        }
+
+        .senior-header-center {
+            flex: 1;
+            text-align: center;
+        }
+
+        .senior-school-title {
+            font-size: 1.12rem;
+            margin: 0;
+            color: #b91c1c;
+            font-weight: 800;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+        }
+
+        .senior-school-sub {
+            margin: 2px 0;
+            font-size: 0.75rem;
+            color: #0f172a;
+            font-weight: 600;
+        }
+
+        .senior-contact {
+            margin: 1px 0;
+            font-size: 0.72rem;
+            color: #334155;
+            font-weight: 600;
+        }
+
+        .senior-report-title {
+            margin: 5px 0 0;
+            font-size: 0.9rem;
+            color: #0f172a;
+            text-transform: uppercase;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+        }
+
+        .senior-meta-table,
+        .senior-grade-table,
+        .senior-grade-legend {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            margin-top: 6px;
+            border: 1px solid #1e293b;
+        }
+
+        .senior-meta-table td,
+        .senior-grade-table th,
+        .senior-grade-table td,
+        .senior-grade-legend th,
+        .senior-grade-legend td {
+            border: 1px solid #1e293b;
+            padding: 4px 5px;
+            font-size: 0.72rem;
+            color: #0f172a;
+            vertical-align: middle;
+        }
+
+        .senior-meta-label {
+            width: 14%;
+            font-weight: 700;
+            text-transform: uppercase;
+            background: #f8fafc;
+        }
+
+        .senior-meta-value {
+            font-weight: 700;
+        }
+
+        .senior-grade-table thead th {
+            background: #f1f5f9;
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 0.68rem;
+        }
+
+        .senior-subject {
+            text-align: left;
+            font-weight: 700;
+            background: #fff;
+        }
+
+        .senior-promo-row {
+            background: #fff7ed;
+            font-weight: 700;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        .senior-motto {
+            margin-top: 6px;
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: #0f172a;
+            text-transform: uppercase;
+        }
+
+        .senior-motto .motto-text {
+            color: #b91c1c;
+        }
+
+        .signature-block {
+            text-align: center;
+            width: 220px;
+        }
+
+        .signature-line {
+            border-top: 1.5px solid var(--text-main);
+            margin-bottom: 8px;
+        }
+
+        .signature-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Absolute Seamless Print Matrix Overrides */
+        @media print {
+            body {
+                background: none !important;
+                padding: 0 !important;
+                color: #000000;
+            }
+            .action-bar {
+                display: none !important;
+            }
+            .report-card {
+                border: none !important;
+                padding: 0 !important;
+                width: 100% !important;
+                box-shadow: none !important;
+                margin: 0 !important;
+                transform: none !important;
+                animation: none !important;
+            }
+            .meta-grid {
+                background: none !important;
+                border: 1px solid #000000 !important;
+                padding: 10px !important;
+            }
+            .transcript-table {
+                border: 1px solid #000000 !important;
+            }
+            .transcript-table th {
+                background-color: #f0f0f0 !important;
+                color: #000000 !important;
+                border: 1px solid #000000 !important;
+                font-weight: 700;
+            }
+            .transcript-table td {
+                border: 1px solid #000000 !important;
+                color: #000000 !important;
+            }
+            .subject-name {
+                background: none !important;
+            }
+            .final-avg-cell {
+                background: none !important;
+                color: #000000 !important;
+            }
+            .signature-line {
+                border-top-color: #000000 !important;
+            }
+        }
+    </style>
+
+    <style>
+    /* Compact-print overrides to help fit full report on a single printed page */
+    @page { size: A4; margin: 8mm; }
+
+    @media print {
+        html, body { height: 100%; }
+        body {
+            font-size: 9pt;
+            line-height: 1.15;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+            margin: 0;
+            padding: 0;
+        }
+        /* hide interactive bits */
+        .action-bar { display: none !important; }
+
+        /* Reduce card padding and margins */
+        .report-card {
+            padding: 4px 4px !important;
+            margin: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            width: auto !important;
+        }
+
+        /* Tighter header */
+        .moe-header {
+            margin-bottom: 16px !important;
+            border-bottom-width: 1px !important;
+            padding-bottom: 10px !important;
+        }
+        .moe-header img { width: 38px !important; margin-bottom: 4px !important; }
+        .moe-header h2 { font-size: 0.95rem !important; margin: 0 !important; }
+        .moe-header h3 { font-size: 0.8rem !important; margin: 2px 0 !important; }
+        .report-title-badge { font-size: 0.7rem !important; padding: 3px 8px !important; }
+
+        .meta-grid {
+            padding: 4px !important;
+            gap: 4px !important;
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        }
+        .meta-item { font-size: 0.7rem !important; }
+
+        /* Condense table */
+        .transcript-table {
+            margin-top: 4px !important;
+            table-layout: fixed !important;
+            font-size: 7pt !important;
+            border-width: 0.7px !important;
+        }
+        .transcript-table th {
+            padding: 4px 2px !important;
+            font-size: 6.8pt !important;
+        }
+        .transcript-table td {
+            padding: 2px 2px !important;
+            font-size: 6.8pt !important;
+            height: 22px !important;
+        }
+
+        .subject-name {
+            padding-left: 4px !important;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 6.8pt !important;
+            width: 20% !important;
+        }
+        .grade-cell, .final-avg-cell { padding: 1px 2px !important; }
+
+        /* Reduce signature footprint */
+        .footer-signatures {
+            margin-top: 8px !important;
+            padding: 0 3px !important;
+        }
+        .signature-block {
+            width: 36% !important;
+        }
+
+        /* Ensure table headers repeat and rows don't break */
+        thead { display: table-header-group; }
+        tfoot { display: table-footer-group; }
+        tr { page-break-inside: avoid; }
+    }
+    </style>
+</head>
+<body>
+    {% set level_text = ((data.level or '') ~ ' ' ~ (data.class_name or ''))|lower %}
+    {% set senior_high = ('10' in level_text) or ('11' in level_text) or ('12' in level_text) %}
+    {% set lower_division = ('kindergarten' in level_text) or ('k-i' in level_text) or ('k-ii' in level_text) or ('k i' in level_text) or ('k ii' in level_text) or ('kg' in level_text) %}
+    {% set elementary_division = ('elementary' in level_text) or ('grade 1' in level_text) or ('grade 2' in level_text) or ('grade 3' in level_text) or ('grade 4' in level_text) or ('grade 5' in level_text) or ('grade 6' in level_text) %}
+    {% set junior_high = ('junior high' in level_text) or ('grade 7' in level_text) or ('grade 8' in level_text) or ('grade 9' in level_text) %}
+    {% set paper_layout = senior_high or junior_high or lower_division or elementary_division %}
+    {% set division_report_title = 'Senior High Report Card' if senior_high else ('Junior High Report Card' if junior_high else ('Kindergarten Division Report Card' if lower_division else 'Elementary Division Report Card')) %}
+    {% set promotion_statement = data.promotion.label if data.promotion and data.promotion.label else 'Pending promotion decision' %}
+    {% set promotion_target = promotion_statement %}
+    {% if 'PROMOTED TO:' in promotion_statement|upper %}
+        {% set promotion_target = promotion_statement.split(':', 1)[1].strip() %}
+    {% endif %}
+    {% if not promotion_target %}
+        {% set promotion_target = 'Pending Promotion Decision' %}
+    {% endif %}
+
+    <div class="action-bar">
+        {% if parent_qr_view %}
+        <span class="text-muted small me-auto" style="align-self:center;">
+            <i class="fas fa-shield-check text-success me-1"></i> Verified parent access · session expires in {{ 2 }} hours
+        </span>
+        {% endif %}
+        {% if not parent_qr_view %}
+        <a class="btn-print" href="{{ url_for('download_report_card', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}" style="text-decoration:none;margin-right:10px;" title="PDF export does not include the parent QR block">
+            <i class="fas fa-download"></i> Download PDF
+        </a>
+        <button class="btn-print" onclick="window.print()">
+            <i class="fas fa-print"></i> Print Report Card
+        </button>
+        {% else %}
+        <button class="btn-print" onclick="window.print()">
+            <i class="fas fa-print"></i> Print Report Card
+        </button>
+        {% endif %}
+    </div>
+
+    <div class="report-card">
+        {% if paper_layout %}
+        <div class="senior-sheet">
+            <div class="senior-header">
+                <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="senior-logo">
+                <div class="senior-header-center">
+                    <p class="senior-school-title">Future Leaders Preparatory Academy</p>
+                    <p class="senior-school-sub">Center Street, South Beach</p>
+                    <p class="senior-school-sub">Monrovia, Liberia</p>
+                    <p class="senior-contact">Telephone: 0777-287-456 / 0770-203-098 / 0881-164-147</p>
+                    <p class="senior-contact">Email: flpacardinals@gmail.com</p>
+                    <p class="senior-report-title">{{ division_report_title }}</p>
+                </div>
+                <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="senior-logo">
+            </div>
+
+            <table class="senior-meta-table">
+                <tr>
+                    <td class="senior-meta-label">Name</td>
+                    <td class="senior-meta-value">{{ data.student_name }}</td>
+                    <td class="senior-meta-label">Academic Year</td>
+                    <td class="senior-meta-value">{{ data.academic_year or (display_year.name if display_year else '') }}</td>
+                </tr>
+                <tr>
+                    <td class="senior-meta-label">Class</td>
+                    <td class="senior-meta-value">{{ data.class_name or data.level or '-' }}</td>
+                    <td class="senior-meta-label">Gender</td>
+                    <td class="senior-meta-value">{{ student.gender or '-' }}</td>
+                </tr>
+                <tr>
+                    <td class="senior-meta-label">Promotion Statement</td>
+                    <td class="senior-meta-value" colspan="3">{{ promotion_statement }}</td>
+                </tr>
+            </table>
+
+            <table class="senior-grade-table">
+                <thead>
+                    <tr>
+                        <th colspan="13" class="senior-promo-row">
+                            PROMOTED TO: {{ promotion_target|upper }}
+                        </th>
+                    </tr>
+                    <tr>
+                        <th>Subjects</th>
+                        <th>Period 1</th>
+                        <th>Period 2</th>
+                        <th>Period 3</th>
+                        <th>Exam</th>
+                        <th>Sem. Ave</th>
+                        <th>Period 4</th>
+                        <th>Period 5</th>
+                        <th>Period 6</th>
+                        <th>Exam</th>
+                        <th>Sem. Ave</th>
+                        <th>Yrly Ave</th>
+                        <th>Remarks</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if data.subjects %}
+                        {% for subject in data.subjects %}
+                            {% set score = (subject.final_avg|float) if subject.final_avg not in [None, '', '-'] else None %}
+                            <tr>
+                                <td class="senior-subject">{{ subject.name }}</td>
+                                <td>{{ subject.p1 or '-' }}</td>
+                                <td>{{ subject.p2 or '-' }}</td>
+                                <td>{{ subject.p3 or '-' }}</td>
+                                <td>{{ subject.exam or '-' }}</td>
+                                <td>{{ subject.avg or '-' }}</td>
+                                <td>{{ subject.p4 or '-' }}</td>
+                                <td>{{ subject.p5 or '-' }}</td>
+                                <td>{{ subject.p6 or '-' }}</td>
+                                <td>{{ subject.final_exam or '-' }}</td>
+                                <td>{{ subject.final_avg or '-' }}</td>
+                                <td>{{ subject.final_avg or '-' }}</td>
+                                <td>
+                                    {% if score is not none %}
+                                        {% if score >= 90 %}Excellent
+                                        {% elif score >= 80 %}Good
+                                        {% elif score >= 70 %}Fair
+                                        {% else %}Failure
+                                        {% endif %}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="13" class="text-center text-muted">No subject grades published for this academic year.</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+
+            <table class="senior-grade-legend">
+                <thead>
+                    <tr>
+                        <th style="width:45%;">Grading Method</th>
+                        <th>Numerical Value</th>
+                        <th>Alphabetical Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>Excellent</td><td>90 - 100</td><td>A</td></tr>
+                    <tr><td>Good</td><td>80 - 89</td><td>B</td></tr>
+                    <tr><td>Fair</td><td>70 - 79</td><td>C</td></tr>
+                    <tr><td>Failure</td><td>Below 70</td><td>D</td></tr>
+                </tbody>
+            </table>
+
+            <div class="senior-motto">
+                <span>VPI</span>
+                <span class="motto-text">MOTTO: "HONOR, EXCELLENCE, ACADEMIC, DISCIPLINE AND SUCCESS"</span>
+                <span>Principal</span>
+            </div>
+        </div>
+        {% else %}
+        <div class="moe-header">
+            <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="Republic of Liberia" width="75">
+            <h2>STANDARD SCHOOL MANAGEMENT</h2>
+            <h3>MINISTRY OF EDUCATION</h3>
+            <div class="report-title-badge">STUDENT PROGRESS REPORT</div>
+            
+            <div class="meta-grid">
+                <div class="meta-item">STUDENT: <strong>{{ data.student_name }}</strong></div>
+                <div class="meta-item">ID NUMBER: <strong>{{ data.student_id }}</strong></div>
+                {% if data.academic_year %}
+                <div class="meta-item">ACADEMIC YEAR: <strong>{{ data.academic_year }}</strong></div>
+                {% endif %}
+                <div class="meta-item">ACADEMIC LEVEL: <strong>{{ data.level }}</strong></div>
+                <div class="meta-item">CLASS: <strong>{{ data.class_name or 'Not Assigned' }}</strong></div>
+            </div>
+        </div>
+
+        <table class="transcript-table">
+            <thead>
+             <tr>
+                    <th rowspan="2" style="vertical-align: middle;">Subject Course</th>
+                    <th colspan="4" style="text-center">1st Semester</th> <th rowspan="2" style="vertical-align: middle;" class="text-center">1st Sem Avg</th>
+                    <th colspan="4" style="text-center">2nd Semester</th> <th rowspan="2" style="vertical-align: middle;" class="text-center">Final Avg</th>
+                </tr>
+                <tr>
+                    <th class="text-center">P1</th>
+                    <th class="text-center">P2</th>
+                    <th class="text-center">P3</th>
+                    <th class="text-center">Exam</th>
+                    
+                    <th class="text-center">P4</th>
+                    <th class="text-center">P5</th>
+                    <th class="text-center">P6</th>
+                    <th class="text-center">F. Exam</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if data.subjects %}
+                    {% for subject in data.subjects %}
+                    <tr>
+                        <td class="subject-name">{{ subject.name }}</td>
+                        <td class="grade-cell text-center">{{ subject.p1 or '-' }}</td>
+                        <td class="grade-cell text-center">{{ subject.p2 or '-' }}</td>
+                        <td class="grade-cell text-center">{{ subject.p3 or '-' }}</td>
+                        <td class="grade-cell text-center">{{ subject.exam or '-' }}</td>
+                        <td class="grade-cell text-center fw-bold">{{ subject.avg or '-' }}</td>
+                        <td class="grade-cell text-center">{{ subject.p4 or '-' }}</td>
+                        <td class="grade-cell text-center">{{ subject.p5 or '-' }}</td>
+                        <td class="grade-cell text-center">{{ subject.p6 or '-' }}</td>
+                        <td class="grade-cell text-center">{{ subject.final_exam or '-' }}</td> 
+                        <td class="final-avg-cell text-center fw-bold">{{ subject.final_avg or '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="11" class="text-center text-muted">
+                            No subjects configured for this student's class. Use Subject Setup first.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        {% if data.promotion and not paper_layout %}
+        <div style="margin-top:2rem;padding:1.25rem 1.5rem;border-radius:12px;border:1px solid {% if data.promotion.outcome == 'PROMOTED' %}#86efac{% else %}#fecaca{% endif %};background:{% if data.promotion.outcome == 'PROMOTED' %}#f0fdf4{% else %}#fef2f2{% endif %};">
+            <div style="font-size:0.75rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin-bottom:0.35rem;">
+                Year-End Promotion Result
+            </div>
+            <div style="font-size:1.1rem;font-weight:800;color:{% if data.promotion.outcome == 'PROMOTED' %}#166534{% else %}#b91c1c{% endif %};margin-bottom:0.35rem;">
+                {{ data.promotion.label }}
+            </div>
+            <p style="margin:0;font-size:0.9rem;color:#475569;line-height:1.5;">{{ data.promotion.detail }}</p>
+            {% if data.promotion.enrollment_status == 'FAILED' %}
+            <p style="margin:0.65rem 0 0;font-size:0.85rem;font-weight:600;color:#b91c1c;">
+                Enrollment status: Failed — repeat grade for the next academic year.
+            </p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% if not parent_qr_view and parent_report_qr_data_uri %}
+        <div class="parent-report-qr-block" style="margin-top:2rem;padding:1.25rem;border:1px dashed #cbd5e1;border-radius:12px;display:flex;flex-wrap:wrap;align-items:center;gap:1.25rem;background:#f8fafc;">
+            <img src="{{ parent_report_qr_data_uri }}" alt="Parent report QR code" width="120" height="120" style="background:#fff;padding:8px;border-radius:8px;">
+            <div style="flex:1;min-width:200px;">
+                <div style="font-weight:700;color:#002d62;margin-bottom:0.35rem;">Parent Access — Scan to View Grades</div>
+                <p style="margin:0;font-size:0.85rem;color:#64748b;line-height:1.5;">
+                    Parents can scan this code with a phone camera to view this report card without logging in.
+                    Verify with <strong>parent PIN</strong> or the <strong>last 4 digits</strong> of the registered parent phone.
+                </p>
+                {% if not parent_report_configured %}
+                <p style="margin:0.5rem 0 0;font-size:0.8rem;color:#b45309;">
+                    <i class="fas fa-exclamation-triangle"></i> Set parent phone or report PIN in the student record before sharing.
+                </p>
+                {% endif %}
+            </div>
+        </div>
+        {% elif not parent_qr_view and parent_report_configured %}
+        <div class="parent-report-qr-block" style="margin-top:2rem;padding:1rem 1.25rem;border:1px dashed #fbbf24;border-radius:12px;background:#fffbeb;">
+            <p style="margin:0;font-size:0.85rem;color:#92400e;">
+                <i class="fas fa-exclamation-triangle"></i>
+                Parent QR could not be generated. Set <strong>SITE_URL</strong> in your server environment to your public school address (e.g. <code>https://school.example.com</code>) so printed QR codes work on parent phones.
+            </p>
+        </div>
+        {% endif %}
+
+        <div class="footer-signatures">
+            <div class="signature-block">
+                <div class="signature-line"></div>
+                <div class="signature-title">Teacher's Signature</div>
+            </div>
+            <div class="signature-block">
+                <div class="signature-line"></div>
+                <div class="signature-title">Principal's Signature</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

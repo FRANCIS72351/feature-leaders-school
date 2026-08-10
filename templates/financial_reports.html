@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Financial Reports{% endblock %}
+{% block content %}
+<div class="container py-5">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h1 class="fw-bold text-primary">Financial Reports</h1>
+      <p class="text-muted mb-0">Downloadable summaries and export tools for business data.</p>
+    </div>
+    <a class="btn btn-outline-secondary" href="{{ url_for('business_management') }}">Back to Business Management</a>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-md-6">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-body">
+          <h5 class="text-primary">CSV Exports</h5>
+          <p class="text-muted">Quickly export business data for offline analysis.</p>
+          <ul class="list-group list-group-flush">
+            <li class="list-group-item">
+              <a href="{{ url_for('export_business') }}" class="text-decoration-none">
+                Business Transactions (All Years)
+              </a>
+            </li>
+            {% for year in years %}
+            <li class="list-group-item">
+              <a href="{{ url_for('export_business', year=year.name) }}" class="text-decoration-none">
+                Business Transactions ({{ year.name }})
+              </a>
+            </li>
+            {% endfor %}
+            <li class="list-group-item">
+              <a href="{{ url_for('export_payments') }}" class="text-decoration-none">
+                Student Payments Ledger (CSV)
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-body">
+          <h5 class="text-primary">PDF Reports</h5>
+          <p class="text-muted">Formatted documents ready for presentations.</p>
+          <ul class="list-group list-group-flush">
+            <li class="list-group-item">
+              <a href="{{ url_for('report_business_pdf') }}" class="text-decoration-none">
+                Business Report (All Years)
+              </a>
+            </li>
+            {% for year in years %}
+            <li class="list-group-item">
+              <a href="{{ url_for('report_business_pdf', year=year.name) }}" class="text-decoration-none">
+                Business Report ({{ year.name }})
+              </a>
+            </li>
+            {% endfor %}
+            <li class="list-group-item">
+              <a href="{{ url_for('report_students_pdf') }}" class="text-decoration-none">
+                Students PDF Report
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
