@@ -6,12 +6,12 @@
     <div class="hero-bg" style="background-image: url('{{ url_for('static', filename='images/background.png') }}');"></div>
     <div class="hero-overlay"></div>
     
-    <div class="container py-5 position-relative text-white" style="z-index: 3;">
+    <div class="container py-5 position-relative" style="z-index: 3;">
       <div class="row align-items-center g-5">
         <div class="col-lg-6" data-aos="fade-right">
           <span class="badge bg-brand-light text-brand fw-bold mb-3 px-3 py-2 text-uppercase tracking-wider">Future Leaders Preparatory Academy (F.L.P.A)</span>
           <h1 class="display-4 fw-extrabold text-brand mb-3">Character. Community. Excellence.</h1>
-          <p class="lead text-brand mb-4 opacity-90 fw-medium">Empowering future leaders through Service, Discipline, and Success. Established since 2013 on Lounge Street, South America.</p>
+          <p class="lead text-brand mb-4 fw-medium">Empowering future leaders through Service, Discipline, and Success. Established since 2013 on Salt Beach PHP Community, Monrovia.</p>
           <div class="d-flex flex-wrap gap-3">
             <a href="{{ url_for('login') }}" class="btn btn-action-primary btn-lg"><i class="fas fa-sign-in-alt me-2"></i>Access Portal</a>
             <a href="{{ url_for('about') }}" class="btn btn-action-outline btn-lg">Discover More</a>
@@ -74,11 +74,11 @@
         </div>
       </div>
 
-      <button class="carousel-control-prev" type="button" data-bs-target="#homeImageSlider" data-bs-slide="prev">
+      <button class="carousel-control-prev" type="button" data-bs-target="#homeImageSlider" data-bs-slide-prev">
         <span class="carousel-control-prev-icon" aria-hidden="true"></span>
         <span class="visually-hidden">Previous</span>
       </button>
-      <button class="carousel-control-next" type="button" data-bs-target="#homeImageSlider" data-bs-slide="next">
+      <button class="carousel-control-next" type="button" data-bs-target="#homeImageSlider" data-bs-slide-next">
         <span class="carousel-control-next-icon" aria-hidden="true"></span>
         <span class="visually-hidden">Next</span>
       </button>
@@ -296,7 +296,7 @@
       <div class="row g-4 align-items-center text-center text-md-start mb-4">
         <div class="col-md-6">
           <h5 class="fw-bold text-brand mb-1">Future Leaders Preparatory Academy (F.L.P.A)</h5>
-          <p class="small text-brand mb-2 font-monospace">Established Since 2013 | Lounge Street, South America</p>
+          <p class="small text-slate-400 mb-2 font-monospace">Established Since 2013 | Salt Beach PHP Community, Monrovia</p>
           <p class="small text-brand mb-0"><em>"Character. Community. Excellence. Service. Discipline. Success."</em></p>
         </div>
         <div class="col-md-6 text-center text-md-end">
@@ -306,8 +306,8 @@
       </div>
       <hr class="border-secondary opacity-25 my-3">
       <div class="text-center">
-        <p class="mb-1 text-brand small">&copy; {{ current_year }} Future Leaders Preparatory Academy. Powered by SoftnetAfrica.</p>
-        <p class="style-micro text-brand mb-0">Empowering the Next Generation of Systems.</p>
+        <p class="mb-1 text-slate-400 small">&copy; {{ current_year }} Future Leaders Preparatory Academy. Powered by SoftnetAfrica.</p>
+        <p class="style-micro text-slate-400 mb-0">Empowering the Next Generation of Systems.</p>
       </div>
     </div>
   </footer>

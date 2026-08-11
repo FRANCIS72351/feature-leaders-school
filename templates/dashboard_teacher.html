@@ -1,118 +1,222 @@
 {% extends "base.html" %}
 
-{% block title %}{{ header.sheet_title if header else "Grade Sheet Entry" }}{% endblock %}
+{% block title %}{{ header.sheet_title if header else "Class Grade Entry Sheet" }}{% endblock %}
 
 {% block content %}
 <style>
-  .grade-sheet-container {
+  :root {
+    --brand-red: #C81D25;
+    --brand-red-dark: #9E131A;
+    --brand-navy: #0B192C;
+    --slate-border: #e2e8f0;
+    --slate-bg: #f8fafc;
+  }
+
+  /* Main Container Framework */
+  .grade-sheet-wrapper {
     background: #ffffff;
-    border-radius: 8px;
-    border: 1px solid #e2e8f0;
-    padding: 20px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    border-radius: 12px;
+    border: 1px solid var(--slate-border);
+    padding: 28px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
     margin-top: 15px;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
-  .sheet-header {
+
+  /* Institutional Header Block with Dual Logos */
+  .sheet-header-card {
     display: flex;
+    align-items: center;
     justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 20px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 2px solid var(--brand-red);
     padding-bottom: 16px;
+    margin-bottom: 20px;
   }
-  .sheet-header .title-area h1 {
+  .header-logo {
+    width: 75px;
+    height: 75px;
+    object-fit: contain;
+  }
+  .header-center-text {
+    text-align: center;
+    flex-grow: 1;
+    padding: 0 15px;
+  }
+  .header-center-text h1 {
+    font-size: 1.45rem;
+    font-weight: 800;
+    color: var(--brand-navy);
+    letter-spacing: 0.5px;
     margin: 0 0 4px 0;
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: #1e293b;
+    text-transform: uppercase;
   }
-  .sheet-header .title-area p {
+  .header-center-text p {
     margin: 0;
     color: #64748b;
-    font-size: 0.9rem;
+    font-size: 0.95rem;
+    font-weight: 500;
   }
-  .sheet-badge {
-    background: #fef3c7;
-    color: #92400e;
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 4px 8px;
-    border-radius: 4px;
-    text-transform: uppercase;
-  }
-  .meta-grid {
+
+  /* Metadata Grid (Matches Dashboard Box Style) */
+  .meta-box-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(2, 1fr);
+    border: 1px solid var(--slate-border);
+    border-radius: 8px;
+    overflow: hidden;
     margin-bottom: 24px;
+    background: #ffffff;
+  }
+  .meta-item {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--slate-border);
+    border-right: 1px solid var(--slate-border);
+    font-size: 0.875rem;
+  }
+  .meta-item:nth-child(2n) {
+    border-right: none;
+  }
+  .meta-item:nth-last-child(-n+2) {
+    border-bottom: none;
   }
   .meta-label {
-    font-size: 0.75rem;
-    color: #64748b;
-    text-transform: uppercase;
     font-weight: 600;
+    color: #475569;
+    margin-right: 6px;
   }
   .meta-value {
+    color: #0f172a;
     font-weight: 600;
-    font-size: 0.95rem;
-    display: block;
-    margin-top: 2px;
-    color: #1e293b;
   }
-  .table-container {
+
+  /* Table Interface Architecture */
+  .table-responsive-wrapper {
     overflow-x: auto;
-    margin-bottom: 16px;
+    border: 1px solid var(--slate-border);
+    border-radius: 8px;
+    margin-bottom: 20px;
   }
   .grade-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.85rem;
+    font-size: 0.83rem;
     text-align: left;
-  }
-  .grade-table th, .grade-table td {
-    padding: 8px 10px;
-    border: 1px solid #e2e8f0;
-  }
-  .grade-table th {
-    background: #f1f5f9;
-    font-weight: 600;
-    color: #334155;
     white-space: nowrap;
   }
-  .grade-table input[type="number"],
-  .grade-table input[type="text"],
-  .grade-table select {
+  .grade-table th {
+    background: var(--slate-bg);
+    color: #334155;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+    letter-spacing: 0.5px;
+    padding: 12px 10px;
+    border-bottom: 2px solid var(--slate-border);
+    border-right: 1px solid var(--slate-border);
+    text-align: center;
+  }
+  .grade-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--slate-border);
+    border-right: 1px solid var(--slate-border);
+    vertical-align: middle;
+  }
+  .grade-table th:last-child, .grade-table td:last-child {
+    border-right: none;
+  }
+
+  /* Specialized Input Controls */
+  .field-input-text {
     width: 100%;
-    box-sizing: border-box;
-    padding: 6px;
+    min-width: 130px;
+    padding: 6px 8px;
     border: 1px solid #cbd5e1;
-    border-radius: 4px;
+    border-radius: 5px;
     font-size: 0.85rem;
+    color: #1e293b;
+    transition: border-color 0.2s;
+  }
+  .field-input-text:focus, .score-input:focus {
+    border-color: var(--brand-red);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(200, 29, 37, 0.15);
+  }
+  .field-id-readonly {
+    background: var(--slate-bg);
+    color: #64748b;
+    font-weight: 600;
+    min-width: 90px;
   }
   .score-input {
-    width: 60px;
-    text-align: right;
+    width: 58px;
+    padding: 6px 4px;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    font-size: 0.85rem;
+    text-align: center;
+    font-weight: 500;
   }
-  .btn-save-grades {
-    background: #2563eb;
-    color: white;
+
+  /* Dynamic Calculated Badges */
+  .cell-total-pill {
+    display: inline-block;
+    padding: 4px 12px;
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    border-radius: 20px;
+    font-weight: 700;
+    color: #0f172a;
+    min-width: 45px;
+    text-align: center;
+  }
+  .cell-grade-badge {
+    font-weight: 800;
+    text-align: center;
+    font-size: 0.9rem;
+    color: var(--brand-navy);
+  }
+
+  /* Status Dropdown Styling */
+  .status-select-control {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    border: 1px solid #cbd5e1;
+    background-color: #fef3c7;
+    color: #92400e;
+    cursor: pointer;
+    text-align: center;
+  }
+
+  /* Action Buttons */
+  .btn-save-grades-main {
+    background: var(--brand-red);
+    color: #ffffff;
     border: none;
-    padding: 10px 18px;
-    font-weight: 600;
+    padding: 10px 24px;
+    font-weight: 700;
+    font-size: 0.9rem;
     border-radius: 6px;
     cursor: pointer;
     float: right;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
   }
-  .btn-save-grades:hover {
-    background: #1d4ed8;
+  .btn-save-grades-main:hover {
+    background: var(--brand-red-dark);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(200, 29, 37, 0.25);
   }
 </style>
 
-<!-- System Navigation Action Bar -->
+<!-- System Navigation Bar -->
 <nav class="navbar navbar-expand-lg navbar-light bg-light rounded border mb-3 px-3">
   <div class="container-fluid p-0">
-    <a class="navbar-brand font-weight-bold text-primary" href="{{ url_for('dashboard') }}">
-      <i class="fas fa-graduation-cap mr-2"></i>{{ header.school if header and header.school else 'Portal Home' }}
+    <a class="navbar-brand font-weight-bold text-dark" href="{{ url_for('dashboard') }}">
+      <i class="fas fa-graduation-cap text-danger me-2"></i>{{ header.school if header and header.school else 'Future Leaders Preparatory Academy' }}
     </a>
     <div class="d-flex align-items-center">
       <a href="{{ url_for('teacher_dashboard') }}" class="btn btn-outline-secondary btn-sm me-2">
@@ -127,55 +231,72 @@
   </div>
 </nav>
 
-<div class="grade-sheet-container">
-  <div class="sheet-header">
-    <div class="title-area">
-      <h1>{{ header.school if header else 'Future Leaders Preparatory Academy' }}</h1>
-      <p>{{ header.sheet_title if header else 'Class Grade Ledger Sheet' }}</p>
+<div class="grade-sheet-wrapper">
+  <!-- Institutional Header with Dual Side Logos -->
+  <div class="sheet-header-card">
+    <!-- Left Side Logo -->
+    <img src="{{ header.school_logo_left if header and header.school_logo_left else url_for('static', filename='images/logo.png') }}" 
+         alt="School Logo Left" 
+         class="header-logo">
+
+    <!-- Center Institutional Title -->
+    <div class="header-center-text">
+      <h1>{{ header.school if header and header.school else 'Future Leaders Preparatory Academy' }}</h1>
+      <p>{{ header.sheet_title if header and header.sheet_title else 'Class Grade Entry Sheet' }}</p>
     </div>
-    <span class="sheet-badge">{{ header.status if header else 'Active Session' }}</span>
+
+    <!-- Right Side Logo -->
+    <img src="{{ header.school_logo_right if header and header.school_logo_right else (header.school_logo_left if header and header.school_logo_left else url_for('static', filename='images/logo.png')) }}" 
+         alt="School Logo Right" 
+         class="header-logo">
   </div>
 
-  <div class="meta-grid">
-    <div>
-      <span class="meta-label">Academic Year</span>
-      <span class="meta-value">{{ header.academic_year if header else 'N/A' }}</span>
+  <!-- Structured Metadata Grid -->
+  <div class="meta-box-grid">
+    <div class="meta-item">
+      <span class="meta-label">Class:</span>
+      <span class="meta-value">{{ header.class_name if header else selected_grade_class.name if selected_grade_class else 'Grade 11' }}</span>
     </div>
-    <div>
-      <span class="meta-label">Class</span>
-      <span class="meta-value">{{ header.class_name if header else selected_grade_class.name if selected_grade_class else 'N/A' }}</span>
+    <div class="meta-item">
+      <span class="meta-label">Academic Year:</span>
+      <span class="meta-value">{{ header.academic_year if header else '2025-2026' }}</span>
     </div>
-    <div>
-      <span class="meta-label">Subject</span>
-      <span class="meta-value">{{ header.subject if header else grade_subject if grade_subject else 'N/A' }}</span>
+    <div class="meta-item">
+      <span class="meta-label">Subject:</span>
+      <span class="meta-value">{{ header.subject if header else grade_subject if grade_subject else 'Mathematics' }}</span>
     </div>
-    <div>
-      <span class="meta-label">Teacher</span>
-      <span class="meta-value">{{ header.teacher if header else current_user.full_name }}</span>
-    </div>
-    <div>
-      <span class="meta-label">Period</span>
+    <div class="meta-item">
+      <span class="meta-label">Period:</span>
       <span class="meta-value">{{ header.period if header else period_label if period_label else '1' }}</span>
     </div>
+    <div class="meta-item">
+      <span class="meta-label">Teacher:</span>
+      <span class="meta-value">{{ header.teacher if header else current_user.full_name }}</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Students:</span>
+      <span class="meta-value" id="studentCountLabel">{{ students|length if students else 0 }}</span>
+    </div>
   </div>
 
-  <div class="table-container">
+  <!-- Main Grade Entry Table -->
+  <div class="table-responsive-wrapper">
     <table id="gradeTable" class="grade-table">
       <thead>
         <tr>
           <th>#</th>
-          <th>Student Name</th>
+          <th style="text-align: left;">Student Name</th>
           <th>Student ID</th>
-          <th>Attendance</th>
-          <th>Participation</th>
+          <th>Att</th>
+          <th>Part</th>
           <th>Quiz</th>
-          <th>Assignment</th>
-          <th>Classwork</th>
-          <th>Homework</th>
+          <th>Assg</th>
+          <th>CW</th>
+          <th>HW</th>
           <th>Test</th>
           <th>Total</th>
           <th>Grade</th>
-          <th>Remarks</th>
+          <th style="text-align: left;">Remarks</th>
           <th>Sheet Status</th>
         </tr>
       </thead>
@@ -183,21 +304,21 @@
         {% if students %}
           {% for student in students %}
           <tr data-student-id="{{ student.student_id }}">
-            <td>{{ loop.index }}</td>
-            <td><input type="text" class="field-name" value="{{ student.student_name }}"></td>
-            <td><input type="text" class="field-id" value="{{ student.student_id }}" readonly style="background:#f8fafc"></td>
-            <td><input type="number" class="score-input field-att" value="{{ student.attendance or 0 }}" min="0" max="100"></td>
-            <td><input type="number" class="score-input field-part" value="{{ student.participation or 0 }}" min="0" max="100"></td>
-            <td><input type="number" class="score-input field-quiz" value="{{ student.quiz or 0 }}" min="0" max="100"></td>
-            <td><input type="number" class="score-input field-assg" value="{{ student.assignment or 0 }}" min="0" max="100"></td>
-            <td><input type="number" class="score-input field-cw" value="{{ student.classwork or 0 }}" min="0" max="100"></td>
-            <td><input type="number" class="score-input field-hw" value="{{ student.homework or 0 }}" min="0" max="100"></td>
-            <td><input type="number" class="score-input field-test" value="{{ student.test or 0 }}" min="0" max="100"></td>
-            <td class="cell-total font-weight-bold">{{ student.total or 0 }}</td>
-            <td class="cell-grade font-weight-bold">{{ student.grade or 'F' }}</td>
-            <td><input type="text" class="field-remarks" value="{{ student.remarks or '' }}"></td>
-            <td>
-              <select class="field-status">
+            <td class="text-center fw-bold text-secondary">{{ loop.index }}</td>
+            <td><input type="text" class="field-input-text field-name" value="{{ student.student_name }}"></td>
+            <td><input type="text" class="field-input-text field-id-readonly field-id" value="{{ student.student_id }}" readonly></td>
+            <td class="text-center"><input type="number" class="score-input field-att" value="{{ student.attendance or 0 }}" min="0" max="100"></td>
+            <td class="text-center"><input type="number" class="score-input field-part" value="{{ student.participation or 0 }}" min="0" max="100"></td>
+            <td class="text-center"><input type="number" class="score-input field-quiz" value="{{ student.quiz or 0 }}" min="0" max="100"></td>
+            <td class="text-center"><input type="number" class="score-input field-assg" value="{{ student.assignment or 0 }}" min="0" max="100"></td>
+            <td class="text-center"><input type="number" class="score-input field-cw" value="{{ student.classwork or 0 }}" min="0" max="100"></td>
+            <td class="text-center"><input type="number" class="score-input field-hw" value="{{ student.homework or 0 }}" min="0" max="100"></td>
+            <td class="text-center"><input type="number" class="score-input field-test" value="{{ student.test or 0 }}" min="0" max="100"></td>
+            <td class="text-center"><span class="cell-total-pill cell-total">{{ student.total or 0 }}</span></td>
+            <td class="text-center"><span class="cell-grade-badge cell-grade">{{ student.grade or 'F' }}</span></td>
+            <td><input type="text" class="field-input-text field-remarks" value="{{ student.remarks or '' }}" placeholder="Comments..."></td>
+            <td class="text-center">
+              <select class="status-select-control field-status">
                 <option value="Pending" {% if student.sheet_status == 'Pending' %}selected{% endif %}>Pending</option>
                 <option value="Verified" {% if student.sheet_status == 'Verified' %}selected{% endif %}>Verified</option>
               </select>
@@ -205,24 +326,25 @@
           </tr>
           {% endfor %}
         {% else %}
+          <!-- Default Row Template for New/Unpopulated Sheets -->
           <tr>
-            <td>1</td>
-            <td><input type="text" class="field-name" value="Jane Doe"></td>
-            <td><input type="text" class="field-id" value="STU-1001" readonly style="background:#f8fafc"></td>
-            <td><input type="number" class="score-input field-att" value="10"></td>
-            <td><input type="number" class="score-input field-part" value="10"></td>
-            <td><input type="number" class="score-input field-quiz" value="15"></td>
-            <td><input type="number" class="score-input field-assg" value="10"></td>
-            <td><input type="number" class="score-input field-cw" value="15"></td>
-            <td><input type="number" class="score-input field-hw" value="10"></td>
-            <td><input type="number" class="score-input field-test" value="25"></td>
-            <td class="cell-total font-weight-bold">95</td>
-            <td class="cell-grade font-weight-bold">A</td>
-            <td><input type="text" class="field-remarks" value="Excellent effort"></td>
-            <td>
-              <select class="field-status">
+            <td class="text-center fw-bold text-secondary">1</td>
+            <td><input type="text" class="field-input-text field-name" value="Jane Doe"></td>
+            <td><input type="text" class="field-input-text field-id-readonly field-id" value="STU-1001" readonly></td>
+            <td class="text-center"><input type="number" class="score-input field-att" value="10" min="0" max="100"></td>
+            <td class="text-center"><input type="number" class="score-input field-part" value="10" min="0" max="100"></td>
+            <td class="text-center"><input type="number" class="score-input field-quiz" value="15" min="0" max="100"></td>
+            <td class="text-center"><input type="number" class="score-input field-assg" value="10" min="0" max="100"></td>
+            <td class="text-center"><input type="number" class="score-input field-cw" value="15" min="0" max="100"></td>
+            <td class="text-center"><input type="number" class="score-input field-hw" value="10" min="0" max="100"></td>
+            <td class="text-center"><input type="number" class="score-input field-test" value="25" min="0" max="100"></td>
+            <td class="text-center"><span class="cell-total-pill cell-total">95</span></td>
+            <td class="text-center"><span class="cell-grade-badge cell-grade">A</span></td>
+            <td><input type="text" class="field-input-text field-remarks" value="Excellent effort"></td>
+            <td class="text-center">
+              <select class="status-select-control field-status">
                 <option value="Verified">Verified</option>
-                <option value="Pending">Pending</option>
+                <option value="Pending" selected>Pending</option>
               </select>
             </td>
           </tr>
@@ -231,7 +353,11 @@
     </table>
   </div>
 
-  <button class="btn-save-grades" onclick="saveAllGrades()">Save Grade Sheet</button>
+  <div class="clearfix">
+    <button class="btn-save-grades-main" onclick="saveAllGrades()">
+      <i class="fas fa-save me-1"></i> Save Grade Sheet
+    </button>
+  </div>
 </div>
 
 <script>
@@ -243,6 +369,7 @@
     return 'F';
   }
 
+  // Real-time calculation listener
   document.getElementById('gradeTable').addEventListener('input', function(e) {
     if (e.target.classList.contains('score-input')) {
       const row = e.target.closest('tr');
@@ -255,6 +382,7 @@
     }
   });
 
+  // Payload Serializer & API Sender
   async function saveAllGrades() {
     const rows = document.querySelectorAll('#gradeTable tbody tr');
     const payload = [];
