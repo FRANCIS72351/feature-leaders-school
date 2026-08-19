@@ -1,5 +1,5 @@
-﻿import struct, os
-db = r"c:\Users\Francis\Desktop\essential\SCHOOL_MANAGEMENT\instance\keeptrack_full.db"
+import struct, os
+db = r"c:\Users\Francis\Desktop\essential\SCHOOL_MANAGEMENT\instance\future_leaders_full.db"
 with open(db, "rb") as f:
     header = f.read(100)
 print("magic", header[:16])

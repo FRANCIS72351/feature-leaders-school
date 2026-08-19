@@ -174,6 +174,40 @@ class AdminUserEditTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'cannot change your own role', response.data)
 
+    def test_principal_cannot_open_admin_dashboard(self):
+        self._login(self.principal_id)
+        response = self.client.get('/dashboard?view=admin', follow_redirects=False)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/principal/dashboard', response.headers.get('Location', ''))
+
+    def test_principal_cannot_edit_admin_account(self):
+        self._login(self.principal_id)
+        response = self.client.get(f'/admin/users/{self.admin_id}/edit', follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'admin account cannot be managed', response.data)
+
+    def test_principal_cannot_assign_admin_role(self):
+        self._login(self.principal_id)
+        response = self.client.post(
+            f'/admin/users/{self.target_id}/edit',
+            data={
+                'email': f'target-edit-{self.unique}@test.com',
+                'username': f'target_{self.unique}',
+                'full_name': 'Target User',
+                'role': 'admin',
+                'home_address': '',
+                'telephone_number': '',
+                'password': '',
+                'submit': 'Save Changes',
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(b'updated successfully', response.data)
+        with self.app.app_context():
+            user = db.session.get(User, self.target_id)
+            self.assertEqual(user.role, 'teacher')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,5 +1,30 @@
 {% extends 'base.html' %}
 {% block content %}
+<style>
+    .reg-fee-card {
+        background: #fff8f7;
+        border: 1px solid #e8c4c4;
+        border-left: 4px solid #c82828;
+        color: #1f2937;
+    }
+    .reg-fee-card .form-control,
+    .reg-fee-card .form-select {
+        background: #ffffff !important;
+        border: 1px solid #d9c4c4 !important;
+        color: #1f2937 !important;
+    }
+    .reg-fee-card .form-control:focus,
+    .reg-fee-card .form-select:focus {
+        border-color: #c82828 !important;
+        box-shadow: 0 0 0 0.2rem rgba(200, 40, 40, 0.18) !important;
+        color: #1f2937 !important;
+    }
+    .reg-fee-card .form-select option {
+        background: #ffffff;
+        color: #1f2937;
+    }
+    .receipt-field-wrap.is-inactive { display: none; }
+</style>
 <div class="container-fluid py-4">
     <div class="row mb-4">
         <div class="col-12">
@@ -83,22 +108,46 @@
                     </div>
                 </div>
 
-                <div class="row g-3 mb-4">
+                <div class="row g-3 mb-3">
                     <div class="col-md-4">
                         {{ form.parent_email.label(class="form-label text-white-50 small") }}
                         {{ form.parent_email(class="form-control bg-dark border-secondary text-white") }}
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-4">
                         {{ form.academic_year.label(class="form-label text-white-50 small") }}
                         {{ form.academic_year(class="form-select bg-dark border-secondary text-white") }}
                     </div>
-                    <div class="col-md-2">
-                        {{ form.registration_fees.label(class="form-label text-white-50 small") }}
-                        {{ form.registration_fees(class="form-control bg-dark border-secondary text-white") }}
-                    </div>
-                    <div class="col-md-3">
+                    <div class="col-md-4">
                         {{ form.photo.label(class="form-label text-white-50 small") }}
                         {{ form.photo(class="form-control bg-dark border-secondary text-white") }}
+                    </div>
+                </div>
+
+                <div class="reg-fee-card mb-4 p-3 rounded-3">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <i class="fas fa-file-invoice-dollar" style="color:#c82828;"></i>
+                        <h6 class="mb-0 fw-bold" style="color:#c82828;">Student Registration Fee</h6>
+                        <span class="ms-auto small fw-bold" style="color:#9b1c1c; letter-spacing:.06em; text-transform:uppercase;">One-time intake</span>
+                    </div>
+                    <p class="small mb-3" style="color:#4b5563;">
+                        Record the fee. After payment, enter the receipt number issued to the student.
+                        This is the one-time school enrollment fee for this year (not monthly tuition).
+                        Choose Unpaid if they have not paid yet. You can finish registration even if unpaid.
+                    </p>
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold" style="color:#1f2937;" for="registration_fees">Amount <span style="color:#c82828;">*</span></label>
+                            {{ form.registration_fees(class="form-control", placeholder="e.g. 9,000.00", inputmode="decimal", autocomplete="off") }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold" style="color:#1f2937;" for="registration_payment_status">Payment Status</label>
+                            {{ form.registration_payment_status(class="form-select") }}
+                        </div>
+                        <div class="col-md-4 receipt-field-wrap" id="receiptFieldWrap">
+                            <label class="form-label small fw-semibold" style="color:#1f2937;" for="receipt_reference">Receipt / Reference <span style="color:#c82828;">*</span></label>
+                            {{ form.receipt_reference(class="form-control", placeholder="e.g. REC-99201", maxlength="80") }}
+                            <div class="small mt-1" style="color:#6b7280;">Required after Paid or Partial — the official receipt number issued to the student.</div>
+                        </div>
                     </div>
                 </div>
 
@@ -131,9 +180,9 @@
                         <tr>
                             <td>
                                 <div style="width: 44px; height: 44px;">
-                                    {% if s.photo %}
-                                        <img src="{{ url_for('static', filename=s.photo) }}" 
-                                             alt="Student Array Photo" class="w-100 h-100 object-fit-cover rounded border border-secondary border-opacity-20">
+                                    {% if s.photo_url %}
+                                        <img src="{{ s.photo_url }}" 
+                                             alt="Student Array Photo" class="w-100 h-100 object-fit-cover rounded border border-secondary border-opacity-20" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
                                     {% else %}
                                         <div class="bg-secondary text-white rounded d-flex align-items-center justify-content-center w-100 h-100 border border-secondary border-opacity-20 small fw-bold">
                                             {{ s.first_name[0] | upper }}{{ s.last_name[0] | upper }}
@@ -190,4 +239,22 @@
         </div>
     </div>
 </div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const status = document.getElementById('registration_payment_status');
+    const receipt = document.getElementById('receipt_reference');
+    const wrap = document.getElementById('receiptFieldWrap');
+    function syncReceipt() {
+        const needed = status && (status.value === 'paid' || status.value === 'partial');
+        if (wrap) wrap.classList.toggle('is-inactive', !needed);
+        if (receipt) {
+            receipt.required = !!needed;
+            receipt.disabled = !needed;
+            if (!needed) receipt.removeAttribute('required');
+        }
+    }
+    if (status) status.addEventListener('change', syncReceipt);
+    syncReceipt();
+});
+</script>
 {% endblock %}

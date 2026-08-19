@@ -1,4 +1,4 @@
-"""Debug VPA archived class roster against keeptrack_full.db."""
+"""Debug VPA archived class roster against future_leaders_full.db."""
 import os
 import sys
 

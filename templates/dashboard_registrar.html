@@ -234,6 +234,73 @@
         border-color: rgba(0, 242, 255, 0.25);
         background: rgba(0, 242, 255, 0.03);
     }
+    .reg-fee-card {
+        background: #fff8f7;
+        border: 1px solid #e8c4c4;
+        border-left: 4px solid #c82828;
+        border-radius: 12px;
+        padding: 1.25rem 1.35rem;
+        margin-bottom: 1rem;
+        color: #1f2937;
+        box-shadow: 0 8px 24px rgba(200, 40, 40, 0.08);
+    }
+    .reg-fee-card .reg-fee-header {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        margin-bottom: 0.45rem;
+    }
+    .reg-fee-card .reg-fee-header h6 {
+        margin: 0;
+        font-size: 0.92rem;
+        font-weight: 800;
+        color: #c82828;
+        letter-spacing: 0.02em;
+    }
+    .reg-fee-card .reg-fee-kicker {
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #9b1c1c;
+        margin-left: auto;
+    }
+    .reg-fee-card p.reg-fee-help {
+        color: #4b5563;
+        font-size: 0.8rem;
+        margin-bottom: 1rem;
+    }
+    .reg-fee-card .form-label {
+        color: #1f2937 !important;
+        font-weight: 600;
+        font-size: 0.8rem;
+    }
+    .reg-fee-card .form-control,
+    .reg-fee-card .form-select {
+        background: #ffffff !important;
+        border: 1px solid #d9c4c4 !important;
+        color: #1f2937 !important;
+        border-radius: 8px !important;
+    }
+    .reg-fee-card .form-control:focus,
+    .reg-fee-card .form-select:focus {
+        border-color: #c82828 !important;
+        box-shadow: 0 0 0 0.2rem rgba(200, 40, 40, 0.18) !important;
+        color: #1f2937 !important;
+    }
+    .reg-fee-card .form-control::placeholder {
+        color: #9ca3af !important;
+    }
+    .reg-fee-card .form-select option {
+        background: #ffffff;
+        color: #1f2937;
+    }
+    .reg-fee-card .reg-fee-hint {
+        font-size: 0.75rem;
+        color: #6b7280;
+        margin-top: 0.3rem;
+    }
+    .reg-fee-card .req-star { color: #c82828; }
     .field-locked-wrap {
         position: relative;
     }
@@ -306,6 +373,14 @@
         flex-direction: column;
         justify-content: space-between;
     }
+    #student-roster {
+        scroll-margin-top: 5.5rem;
+        overflow-x: hidden;
+    }
+    #folder-unassigned,
+    [id^="folder-"] {
+        scroll-margin-top: 5.75rem;
+    }
     .dashboard-card-icon {
         font-size: 1.8rem;
         opacity: 0.82;
@@ -356,6 +431,35 @@
     .registrar-terminal .form-cyber::placeholder {
         color: #64748b !important;
     }
+
+    /* Registrar dashboard — brand-red hero & top KPI copy */
+    .registrar-terminal > .d-flex.border-bottom .glow-title,
+    .registrar-terminal > .d-flex.border-bottom .glow-title i {
+        color: var(--primary-brand, #c82828) !important;
+        text-shadow: none;
+    }
+    .registrar-terminal > .d-flex.border-bottom p.text-muted,
+    .registrar-terminal > .d-flex.border-bottom .registrar-ledger-sync {
+        color: var(--primary-brand, #c82828) !important;
+    }
+    .registrar-terminal > .d-flex.border-bottom .registrar-ledger-sync i {
+        color: var(--primary-brand, #c82828) !important;
+    }
+    .registrar-terminal > .row.g-3.mb-4.fade-glide-in .dashboard-stat-card .registrar-kpi-label,
+    .registrar-terminal > .row.g-3.mb-4.fade-glide-in .dashboard-stat-card .registrar-kpi-desc {
+        color: var(--primary-brand, #c82828) !important;
+    }
+    .registrar-terminal #student-enrollment .registrar-enroll-desc {
+        color: var(--primary-brand, #c82828) !important;
+    }
+    .reg-fee-card .form-label,
+    .reg-fee-card label,
+    #registrationFeeSection label[for="academic_year"] {
+        color: #1f2937 !important;
+    }
+    .receipt-field-wrap.is-inactive {
+        display: none;
+    }
 </style>
 
 <div class="container-fluid py-4 px-md-4 registrar-terminal pro-dashboard">
@@ -368,11 +472,11 @@
             <div class="d-flex flex-wrap gap-2">
                 <a href="{{ url_for('register_student', academic_year_id=display_year.id if display_year else None) }}" class="btn btn-sm btn-emerald py-1 px-3">Register Student</a>
                 <a href="#student-enrollment" class="btn btn-sm btn-outline-light py-1 px-3">Enrollment Form</a>
-                <a href="{{ url_for('registrar_class_students', class_id=(classes|first).id, **year_param) if classes|length else url_for('dashboard', **year_param) }}" class="btn btn-sm btn-outline-secondary py-1 px-3">View Class Folders</a>
+                <a href="#student-roster" class="btn btn-sm btn-outline-secondary py-1 px-3">View Class Folders</a>
             </div>
         </div>
-        <span class="badge bg-dark border border-secondary border-opacity-20 text-white-50 px-3 py-2 mt-3 mt-md-0 rounded-3">
-            <i class="fas fa-server text-emerald me-2"></i>Ledger Sync: Active
+        <span class="badge bg-dark border border-secondary border-opacity-20 registrar-ledger-sync px-3 py-2 mt-3 mt-md-0 rounded-3">
+            <i class="fas fa-server me-2"></i>Ledger Sync: Active
         </span>
     </div>
 
@@ -381,25 +485,25 @@
             <div class="card sec-card p-3 h-100 dashboard-stat-card">
                 <div class="d-flex align-items-center justify-content-between mb-3">
                     <div>
-                        <div class="text-white-50 small">Current Enrollment</div>
+                        <div class="registrar-kpi-label small">Current Enrollment</div>
                         <h3 class="text-cyan mb-0">{{ counts.students if counts else 0 }}</h3>
                     </div>
                     <i class="fas fa-user-check dashboard-card-icon text-emerald"></i>
                 </div>
-                <p class="text-muted small mb-3">Students registered for {{ display_year.name if display_year else 'the selected year' }}.</p>
-                <a href="{{ url_for('dashboard', view='active', **year_param) }}" class="btn btn-sm btn-outline-light">View roster</a>
+                <p class="registrar-kpi-desc small mb-3">Students registered for {{ display_year.name if display_year else 'the selected year' }}.</p>
+                <a href="{{ url_for('registrar_dashboard', view='active', **year_param) }}#student-roster" class="btn btn-sm btn-outline-light">View roster</a>
             </div>
         </div>
         <div class="col-sm-6 col-xl-3">
             <div class="card sec-card p-3 h-100 dashboard-stat-card" id="reRegStatCard">
                 <div class="d-flex align-items-center justify-content-between mb-3">
                     <div>
-                        <div class="text-white-50 small">Pending Re-registration</div>
+                        <div class="registrar-kpi-label small">Pending Re-registration</div>
                         <h3 class="text-amber mb-0">{{ counts.pending_registration if counts else 0 }}</h3>
                     </div>
                     <i class="fas fa-hourglass-half dashboard-card-icon text-amber"></i>
                 </div>
-                <p class="text-muted small mb-3">Students awaiting confirmation for the academic year.</p>
+                <p class="registrar-kpi-desc small mb-3">Students awaiting confirmation for the academic year.</p>
                 <a href="#student-enrollment" class="btn btn-sm btn-outline-warning" id="jumpReRegistrationQueue">Process queue</a>
             </div>
         </div>
@@ -407,12 +511,12 @@
             <div class="card sec-card p-3 h-100 dashboard-stat-card">
                 <div class="d-flex align-items-center justify-content-between mb-3">
                     <div>
-                        <div class="text-white-50 small">New Intakes</div>
+                        <div class="registrar-kpi-label small">New Intakes</div>
                         <h3 class="text-emerald mb-0">{{ counts.new_students if counts else 0 }}</h3>
                     </div>
                     <i class="fas fa-user-plus dashboard-card-icon text-cyan"></i>
                 </div>
-                <p class="text-muted small mb-3">New student intake for this year.</p>
+                <p class="registrar-kpi-desc small mb-3">New student intake for this year.</p>
                 <a href="{{ url_for('register_student', academic_year_id=display_year.id if display_year else None) }}" class="btn btn-sm btn-outline-light">Add student</a>
             </div>
         </div>
@@ -420,15 +524,41 @@
             <div class="card sec-card p-3 h-100 dashboard-stat-card">
                 <div class="d-flex align-items-center justify-content-between mb-3">
                     <div>
-                        <div class="text-white-50 small">Alumni Ledger</div>
+                        <div class="registrar-kpi-label small">Alumni Ledger</div>
                         <h3 class="text-cyan mb-0">{{ counts.alumni if counts else 0 }}</h3>
                     </div>
                     <i class="fas fa-graduation-cap dashboard-card-icon text-blue"></i>
                 </div>
-                <p class="text-muted small mb-3">Graduates recorded in the selected academic session.</p>
-                <a href="{{ url_for('dashboard', view='alumni', **year_param) }}" class="btn btn-sm btn-outline-light">View alumni</a>
+                <p class="registrar-kpi-desc small mb-3">Graduates recorded in the selected academic session.</p>
+                <a href="{{ url_for('registrar_dashboard', view='alumni', **year_param) }}#student-roster" class="btn btn-sm btn-outline-light">View alumni</a>
             </div>
         </div>
+    </div>
+
+    <div class="card sec-card p-4 mb-4 fade-glide-in delay-1" id="student-roster">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-3">
+            <div>
+                <h5 class="text-white font-weight-bold mb-0">
+                    <i class="fas fa-folder-open me-2" style="color:#c82828;"></i>
+                    {% if roster_view == 'alumni' %}Alumni Class Folders{% else %}Student Roster{% endif %}
+                </h5>
+                <p class="small mb-0" style="color:#c82828;">
+                    {% if roster_view == 'alumni' %}
+                    Alumni records grouped by class folder for {{ display_year.name if display_year else 'the selected year' }}.
+                    {% else %}
+                    Open a class folder to review every registered student for {{ display_year.name if display_year else 'the selected year' }}.
+                    {% endif %}
+                </p>
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <a href="{{ url_for('registrar_dashboard', view='active', **year_param) }}#student-roster" class="btn btn-sm {% if roster_view != 'alumni' %}btn-emerald{% else %}btn-outline-light{% endif %} py-1 px-3">Active</a>
+                <a href="{{ url_for('registrar_dashboard', view='alumni', **year_param) }}#student-roster" class="btn btn-sm {% if roster_view == 'alumni' %}btn-emerald{% else %}btn-outline-light{% endif %} py-1 px-3">Alumni</a>
+                <span class="badge bg-dark border border-secondary border-opacity-20 text-white-50 px-3 py-2 rounded-3">
+                    {{ students|length }} records · {{ roster_folders|length if roster_folders else 0 }} folders
+                </span>
+            </div>
+        </div>
+        {% include 'partials/registrar_roster_folders.html' %}
     </div>
 
     {% if viewing_archived %}
@@ -512,7 +642,7 @@
             <div class="card sec-card p-4">
                 <div class="d-flex align-items-center gap-3">
                     <div class="position-relative" style="width: 72px; height: 72px; flex-shrink: 0;">
-                        <img src="{{ current_user.photo_url if current_user.photo_url else url_for('static', filename='images/default-avatar.png') }}" class="w-100 h-100 object-fit-cover rounded-3 border border-secondary border-opacity-20" alt="User Avatar">
+                        <img src="{{ current_user.photo_url }}" class="w-100 h-100 object-fit-cover rounded-circle border border-secondary border-opacity-20" alt="User Avatar" style="aspect-ratio:1/1;overflow:hidden;" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
                         <span class="position-absolute bottom-0 end-0 bg-emerald border border-dark rounded-circle p-1.5" title="Operator Status: Active"></span>
                     </div>
                     <div>
@@ -520,6 +650,10 @@
                         <span class="badge bg-cyan bg-opacity-10 text-cyan small border border-cyan border-opacity-10 mt-1 px-2.5 py-1">{{ current_user.role|title }}</span>
                     </div>
                 </div>
+                <hr class="border-secondary opacity-10 my-3">
+                {% with link_class='small text-cyan text-decoration-none' %}
+                {% include 'partials/account_settings_link.html' %}
+                {% endwith %}
                 <hr class="border-secondary opacity-10 my-3">
                 <div class="small text-blue d-flex flex-column gap-2">
                     <div><i class="fas fa-envelope text-blue me-2 fa-fw"></i>{{ current_user.email }}</div>
@@ -585,16 +719,19 @@
                 </div>
                 
                 <div class="d-flex flex-column gap-2" style="max-height: 380px; overflow-y: auto; padding-right:4px;">
-                    {% if classes %}
-                        {% for klass in classes %}
+                    {% if classes_by_division %}
+                        {% for group in classes_by_division %}
+                        <div class="text-cyan small fw-semibold text-uppercase pt-1" style="font-size:0.68rem; letter-spacing:0.06em;">{{ group.label }}</div>
+                        {% for klass in group.classes %}
                         <div class="p-3 border border-secondary border-opacity-10 rounded-3" style="background: rgba(255,255,255,0.015);">
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <div class="fw-bold text-white small">{{ klass.name }}</div>
                                 <span class="badge bg-emerald bg-opacity-10 text-emerald small border border-emerald border-opacity-10" style="font-size:0.7rem;">{{ klass.student_count if klass.student_count else 0 }} Students</span>
                             </div>
-                            <div class="text-muted small mb-3" style="font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ klass.description or 'No description available' }}</div>
-                            <a href="{{ url_for('registrar_class_students', class_id=klass.id, **year_param) }}" class="btn btn-sm btn-outline-light w-100 py-2" style="font-size:0.75rem;"><i class="fas fa-eye me-1"></i>View Class Folder</a>
+                            <div class="text-muted small mb-3" style="font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ klass.division_label }} · {{ klass.description or 'No description available' }}</div>
+                            <a href="#folder-{{ klass.id }}" class="btn btn-sm btn-outline-light w-100 py-2" style="font-size:0.75rem;"><i class="fas fa-folder-open me-1"></i>Open Class Folder</a>
                         </div>
+                        {% endfor %}
                         {% endfor %}
                     {% else %}
                         <div class="text-center py-4 text-muted small"><i class="fas fa-inbox opacity-25 me-1.5"></i>No matching class records mapped.</div>
@@ -610,7 +747,7 @@
                 <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2 mb-3">
                     <div>
                         <h5 class="text-emerald font-weight-bold mb-0"><i class="fas fa-user-plus me-2"></i>Register Student</h5>
-                        <p class="text-muted small mb-0">Official registrar enrollment — search by email or student ID first, then complete registration details.</p>
+                        <p class="text-muted small mb-0 registrar-enroll-desc">Official registrar enrollment — search by email or student ID first, then complete registration details.</p>
                     </div>
                 </div>
 
@@ -628,16 +765,14 @@
                     <ol class="mb-0">
                         <li>Enter a Student ID or Email below and click <strong>Lookup</strong>.</li>
                         <li>If returning, existing student information will auto-populate to prevent duplicates.</li>
-                        <li>Assign class, set enrollment status, attach registration fee proof, and click <strong>Submit Registration</strong>.</li>
+                        <li>Assign class, enter the registration fee amount, set payment status, and click <strong>Submit Registration</strong>. If Paid or Partial, enter the receipt number issued after payment.</li>
                     </ol>
                 </div>
 
                 <!-- Registration Main Form -->
-                <form id="enrollmentForm" action="{{ url_for('register_student') }}" method="POST" enctype="multipart/form-data">
-                    {% if display_year %}
-                    <input type="hidden" name="academic_year_id" value="{{ display_year.id }}">
-                    {% endif %}
-                    <input type="hidden" name="is_returning_student" id="is_returning_student" value="false">
+                <form id="enrollmentForm" action="{{ url_for('register_student') }}" method="POST" enctype="multipart/form-data" novalidate>
+                    {{ form.csrf_token }}
+                    <input type="hidden" name="is_returning" id="is_returning_student" value="">
 
                     <!-- STEP 1: LOOKUP PANEL -->
                     <div class="enroll-section" id="step1Panel">
@@ -650,7 +785,7 @@
                             <div class="col-md-6">
                                 <label class="form-label small text-muted">Student ID (Optional)</label>
                                 <div class="input-group">
-                                    <input type="text" class="form-control form-cyber" id="lookup_student_id" name="student_id_lookup" placeholder="e.g. STU-2026-001">
+                                    <input type="text" class="form-control form-cyber" id="lookup_student_id" name="student_id" placeholder="e.g. STU-2026-001">
                                 </div>
                             </div>
                             <div class="col-md-6">
@@ -687,24 +822,42 @@
                                 <div class="col-md-6">
                                     <label class="form-label small text-muted">First Name <span class="text-rose">*</span></label>
                                     <div class="field-locked-wrap" id="wrap_first_name">
-                                        <input type="text" class="form-control form-cyber" id="first_name" name="first_name" required>
+                                        <input type="text" class="form-control form-cyber" id="first_name" name="first_name" data-step-required>
                                         <i class="fas fa-lock lock-indicator" title="Locked from existing record"></i>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small text-muted">Last Name <span class="text-rose">*</span></label>
                                     <div class="field-locked-wrap" id="wrap_last_name">
-                                        <input type="text" class="form-control form-cyber" id="last_name" name="last_name" required>
+                                        <input type="text" class="form-control form-cyber" id="last_name" name="last_name" data-step-required>
                                         <i class="fas fa-lock lock-indicator" title="Locked from existing record"></i>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label small text-muted">Gender</label>
-                                    <select class="form-select form-cyber" id="gender" name="gender">
+                                    <label class="form-label small text-muted">Gender <span class="text-rose">*</span></label>
+                                    <select class="form-select form-cyber" id="gender" name="gender" data-step-required>
                                         <option value="">Select Gender...</option>
                                         <option value="Male">Male</option>
                                         <option value="Female">Female</option>
                                         <option value="Other">Other</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small text-muted">Date of Birth <span class="text-rose">*</span></label>
+                                    <input type="date" class="form-control form-cyber" id="dob" name="dob" data-step-required>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small text-muted">Student Photo</label>
+                                    <input type="file" class="form-control form-cyber" id="photo" name="photo" accept="image/jpeg,image/png,image/gif,image/webp">
+                                    <div class="form-text text-muted" style="font-size:0.72rem;">JPG, PNG, GIF, or WEBP. Automatically cropped to a square ID-card photo for the circular avatar.</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small text-muted">Academic Level <span class="text-rose">*</span></label>
+                                    <select class="form-select form-cyber" id="level" name="level" data-step-required>
+                                        <option value="">Select Level...</option>
+                                        {% for value, label in form.level.choices %}
+                                        <option value="{{ value }}">{{ label }}</option>
+                                        {% endfor %}
                                     </select>
                                 </div>
                                 <div class="col-md-6">
@@ -728,16 +881,20 @@
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <label class="form-label small text-muted">Target Class / Grade Level <span class="text-rose">*</span></label>
-                                    <select class="form-select form-cyber" id="class_id" name="class_id" required>
+                                    <select class="form-select form-cyber" id="class_id" name="klass" data-step-required>
                                         <option value="">Choose Class Folder...</option>
-                                        {% for klass in classes %}
-                                        <option value="{{ klass.id }}">{{ klass.name }}</option>
+                                        {% for group in classes_by_division %}
+                                        <optgroup label="{{ group.label }}">
+                                            {% for klass in group.classes %}
+                                            <option value="{{ klass.id }}">{{ klass.name }} — {{ group.label }}</option>
+                                            {% endfor %}
+                                        </optgroup>
                                         {% endfor %}
                                     </select>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small text-muted">Registration Status <span class="text-rose">*</span></label>
-                                    <select class="form-select form-cyber" id="enrollment_status" name="enrollment_status" required>
+                                    <select class="form-select form-cyber" id="enrollment_status" name="enrollment_status" data-step-required>
                                         <option value="Active" selected>Active (Enrolled)</option>
                                         <option value="Pending">Pending Approval</option>
                                         <option value="Conditional">Conditional Intake</option>
@@ -758,24 +915,60 @@
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small text-muted">Parent Contact Telephone</label>
-                                    <input type="tel" class="form-control form-cyber" id="guardian_phone" name="guardian_phone">
+                                    <input type="tel" class="form-control form-cyber" id="guardian_phone" name="parent_phone">
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Payment & Proof Attachment -->
-                        <div class="enroll-section">
-                            <div class="enroll-section-header">
-                                <h6><i class="fas fa-file-invoice-dollar text-emerald me-2"></i>Registration Ledger Deposit Proof</h6>
+                        <!-- Student Registration Fee (one-time; not periodic tuition) -->
+                        <div class="reg-fee-card" id="registrationFeeSection">
+                            <div class="reg-fee-header">
+                                <i class="fas fa-file-invoice-dollar" style="color:#c82828;"></i>
+                                <h6>Student Registration Fee</h6>
+                                <span class="reg-fee-kicker">One-time intake</span>
                             </div>
+                            <p class="reg-fee-help mb-3">
+                                Registration fee is the one-time school enrollment fee for this year (not monthly tuition).
+                                Enter the amount. Choose Unpaid if they have not paid yet. You can finish registration even if unpaid.
+                                Record the fee. After payment, enter the receipt number issued to the student.
+                            </p>
                             <div class="row g-3">
-                                <div class="col-md-6">
-                                    <label class="form-label small text-muted">Payment Receipt Attachment (PDF / PNG / JPG)</label>
-                                    <input type="file" class="form-control form-cyber" id="payment_receipt" name="payment_receipt" accept="image/*,.pdf">
+                                <div class="col-md-4">
+                                    <label class="form-label" for="registration_fees">
+                                        Amount <span class="req-star">*</span>
+                                    </label>
+                                    <input type="text" class="form-control" id="registration_fees"
+                                           name="registration_fees" inputmode="decimal" autocomplete="off"
+                                           placeholder="e.g. 9,000.00"
+                                           value="{{ form.registration_fees.data or '' }}">
+                                    <div class="reg-fee-hint" id="regFeeHint">Enter 0 if the fee is waived.</div>
                                 </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small text-muted">Receipt Reference Number</label>
-                                    <input type="text" class="form-control form-cyber" id="receipt_reference" name="receipt_reference" placeholder="e.g. REC-99201">
+                                <div class="col-md-4">
+                                    <label class="form-label" for="registration_payment_status">Payment Status</label>
+                                    <select class="form-select" id="registration_payment_status" name="registration_payment_status">
+                                        {% set fee_status = form.registration_payment_status.data or 'unpaid' %}
+                                        <option value="unpaid" {% if fee_status == 'unpaid' %}selected{% endif %}>Unpaid</option>
+                                        <option value="partial" {% if fee_status == 'partial' %}selected{% endif %}>Partial</option>
+                                        <option value="paid" {% if fee_status == 'paid' %}selected{% endif %}>Paid</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label" for="academic_year">Academic Year <span class="req-star">*</span></label>
+                                    {% set selected_year_id = form.academic_year.data or (display_year.id if display_year else (active_year.id if active_year else none)) %}
+                                    <select class="form-select" id="academic_year" name="academic_year" data-step-required>
+                                        {% for y in years %}
+                                        <option value="{{ y.id }}" {% if selected_year_id|string == y.id|string %}selected{% endif %}>{{ y.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-6 receipt-field-wrap" id="receiptFieldWrap">
+                                    <label class="form-label" for="receipt_reference">
+                                        Receipt / Reference <span class="req-star" id="receiptReqStar">*</span>
+                                    </label>
+                                    <input type="text" class="form-control" id="receipt_reference" name="receipt_reference"
+                                           placeholder="e.g. REC-99201" maxlength="80"
+                                           value="{{ form.receipt_reference.data or '' }}">
+                                    <div class="reg-fee-hint">Required after Paid or Partial — the official receipt number issued to the student.</div>
                                 </div>
                             </div>
                         </div>
@@ -821,9 +1014,24 @@ document.addEventListener('DOMContentLoaded', function () {
     const inputFirstName = document.getElementById('first_name');
     const inputLastName = document.getElementById('last_name');
     const inputGender = document.getElementById('gender');
+    const inputDob = document.getElementById('dob');
+    const inputLevel = document.getElementById('level');
+    const inputKlass = document.getElementById('class_id');
     const inputPhone = document.getElementById('telephone_number');
     const inputAddress = document.getElementById('home_address');
     const isReturningInput = document.getElementById('is_returning_student');
+    const inputRegFee = document.getElementById('registration_fees');
+    const inputReceiptRef = document.getElementById('receipt_reference');
+    const inputPayStatus = document.getElementById('registration_payment_status');
+    const receiptFieldWrap = document.getElementById('receiptFieldWrap');
+    const enrollmentForm = document.getElementById('enrollmentForm');
+    const regFeeHint = document.getElementById('regFeeHint');
+    const classRegFees = {{ class_registration_fees|default({})|tojson }};
+
+    function csrfToken() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.getAttribute('content') : '';
+    }
 
     const badgeType = document.getElementById('enrollTypeBadge');
     const badgeTypeText = document.getElementById('enrollTypeBadgeText');
@@ -854,33 +1062,52 @@ document.addEventListener('DOMContentLoaded', function () {
         btnLookup.disabled = true;
 
         // AJAX Query endpoint
-        fetch(`/api/student/lookup?email=${encodeURIComponent(emailVal)}&student_id=${encodeURIComponent(studentIdVal)}`)
+        fetch('{{ url_for("api_registrar_lookup_student") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken(),
+            },
+            body: JSON.stringify({ email: emailVal, student_id: studentIdVal }),
+        })
             .then(res => res.json())
             .then(data => {
                 spinner.classList.remove('show');
                 btnLookup.disabled = false;
 
                 if (data.found) {
-                    // Populate returning student details
-                    inputFirstName.value = data.student.first_name || '';
-                    inputLastName.value = data.student.last_name || '';
-                    if (data.student.gender) inputGender.value = data.student.gender;
-                    if (data.student.telephone_number) inputPhone.value = data.student.telephone_number;
-                    if (data.student.home_address) inputAddress.value = data.student.home_address;
+                    const student = data.student || data;
+                    inputFirstName.value = student.first_name || '';
+                    inputLastName.value = student.last_name || '';
+                    if (student.gender) inputGender.value = student.gender;
+                    if (student.dob && inputDob) inputDob.value = student.dob;
+                    if (student.level && inputLevel) inputLevel.value = student.level;
+                    if (student.klass_id && inputKlass) inputKlass.value = String(student.klass_id);
+                    if (student.telephone_number) inputPhone.value = student.telephone_number;
+                    if (student.home_address) inputAddress.value = student.home_address;
+                    if (student.student_id) inputStudentId.value = student.student_id;
+                    if (inputRegFee && student.registration_fees) {
+                        inputRegFee.value = student.registration_fees;
+                        inputRegFee.dataset.userEdited = student.registration_fees !== '0.00' ? '1' : '';
+                    }
+                    applyScheduledRegistrationFee();
 
-                    // Lock fixed attributes
                     lockField('first_name');
                     lockField('last_name');
+                    lockField('dob');
+                    lockField('level');
 
-                    isReturningInput.value = "true";
+                    isReturningInput.value = "y";
 
-                    showBanner(`<strong>Returning Student Found:</strong> ${data.student.full_name} (${data.student.student_id})`, 'returning');
-                    setBadge('returning', `Returning Student: ${data.student.full_name}`);
+                    showBanner(`<strong>Returning Student Found:</strong> ${student.first_name || ''} ${student.last_name || ''} (${student.student_id || ''})`, 'returning');
+                    setBadge('returning', `Returning Student: ${student.first_name || ''} ${student.last_name || ''}`.trim());
                 } else {
                     // Reset lock states for new student
                     unlockField('first_name');
                     unlockField('last_name');
-                    isReturningInput.value = "false";
+                    unlockField('dob');
+                    unlockField('level');
+                    isReturningInput.value = "";
 
                     showBanner('<strong>New Student Intake:</strong> No existing record found. Please complete personal information.', 'new-student');
                     setBadge('new-student', 'New Student Intake');
@@ -891,6 +1118,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 wizardStep1.classList.add('done');
                 wizardStep2.classList.add('active');
                 step2Panel.classList.add('visible');
+                syncStepRequired(true);
+                syncReceiptField();
             })
             .catch(err => {
                 console.error('Lookup Error:', err);
@@ -900,7 +1129,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 // Fallback for demo/offline: treat as new student
                 unlockField('first_name');
                 unlockField('last_name');
-                isReturningInput.value = "false";
+                unlockField('dob');
+                unlockField('level');
+                isReturningInput.value = "";
 
                 showBanner('Ready to register. Complete details below.', 'new-student');
                 setBadge('new-student', 'New Student Registration');
@@ -909,6 +1140,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 wizardStep1.classList.add('done');
                 wizardStep2.classList.add('active');
                 step2Panel.classList.add('visible');
+                syncStepRequired(true);
+                syncReceiptField();
             });
     });
 
@@ -918,7 +1151,11 @@ document.addEventListener('DOMContentLoaded', function () {
             document.getElementById('enrollmentForm').reset();
             unlockField('first_name');
             unlockField('last_name');
-            isReturningInput.value = "false";
+            unlockField('dob');
+            unlockField('level');
+            isReturningInput.value = "";
+            if (inputRegFee) inputRegFee.dataset.userEdited = '';
+            if (regFeeHint) regFeeHint.textContent = 'Enter 0 if the fee is waived.';
 
             step2Panel.classList.remove('visible');
             lookupBanner.classList.remove('show', 'returning', 'new-student', 'error');
@@ -927,6 +1164,156 @@ document.addEventListener('DOMContentLoaded', function () {
             wizardStep2.classList.remove('active');
             wizardStep1.classList.remove('done');
             wizardStep1.classList.add('active');
+            syncStepRequired(false);
+            syncReceiptField();
+        });
+    }
+
+    function parseMoneyInput(raw) {
+        if (raw == null || String(raw).trim() === '') return 0;
+        if (typeof raw === 'number' && Number.isFinite(raw)) {
+            return Math.round(raw * 100) / 100;
+        }
+        let text = String(raw).trim().replace(/[$₱₦€£\s]/g, '');
+        if (!text) return 0;
+        const lastComma = text.lastIndexOf(',');
+        const lastDot = text.lastIndexOf('.');
+        if (lastComma !== -1 && lastDot !== -1) {
+            if (lastComma > lastDot) {
+                text = text.replace(/\./g, '').replace(',', '.');
+            } else {
+                text = text.replace(/,/g, '');
+            }
+        } else if (lastComma !== -1) {
+            const frac = text.length - lastComma - 1;
+            const count = (text.match(/,/g) || []).length;
+            if (count === 1 && (frac === 1 || frac === 2)) {
+                text = text.replace(',', '.');
+            } else {
+                text = text.replace(/,/g, '');
+            }
+        } else if ((text.match(/\./g) || []).length > 1) {
+            text = text.slice(0, lastDot).replace(/\./g, '') + '.' + text.slice(lastDot + 1);
+        }
+        const num = Number(text);
+        return Number.isFinite(num) ? Math.round(num * 100) / 100 : NaN;
+    }
+
+    function formatFeeAmount(value) {
+        const num = parseMoneyInput(value);
+        if (!Number.isFinite(num) || num < 0) return '';
+        if (num === 0) return '0.00';
+        const parts = num.toFixed(2).split('.');
+        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        return parts.join('.');
+    }
+
+    function applyScheduledRegistrationFee() {
+        if (!inputKlass || !inputRegFee) return;
+        const scheduled = classRegFees[String(inputKlass.value)];
+        const formatted = (scheduled != null && parseMoneyInput(scheduled) > 0)
+            ? formatFeeAmount(scheduled)
+            : '';
+        if (formatted) {
+            if (!inputRegFee.dataset.userEdited) {
+                inputRegFee.value = formatted;
+            }
+            if (regFeeHint) {
+                regFeeHint.textContent = 'Class registration schedule: $' + formatted + ' (not tuition). Enter 0 if waived.';
+            }
+        } else if (regFeeHint) {
+            regFeeHint.textContent = 'Enter 0 if the fee is waived.';
+        }
+    }
+
+    function syncStepRequired(active) {
+        if (!step2Panel) return;
+        step2Panel.querySelectorAll('[data-step-required]').forEach(function (el) {
+            el.required = !!active;
+        });
+    }
+
+    function paymentNeedsReceipt() {
+        const status = inputPayStatus ? String(inputPayStatus.value || '').toLowerCase() : '';
+        return status === 'paid' || status === 'partial';
+    }
+
+    function syncReceiptField() {
+        const needed = paymentNeedsReceipt();
+        if (receiptFieldWrap) {
+            receiptFieldWrap.classList.toggle('is-inactive', !needed);
+        }
+        if (inputReceiptRef) {
+            inputReceiptRef.required = needed;
+            inputReceiptRef.disabled = !needed;
+            if (!needed) {
+                inputReceiptRef.removeAttribute('required');
+            }
+        }
+    }
+
+    if (inputRegFee) {
+        inputRegFee.addEventListener('input', function () {
+            inputRegFee.dataset.userEdited = '1';
+        });
+        inputRegFee.addEventListener('blur', function () {
+            const parsed = parseMoneyInput(inputRegFee.value);
+            if (!Number.isNaN(parsed)) {
+                inputRegFee.value = formatFeeAmount(parsed);
+            }
+        });
+    }
+    if (inputKlass) {
+        inputKlass.addEventListener('change', applyScheduledRegistrationFee);
+    }
+    if (inputPayStatus) {
+        inputPayStatus.addEventListener('change', syncReceiptField);
+    }
+    syncStepRequired(false);
+    syncReceiptField();
+
+    if (enrollmentForm) {
+        enrollmentForm.addEventListener('keydown', function (e) {
+            if (e.key !== 'Enter') return;
+            if (e.target && e.target.tagName === 'TEXTAREA') return;
+            if (!step2Panel.classList.contains('visible')) {
+                e.preventDefault();
+                if (btnLookup) btnLookup.click();
+            }
+        });
+        enrollmentForm.addEventListener('submit', function (e) {
+            if (!step2Panel.classList.contains('visible')) {
+                e.preventDefault();
+                if (btnLookup) btnLookup.click();
+                return;
+            }
+            if (inputRegFee) {
+                const parsed = parseMoneyInput(inputRegFee.value);
+                if (inputRegFee.value.trim() && Number.isNaN(parsed)) {
+                    e.preventDefault();
+                    inputRegFee.focus();
+                    if (regFeeHint) {
+                        regFeeHint.textContent = 'Enter a valid amount such as 9000 or 9,000.00. Use 0 if waived.';
+                    }
+                    return;
+                }
+                inputRegFee.value = formatFeeAmount(Number.isNaN(parsed) ? 0 : parsed);
+            }
+            if (paymentNeedsReceipt() && inputReceiptRef && !inputReceiptRef.value.trim()) {
+                e.preventDefault();
+                syncReceiptField();
+                inputReceiptRef.focus();
+                return;
+            }
+            const missing = step2Panel.querySelectorAll('[data-step-required]');
+            for (let i = 0; i < missing.length; i += 1) {
+                const field = missing[i];
+                if (!String(field.value || '').trim()) {
+                    e.preventDefault();
+                    field.focus();
+                    return;
+                }
+            }
         });
     }
 

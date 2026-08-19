@@ -31,21 +31,28 @@ def configure_app(app):
             'See .env.example'
         )
 
+    # Dev Tunnels / ngrok / Nginx terminate HTTPS and forward HTTP locally.
+    # Without ProxyFix, Flask never sees https, so the session/CSRF cookie is dropped.
+    trusted_hops = int(os.environ.get('PROXY_FIX_HOPS', '1'))
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=trusted_hops,
+        x_proto=trusted_hops,
+        x_host=trusted_hops,
+        x_port=trusted_hops,
+    )
+
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
+
     if prod:
         app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', 'true').lower() != 'false'
-        app.config['SESSION_COOKIE_HTTPONLY'] = True
-        app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
         app.config['PREFERRED_URL_SCHEME'] = 'https'
         app.config['WTF_CSRF_SSL_STRICT'] = os.environ.get('WTF_CSRF_SSL_STRICT', 'true').lower() != 'false'
-
-        trusted_hops = int(os.environ.get('PROXY_FIX_HOPS', '1'))
-        app.wsgi_app = ProxyFix(
-            app.wsgi_app,
-            x_for=trusted_hops,
-            x_proto=trusted_hops,
-            x_host=trusted_hops,
-            x_port=trusted_hops,
-        )
+    else:
+        app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() == 'true'
+        app.config['WTF_CSRF_SSL_STRICT'] = False
+        app.config['PREFERRED_URL_SCHEME'] = os.environ.get('PREFERRED_URL_SCHEME', 'https')
 
     max_mb = int(os.environ.get('MAX_UPLOAD_MB', '16'))
     video_max_mb = int(os.environ.get('SCHOOL_VIDEO_MAX_MB', '150'))

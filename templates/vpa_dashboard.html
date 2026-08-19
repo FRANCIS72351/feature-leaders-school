@@ -195,19 +195,18 @@
         <div class="col-xl-4 col-lg-5 d-flex flex-column gap-4">
             <div class="card sec-card p-4">
                 <div class="d-flex align-items-center gap-3 mb-3">
-                    {% if current_user.photo_url %}
-                    <img src="{{ current_user.photo_url }}" class="rounded-3 border border-secondary border-opacity-25" style="width:64px;height:64px;object-fit:cover;" alt="VPA">
-                    {% else %}
-                    <div class="rounded-3 bg-secondary d-flex align-items-center justify-content-center" style="width:64px;height:64px;font-size:1.4rem;">{{ current_user.full_name[0]|upper }}</div>
-                    {% endif %}
+                    <img src="{{ current_user.photo_url }}" class="rounded-circle border border-secondary border-opacity-25" style="width:64px;height:64px;aspect-ratio:1/1;object-fit:cover;overflow:hidden;" alt="VPA" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
                     <div>
                         <h5 class="mb-0">{{ current_user.full_name }}</h5>
                         <span class="badge text-violet border small" style="background:rgba(139,92,246,0.1);border-color:rgba(139,92,246,0.25)!important;">Vice Principal for Academics</span>
                     </div>
                 </div>
                 {% if active_year %}
-                <p class="text-muted small mb-0"><i class="fas fa-calendar-check text-violet me-1"></i>Active term: <strong class="text-white">{{ active_year.name }}</strong></p>
+                <p class="text-muted small mb-2"><i class="fas fa-calendar-check text-violet me-1"></i>Active term: <strong class="text-white">{{ active_year.name }}</strong></p>
                 {% endif %}
+                {% with link_class='small text-decoration-none', link_style='color:#c82828;' %}
+                {% include 'partials/account_settings_link.html' %}
+                {% endwith %}
             </div>
 
             <div class="card sec-card p-4">
@@ -255,7 +254,11 @@
                             <div class="text-muted small">{{ stats.total_students }} {% if viewing_archived %}on record{% else %}students{% endif %} · {{ selected_year_name }}</div>
                         </a>
                     </div>
-                    {% for snap in class_snapshots[:8] %}
+                    {% for group in class_snapshots_by_division %}
+                    <div class="col-12">
+                        <div class="text-violet small fw-semibold text-uppercase mt-2" style="font-size:0.68rem; letter-spacing:0.06em;">{{ group.label }}</div>
+                    </div>
+                    {% for snap in group.classes %}
                     <div class="col-md-6">
                         <a href="{{ url_for('vpa_dashboard', class_id=snap.klass.id, **year_param) }}" class="class-academic-card{% if selected_class and selected_class.id == snap.klass.id %} active{% endif %}">
                             <div class="fw-semibold small">{{ snap.klass.name }}</div>
@@ -267,6 +270,7 @@
                             </div>
                         </a>
                     </div>
+                    {% endfor %}
                     {% endfor %}
                 </div>
             </div>
@@ -312,8 +316,12 @@
                     <div class="col-md-4">
                         <select name="class_id" class="form-select form-cyber form-select-sm">
                             <option value="">All classes</option>
-                            {% for snap in class_snapshots %}
-                            <option value="{{ snap.klass.id }}" {% if class_id == snap.klass.id %}selected{% endif %}>{{ snap.klass.name }}</option>
+                            {% for group in class_snapshots_by_division %}
+                            <optgroup label="{{ group.label }}">
+                                {% for snap in group.classes %}
+                                <option value="{{ snap.klass.id }}" {% if class_id == snap.klass.id %}selected{% endif %}>{{ snap.klass.name }}</option>
+                                {% endfor %}
+                            </optgroup>
                             {% endfor %}
                         </select>
                     </div>

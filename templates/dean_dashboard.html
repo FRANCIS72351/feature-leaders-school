@@ -159,17 +159,16 @@
         <div class="col-xl-4 col-lg-5 d-flex flex-column gap-4">
             <div class="card sec-card p-4">
                 <div class="d-flex align-items-center gap-3 mb-3">
-                    {% if current_user.photo_url %}
-                    <img src="{{ current_user.photo_url }}" class="rounded-3 border border-secondary border-opacity-25" style="width:64px;height:64px;object-fit:cover;" alt="Dean">
-                    {% else %}
-                    <div class="rounded-3 bg-secondary d-flex align-items-center justify-content-center" style="width:64px;height:64px;font-size:1.4rem;">{{ current_user.full_name[0]|upper }}</div>
-                    {% endif %}
+                    <img src="{{ current_user.photo_url }}" class="rounded-circle border border-secondary border-opacity-25" style="width:64px;height:64px;aspect-ratio:1/1;object-fit:cover;overflow:hidden;" alt="Dean" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
                     <div>
                         <h5 class="mb-0">{{ current_user.full_name }}</h5>
                         <span class="badge bg-cyan bg-opacity-10 text-cyan border border-cyan border-opacity-10 small">Dean of Students</span>
                     </div>
                 </div>
-                <p class="text-muted small mb-0"><i class="fas fa-envelope me-1"></i>{{ current_user.email }}</p>
+                <p class="text-muted small mb-2"><i class="fas fa-envelope me-1"></i>{{ current_user.email }}</p>
+                {% with link_class='small text-cyan text-decoration-none' %}
+                {% include 'partials/account_settings_link.html' %}
+                {% endwith %}
             </div>
 
             <div class="card sec-card p-4">

@@ -5,8 +5,8 @@
 {% block content %}
 <style>
   :root {
-    --brand-red: #C81D25;
-    --brand-red-dark: #9E131A;
+    --brand-red: #c82828;
+    --brand-red-dark: #a32020;
     --brand-navy: #0B192C;
     --slate-border: #e2e8f0;
     --slate-bg: #f8fafc;
@@ -89,6 +89,37 @@
     font-weight: 600;
   }
 
+  .work-toolbar {
+    display: grid;
+    grid-template-columns: 1.2fr 1.2fr 1fr auto;
+    gap: 12px;
+    align-items: end;
+    margin: -8px 0 20px;
+    padding: 14px 16px;
+    background: #f8fafc;
+    border: 1px solid var(--slate-border);
+    border-radius: 8px;
+  }
+  .work-toolbar label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 6px;
+  }
+  .work-toolbar .form-select {
+    border-radius: 6px !important;
+    font-size: 0.88rem;
+    font-weight: 600;
+  }
+  .scheme-note {
+    font-size: 0.78rem;
+    color: #64748b;
+    margin: 0 0 12px;
+  }
+
   /* Table Interface Architecture */
   .table-responsive-wrapper {
     overflow-x: auto;
@@ -114,6 +145,18 @@
     border-bottom: 2px solid var(--slate-border);
     border-right: 1px solid var(--slate-border);
     text-align: center;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  .grade-table th .col-max {
+    display: block;
+    font-size: 0.62rem;
+    font-weight: 600;
+    color: #94a3b8;
+    letter-spacing: 0;
+    text-transform: none;
+    margin-top: 2px;
   }
   .grade-table td {
     padding: 8px 10px;
@@ -123,6 +166,23 @@
   }
   .grade-table th:last-child, .grade-table td:last-child {
     border-right: none;
+  }
+  .grade-table tbody tr:nth-child(even) {
+    background: #fbfdff;
+  }
+  .grade-table tbody tr:hover {
+    background: #fff7f7;
+  }
+  .student-name-cell {
+    font-weight: 700;
+    color: #0f172a;
+    min-width: 180px;
+  }
+  .student-id-cell {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #475569;
+    font-weight: 600;
+    text-align: center;
   }
 
   /* Specialized Input Controls */
@@ -141,12 +201,6 @@
     outline: none;
     box-shadow: 0 0 0 2px rgba(200, 29, 37, 0.15);
   }
-  .field-id-readonly {
-    background: var(--slate-bg);
-    color: #64748b;
-    font-weight: 600;
-    min-width: 90px;
-  }
   .score-input {
     width: 58px;
     padding: 6px 4px;
@@ -154,7 +208,8 @@
     border-radius: 5px;
     font-size: 0.85rem;
     text-align: center;
-    font-weight: 500;
+    font-weight: 600;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
 
   /* Dynamic Calculated Badges */
@@ -168,6 +223,7 @@
     color: #0f172a;
     min-width: 45px;
     text-align: center;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
   .cell-grade-badge {
     font-weight: 800;
@@ -175,6 +231,11 @@
     font-size: 0.9rem;
     color: var(--brand-navy);
   }
+  .cell-grade-badge.grade-a { color: #047857; }
+  .cell-grade-badge.grade-b { color: #1d4ed8; }
+  .cell-grade-badge.grade-c { color: #b45309; }
+  .cell-grade-badge.grade-d { color: #c2410c; }
+  .cell-grade-badge.grade-f { color: #b91c1c; }
 
   /* Status Dropdown Styling */
   .status-select-control {
@@ -188,6 +249,45 @@
     cursor: pointer;
     text-align: center;
   }
+  .status-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+  .status-badge.published {
+    background: #dcfce7;
+    color: #166534;
+  }
+  .status-badge.draft {
+    background: #fef3c7;
+    color: #92400e;
+  }
+  .status-badge.pending {
+    background: #e2e8f0;
+    color: #475569;
+  }
+
+  .sheet-empty {
+    text-align: center;
+    padding: 36px 16px;
+    color: #64748b;
+  }
+  .sheet-empty strong {
+    display: block;
+    color: #0f172a;
+    font-size: 1rem;
+    margin-bottom: 4px;
+  }
+
+  .sheet-work-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
 
   /* Action Buttons */
   .btn-save-grades-main {
@@ -199,7 +299,6 @@
     font-size: 0.9rem;
     border-radius: 6px;
     cursor: pointer;
-    float: right;
     transition: all 0.2s ease;
     display: inline-flex;
     align-items: center;
@@ -210,34 +309,355 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(200, 29, 37, 0.25);
   }
+  .btn-save-draft {
+    background: #ffffff;
+    color: #334155;
+    border: 1px solid #cbd5e1;
+    padding: 10px 18px;
+    font-weight: 700;
+    font-size: 0.88rem;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  @media (max-width: 900px) {
+    .work-toolbar {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Faculty identity — light card, dark type, brand-red accents */
+  .teacher-hub {
+    margin-top: 8px;
+    margin-bottom: 18px;
+  }
+  .teacher-identity-card {
+    background: #ffffff;
+    border: 1px solid var(--slate-border);
+    border-left: 4px solid #c82828;
+    border-radius: 14px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+    color: #1f2937;
+    padding: 1.35rem 1.4rem;
+    margin-bottom: 14px;
+  }
+  .teacher-identity-card,
+  .teacher-identity-card h2,
+  .teacher-identity-card h5,
+  .teacher-identity-card p,
+  .teacher-identity-card span,
+  .teacher-identity-card div,
+  .teacher-identity-card dt,
+  .teacher-identity-card dd {
+    color: #1f2937 !important;
+  }
+  .teacher-identity-photo,
+  .teacher-identity-initials {
+    width: 112px !important;
+    height: 112px !important;
+    max-width: none !important;
+    aspect-ratio: 1 / 1;
+    border-radius: 50%;
+    flex-shrink: 0;
+    object-fit: cover;
+    overflow: hidden;
+  }
+  .teacher-identity-photo {
+    border: 3px solid #c82828;
+    background: #fff7f7;
+    display: block;
+  }
+  .teacher-identity-initials {
+    background: #c82828;
+    color: #ffffff !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.1rem;
+    font-weight: 800;
+    border: 3px solid rgba(200, 40, 40, 0.25);
+  }
+  .teacher-identity-name {
+    font-size: 1.45rem;
+    font-weight: 800;
+    margin: 0 0 0.35rem 0;
+    line-height: 1.2;
+    color: #1f2937 !important;
+  }
+  .teacher-role-badge {
+    display: inline-block;
+    background: #c82828;
+    color: #ffffff !important;
+    border: 0;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.32rem 0.75rem;
+    border-radius: 999px;
+  }
+  .teacher-info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px 18px;
+    margin: 1rem 0 0 0;
+  }
+  .teacher-info-grid dt {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #c82828 !important;
+    margin: 0 0 2px 0;
+  }
+  .teacher-info-grid dd {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1f2937 !important;
+    word-break: break-word;
+  }
+  .teacher-profile-card,
+  .teacher-classes-card {
+    background: #ffffff;
+    border: 1px solid var(--slate-border);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+    color: #0f172a;
+  }
+  .teacher-classes-card h6,
+  .teacher-classes-card p,
+  .teacher-classes-card span,
+  .teacher-classes-card div {
+    color: #0f172a;
+  }
+  .teacher-identity-chip {
+    display: inline-block;
+    background: #fff7f7;
+    color: #c82828 !important;
+    border: 1px solid rgba(200, 40, 40, 0.22);
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 0.22rem 0.55rem;
+    border-radius: 999px;
+  }
+  .teacher-chip {
+    display: inline-block;
+    background: #fff7f7;
+    color: #9E131A !important;
+    border: 1px solid rgba(200, 40, 40, 0.18);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.22rem 0.55rem;
+    border-radius: 999px;
+  }
+  .teacher-class-tile {
+    display: block;
+    text-decoration: none !important;
+    background: #f8fafc;
+    border: 1px solid var(--slate-border);
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+    height: 100%;
+    color: #0f172a !important;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .teacher-class-tile:hover {
+    border-color: rgba(200, 40, 40, 0.45);
+    box-shadow: 0 6px 16px rgba(200, 40, 40, 0.08);
+    color: #0f172a !important;
+  }
+  .teacher-class-tile .tile-name {
+    font-weight: 800;
+    color: #0B192C !important;
+  }
+  .teacher-class-tile .tile-meta {
+    font-size: 0.78rem;
+    color: #64748b !important;
+  }
+  .teacher-quick-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid rgba(200, 40, 40, 0.25);
+    color: #c82828 !important;
+    background: #ffffff;
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 0.35rem 0.7rem;
+    border-radius: 6px;
+    text-decoration: none !important;
+  }
+  .teacher-quick-link:hover {
+    background: #c82828;
+    color: #ffffff !important;
+  }
+  .teacher-hub-empty {
+    color: #64748b !important;
+    font-size: 0.88rem;
+    margin: 0;
+  }
 </style>
 
-<!-- System Navigation Bar -->
-<nav class="navbar navbar-expand-lg navbar-light bg-light rounded border mb-3 px-3">
-  <div class="container-fluid p-0">
-    <a class="navbar-brand font-weight-bold text-dark" href="{{ url_for('dashboard') }}">
-      <i class="fas fa-graduation-cap text-danger me-2"></i>{{ header.school if header and header.school else 'Future Leaders Preparatory Academy' }}
-    </a>
-    <div class="d-flex align-items-center">
-      <a href="{{ url_for('teacher_dashboard') }}" class="btn btn-outline-secondary btn-sm me-2">
-        <i class="fas fa-arrow-left me-1"></i> Return to Teacher Hub
-      </a>
-      {% if announcements_link %}
-        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-info btn-sm me-2">
-          <i class="fas fa-bullhorn me-1"></i> Overview
-        </a>
+{% set roster = grade_entry_students if grade_entry_students is defined else [] %}
+{% set is_exam_period = grade_period in [7, 8] %}
+{% if period_component_specs is not defined %}
+{% set period_component_specs = [
+  ('attendance', 'ATT', 'Attendance', 10),
+  ('participation', 'PART', 'Participation', 10),
+  ('quiz', 'QUIZ', 'Quiz', 15),
+  ('assignment', 'ASSG', 'Assignment', 20),
+  ('classwork', 'CW', 'Class Work', 15),
+  ('other', 'HW', 'Homework', 10),
+  ('test', 'TEST', 'Test', 20),
+] %}
+{% endif %}
+{% set year_label = display_year.name if display_year else (header.academic_year if header and header.academic_year else '2025-2026') %}
+{% set class_label = selected_grade_class.name if selected_grade_class else '—' %}
+{% set subject_label = grade_subject if grade_subject else '—' %}
+{% set identity = faculty_identity if faculty_identity is defined and faculty_identity else {} %}
+{% set display_name = identity.name if identity.get('name') else ((teacher_profile.full_name if teacher_profile else none) or (current_user.full_name if current_user else none) or (current_user.email if current_user else none) or 'Faculty') %}
+{% set teacher_label = display_name %}
+{% set photo_src = identity.photo_url if identity.get('photo_url') else (current_user.photo_url if current_user else default_avatar_url) %}
+{% set assigned_cards = class_cards if class_cards is defined and class_cards else [] %}
+{% set subject_list = assigned_subjects if assigned_subjects is defined and assigned_subjects else [] %}
+{% set assigned_class_names = assigned_cards|map(attribute='name')|list %}
+
+<div class="teacher-hub">
+  <div class="teacher-identity-card">
+    <div class="d-flex flex-column flex-md-row align-items-md-center gap-3">
+      <div class="position-relative flex-shrink-0">
+        <img src="{{ photo_src or default_avatar_url }}" alt="{{ display_name }}" class="teacher-identity-photo" id="teacherIdentityPhoto" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
+        <div class="teacher-identity-initials" id="teacherIdentityInitials" style="display:none;">{{ display_name[:1]|upper }}</div>
+      </div>
+      <div class="flex-grow-1 min-w-0">
+        <h2 class="teacher-identity-name">{{ display_name }}</h2>
+        <span class="teacher-role-badge">{{ identity.role if identity.get('role') else (dashboard_role_label or 'Teacher') }}</span>
+        <dl class="teacher-info-grid">
+          <div>
+            <dt>Email</dt>
+            <dd>{{ identity.email if identity.get('email') else (current_user.email if current_user and current_user.email else 'Not on file') }}</dd>
+          </div>
+          <div>
+            <dt>Phone</dt>
+            <dd>{{ identity.phone if identity.get('phone') else (current_user.telephone_number if current_user and current_user.telephone_number else 'Not on file') }}</dd>
+          </div>
+          <div>
+            <dt>Assigned classes</dt>
+            <dd>
+              {% if assigned_class_names %}
+                {{ assigned_class_names|join(', ') }}
+              {% else %}
+                None assigned yet
+              {% endif %}
+            </dd>
+          </div>
+          <div>
+            <dt>Academic year</dt>
+            <dd>{% if display_year %}{{ display_year.name }}{% else %}Not configured{% endif %}</dd>
+          </div>
+          {% if identity.get('subject') %}
+          <div>
+            <dt>Subject</dt>
+            <dd>{{ identity.subject }}</dd>
+          </div>
+          {% endif %}
+          {% if identity.get('address') %}
+          <div>
+            <dt>Address</dt>
+            <dd>{{ identity.address }}</dd>
+          </div>
+          {% endif %}
+        </dl>
+        {% if subject_list %}
+        <div class="d-flex flex-wrap gap-1 mt-3">
+          {% for subject in subject_list %}
+          <span class="teacher-identity-chip">{{ subject }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% with link_class='small fw-semibold text-decoration-none d-inline-block mt-3', link_style='color:#c82828;' %}
+        {% include 'partials/account_settings_link.html' %}
+        {% endwith %}
+      </div>
+      {% if years %}
+      <form method="GET" action="{{ url_for('teacher_dashboard') }}" class="ms-md-auto">
+        <label for="academic_year_id" class="small fw-bold text-uppercase mb-1 d-block" style="color:#94a3b8;letter-spacing:0.04em;">Academic year</label>
+        <select name="academic_year_id" id="academic_year_id" class="form-select form-select-sm" onchange="this.form.submit()">
+          {% for y in years %}
+          <option value="{{ y.id }}" {% if display_year and display_year.id == y.id %}selected{% endif %}>{{ y.name }}{% if y.is_active %} (Active){% endif %}</option>
+          {% endfor %}
+        </select>
+      </form>
       {% endif %}
     </div>
   </div>
-</nav>
+
+  <div class="row g-3">
+    <div class="col-12">
+      <div class="teacher-classes-card p-4 h-100">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+          <div>
+            <h6 class="fw-bold mb-1" style="color:#0B192C;"><i class="fas fa-layer-group me-2" style="color:#c82828;"></i>Assigned Classes</h6>
+            <p class="teacher-hub-empty mb-0">Open a class folder, grade sheet, or attendance roll.</p>
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            <a class="teacher-quick-link" href="{{ url_for('teacher_attendance_picker') }}"><i class="fas fa-calendar-check"></i>Attendance</a>
+            {% if announcements_link %}
+            <a class="teacher-quick-link" href="{{ url_for('announcements') }}"><i class="fas fa-bullhorn"></i>Announcements</a>
+            {% endif %}
+          </div>
+        </div>
+        {% if assigned_cards %}
+        <div class="row g-3">
+          {% for card in assigned_cards %}
+          <div class="col-md-6">
+            <div class="teacher-class-tile">
+              <a href="{{ url_for('teacher_class_folder', class_id=card.id) }}" class="text-decoration-none">
+                <div class="tile-name">{{ card.name }}</div>
+                <div class="tile-meta mb-2">
+                  {% if card.grade_level %}Grade {{ card.grade_level }}{% endif %}
+                  {% if card.stream %} · {{ card.stream }}{% endif %}
+                  · {{ card.student_count }} student{{ 's' if card.student_count != 1 else '' }}
+                </div>
+              </a>
+              {% if card.role_labels %}
+              <div class="d-flex flex-wrap gap-1 mb-2">
+                {% for label in card.role_labels %}
+                <span class="teacher-chip">{{ label }}</span>
+                {% endfor %}
+              </div>
+              {% endif %}
+              {% if card.subjects %}
+              <div class="tile-meta mb-2">{{ card.subjects|join(', ') }}</div>
+              {% endif %}
+              <div class="d-flex flex-wrap gap-2">
+                <a class="teacher-quick-link" href="{{ url_for('grade_entry_class', class_id=card.id) }}">Grades</a>
+                <a class="teacher-quick-link" href="{{ url_for('teacher_class_attendance', class_id=card.id) }}">Attendance</a>
+                <a class="teacher-quick-link" href="{{ url_for('teacher_class_folder', class_id=card.id) }}">Roster</a>
+                {% if 'Sponsor' in card.role_labels %}
+                <a class="teacher-quick-link" href="{{ url_for('sponsor_class_hub', class_id=card.id) }}">Sponsor hub</a>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="teacher-hub-empty">No classes are assigned to this faculty account yet. Ask the principal to allocate a class and subject.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
 
 <div class="grade-sheet-wrapper">
   <!-- Institutional Header with Dual Side Logos -->
   <div class="sheet-header-card">
     <!-- Left Side Logo -->
-    <img src="{{ header.school_logo_left if header and header.school_logo_left else url_for('static', filename='images/logo.png') }}" 
+    <img src="{{ header.school_logo_left if header and header.school_logo_left else school_logo_url }}" 
          alt="School Logo Left" 
-         class="header-logo">
+         class="header-logo"
+         onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
 
     <!-- Center Institutional Title -->
     <div class="header-center-text">
@@ -246,38 +666,98 @@
     </div>
 
     <!-- Right Side Logo -->
-    <img src="{{ header.school_logo_right if header and header.school_logo_right else (header.school_logo_left if header and header.school_logo_left else url_for('static', filename='images/logo.png')) }}" 
+    <img src="{{ header.school_logo_right if header and header.school_logo_right else (header.school_logo_left if header and header.school_logo_left else school_logo_url) }}" 
          alt="School Logo Right" 
-         class="header-logo">
+         class="header-logo"
+         onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
   </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category if category in ['success', 'danger', 'warning', 'info'] else 'info' }} py-2 px-3 mb-3">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
 
   <!-- Structured Metadata Grid -->
   <div class="meta-box-grid">
     <div class="meta-item">
       <span class="meta-label">Class:</span>
-      <span class="meta-value">{{ header.class_name if header else selected_grade_class.name if selected_grade_class else 'Grade 11' }}</span>
+      <span class="meta-value">{{ class_label }}</span>
     </div>
     <div class="meta-item">
       <span class="meta-label">Academic Year:</span>
-      <span class="meta-value">{{ header.academic_year if header else '2025-2026' }}</span>
+      <span class="meta-value">{{ year_label }}</span>
     </div>
     <div class="meta-item">
       <span class="meta-label">Subject:</span>
-      <span class="meta-value">{{ header.subject if header else grade_subject if grade_subject else 'Mathematics' }}</span>
+      <span class="meta-value">{{ subject_label }}</span>
     </div>
     <div class="meta-item">
       <span class="meta-label">Period:</span>
-      <span class="meta-value">{{ header.period if header else period_label if period_label else '1' }}</span>
+      <span class="meta-value">{{ period_label if period_label else '1' }}</span>
     </div>
     <div class="meta-item">
       <span class="meta-label">Teacher:</span>
-      <span class="meta-value">{{ header.teacher if header else current_user.full_name }}</span>
+      <span class="meta-value">{{ teacher_label }}</span>
     </div>
     <div class="meta-item">
       <span class="meta-label">Students:</span>
-      <span class="meta-value" id="studentCountLabel">{{ students|length if students else 0 }}</span>
+      <span class="meta-value" id="studentCountLabel">{{ roster|length }}</span>
     </div>
   </div>
+
+  {% if class_cards %}
+  <form method="GET" action="{{ url_for('teacher_dashboard') }}" class="work-toolbar">
+    <div>
+      <label for="grade_class_id">Working class</label>
+      <select id="grade_class_id" name="grade_class_id" class="form-select form-select-sm" onchange="this.form.submit()">
+        {% for card in class_cards %}
+          <option value="{{ card.id }}" {% if card.id == grade_class_id %}selected{% endif %}>
+            {{ card.name }}{% if card.grade_level %} · Grade {{ card.grade_level }}{% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="grade_subject">Subject</label>
+      <select id="grade_subject" name="grade_subject" class="form-select form-select-sm" onchange="this.form.submit()">
+        {% if grade_entry_subjects %}
+          {% for subject in grade_entry_subjects %}
+            <option value="{{ subject }}" {% if subject == grade_subject %}selected{% endif %}>{{ subject }}</option>
+          {% endfor %}
+        {% else %}
+          <option value="">No assigned subject</option>
+        {% endif %}
+      </select>
+    </div>
+    <div>
+      <label for="grade_period">Marking period</label>
+      <select id="grade_period" name="grade_period" class="form-select form-select-sm" onchange="this.form.submit()">
+        {% for period_num, period_name in grading_periods %}
+          <option value="{{ period_num }}" {% if period_num == grade_period %}selected{% endif %}>{{ period_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <button type="submit" class="btn btn-outline-secondary btn-sm w-100">Load sheet</button>
+    </div>
+  </form>
+  {% endif %}
+
+  {% if is_exam_period %}
+    <p class="scheme-note">Semester exam period: enter the exam score out of 100. Letter grade updates automatically (A 90–100 · B 80–89 · C 70–79 · D below 70).</p>
+  {% else %}
+    <p class="scheme-note">Period evaluation totaling 100: {{ period_scheme_note if period_scheme_note is defined else 'ATT 10 + PART 10 + QUIZ 15 + ASSG 20 + CW 15 + HW 10 + TEST 20 = 100' }}. Letter grade: A 90–100 · B 80–89 · C 70–79 · D below 70.</p>
+  {% endif %}
+
+  {% if grade_class_id and grade_subject %}
+  <form method="POST" action="{{ url_for('save_grades', class_id=grade_class_id) }}" id="teacherGradeWorkForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="subject" value="{{ grade_subject }}">
+    <input type="hidden" name="period" value="{{ grade_period }}">
+    <input type="hidden" name="return_to" value="teacher_grade_sheet">
 
   <!-- Main Grade Entry Table -->
   <div class="table-responsive-wrapper">
@@ -287,13 +767,13 @@
           <th>#</th>
           <th style="text-align: left;">Student Name</th>
           <th>Student ID</th>
-          <th>Att</th>
-          <th>Part</th>
-          <th>Quiz</th>
-          <th>Assg</th>
-          <th>CW</th>
-          <th>HW</th>
-          <th>Test</th>
+          {% if is_exam_period %}
+            <th>Exam<span class="col-max">/ 100</span></th>
+          {% else %}
+            {% for _key, code, _label, max_score in (period_component_specs if period_component_specs is defined else []) %}
+            <th>{{ code }}<span class="col-max">/ {{ max_score|int }}</span></th>
+            {% endfor %}
+          {% endif %}
           <th>Total</th>
           <th>Grade</th>
           <th style="text-align: left;">Remarks</th>
@@ -301,51 +781,55 @@
         </tr>
       </thead>
       <tbody>
-        {% if students %}
-          {% for student in students %}
-          <tr data-student-id="{{ student.student_id }}">
+        {% if roster %}
+          {% for student in roster %}
+          {% set existing = grade_rows.get(student.id) if grade_rows else none %}
+          {% set total_score = existing.score if existing and existing.score is not none else none %}
+          {% set letter = (total_score | grade_letter) if total_score is not none else '—' %}
+          <tr data-student-id="{{ student.id }}">
             <td class="text-center fw-bold text-secondary">{{ loop.index }}</td>
-            <td><input type="text" class="field-input-text field-name" value="{{ student.student_name }}"></td>
-            <td><input type="text" class="field-input-text field-id-readonly field-id" value="{{ student.student_id }}" readonly></td>
-            <td class="text-center"><input type="number" class="score-input field-att" value="{{ student.attendance or 0 }}" min="0" max="100"></td>
-            <td class="text-center"><input type="number" class="score-input field-part" value="{{ student.participation or 0 }}" min="0" max="100"></td>
-            <td class="text-center"><input type="number" class="score-input field-quiz" value="{{ student.quiz or 0 }}" min="0" max="100"></td>
-            <td class="text-center"><input type="number" class="score-input field-assg" value="{{ student.assignment or 0 }}" min="0" max="100"></td>
-            <td class="text-center"><input type="number" class="score-input field-cw" value="{{ student.classwork or 0 }}" min="0" max="100"></td>
-            <td class="text-center"><input type="number" class="score-input field-hw" value="{{ student.homework or 0 }}" min="0" max="100"></td>
-            <td class="text-center"><input type="number" class="score-input field-test" value="{{ student.test or 0 }}" min="0" max="100"></td>
-            <td class="text-center"><span class="cell-total-pill cell-total">{{ student.total or 0 }}</span></td>
-            <td class="text-center"><span class="cell-grade-badge cell-grade">{{ student.grade or 'F' }}</span></td>
-            <td><input type="text" class="field-input-text field-remarks" value="{{ student.remarks or '' }}" placeholder="Comments..."></td>
+            <td class="student-name-cell">{{ student.full_name }}</td>
+            <td class="student-id-cell">{{ student.student_id }}</td>
+            {% if is_exam_period %}
+              <td class="text-center">
+                <input type="number" step="0.1" min="0" max="100" class="score-input field-exam"
+                       name="exam_{{ student.id }}"
+                       value="{{ existing.score if existing and existing.score is not none else '' }}">
+              </td>
+            {% else %}
+              {% set comps = (component_rows.get(student.id, {}) if component_rows is defined and component_rows else {}) %}
+              {% for key, _code, _label, max_score in (period_component_specs if period_component_specs is defined else []) %}
+              <td class="text-center">
+                <input type="number" step="0.1" min="0" max="{{ max_score|int }}"
+                       class="score-input ca-input" data-max="{{ max_score|int }}"
+                       name="{{ key }}_{{ student.id }}"
+                       value="{{ comps.get(key, '') }}">
+              </td>
+              {% endfor %}
+            {% endif %}
+            <td class="text-center"><span class="cell-total-pill cell-total">{% if total_score is not none %}{{ '%.0f'|format(total_score) }}{% else %}—{% endif %}</span></td>
+            <td class="text-center"><span class="cell-grade-badge cell-grade grade-{{ letter|lower }}">{{ letter }}</span></td>
+            <td>
+              <input type="text" class="field-input-text field-remarks" value="{{ existing.remarks if existing and existing.remarks else '' }}" placeholder="Comments..." readonly>
+            </td>
             <td class="text-center">
-              <select class="status-select-control field-status">
-                <option value="Pending" {% if student.sheet_status == 'Pending' %}selected{% endif %}>Pending</option>
-                <option value="Verified" {% if student.sheet_status == 'Verified' %}selected{% endif %}>Verified</option>
-              </select>
+              {% if existing and existing.submitted %}
+                <span class="status-badge published">Published</span>
+              {% elif existing and total_score is not none %}
+                <span class="status-badge draft">Draft</span>
+              {% else %}
+                <span class="status-badge pending">Pending</span>
+              {% endif %}
             </td>
           </tr>
           {% endfor %}
         {% else %}
-          <!-- Default Row Template for New/Unpopulated Sheets -->
           <tr>
-            <td class="text-center fw-bold text-secondary">1</td>
-            <td><input type="text" class="field-input-text field-name" value="Jane Doe"></td>
-            <td><input type="text" class="field-input-text field-id-readonly field-id" value="STU-1001" readonly></td>
-            <td class="text-center"><input type="number" class="score-input field-att" value="10" min="0" max="100"></td>
-            <td class="text-center"><input type="number" class="score-input field-part" value="10" min="0" max="100"></td>
-            <td class="text-center"><input type="number" class="score-input field-quiz" value="15" min="0" max="100"></td>
-            <td class="text-center"><input type="number" class="score-input field-assg" value="10" min="0" max="100"></td>
-            <td class="text-center"><input type="number" class="score-input field-cw" value="15" min="0" max="100"></td>
-            <td class="text-center"><input type="number" class="score-input field-hw" value="10" min="0" max="100"></td>
-            <td class="text-center"><input type="number" class="score-input field-test" value="25" min="0" max="100"></td>
-            <td class="text-center"><span class="cell-total-pill cell-total">95</span></td>
-            <td class="text-center"><span class="cell-grade-badge cell-grade">A</span></td>
-            <td><input type="text" class="field-input-text field-remarks" value="Excellent effort"></td>
-            <td class="text-center">
-              <select class="status-select-control field-status">
-                <option value="Verified">Verified</option>
-                <option value="Pending" selected>Pending</option>
-              </select>
+            <td colspan="15">
+              <div class="sheet-empty">
+                <strong>No students on this roster</strong>
+                The grade sheet is ready. Names and IDs will appear when students are enrolled in this class.
+              </div>
             </td>
           </tr>
         {% endif %}
@@ -353,11 +837,29 @@
     </table>
   </div>
 
-  <div class="clearfix">
-    <button class="btn-save-grades-main" onclick="saveAllGrades()">
-      <i class="fas fa-save me-1"></i> Save Grade Sheet
-    </button>
+  <div class="sheet-work-footer">
+    <span class="scheme-note mb-0">Save Draft sends ATT–TEST scores to the student dashboard immediately. Publish writes the period total to the official report card / grade sheet.</span>
+    <div class="d-flex gap-2">
+      <button class="btn-save-draft" type="submit" name="publish_action" value="draft">
+        <i class="fas fa-save me-1"></i> Save Draft
+      </button>
+      <button class="btn-save-grades-main" type="submit" name="publish_action" value="publish">
+        <i class="fas fa-check me-1"></i> Save &amp; Publish
+      </button>
+    </div>
   </div>
+  </form>
+  {% elif not class_cards %}
+    <div class="sheet-empty">
+      <strong>No classes assigned</strong>
+      Ask the principal to allocate this faculty account to a class and subject.
+    </div>
+  {% else %}
+    <div class="sheet-empty">
+      <strong>Select a subject to begin</strong>
+      Choose a working class and subject above to load the official grade sheet.
+    </div>
+  {% endif %}
 </div>
 
 <script>
@@ -365,55 +867,35 @@
     if (total >= 90) return 'A';
     if (total >= 80) return 'B';
     if (total >= 70) return 'C';
-    if (total >= 60) return 'D';
-    return 'F';
+    return 'D';
   }
 
-  // Real-time calculation listener
-  document.getElementById('gradeTable').addEventListener('input', function(e) {
-    if (e.target.classList.contains('score-input')) {
+  function setGradeClass(el, letter) {
+    el.className = 'cell-grade-badge cell-grade grade-' + letter.toLowerCase();
+    el.textContent = letter;
+  }
+
+  const table = document.getElementById('gradeTable');
+  if (table) {
+    table.addEventListener('input', function(e) {
+      if (!e.target.classList.contains('score-input')) return;
+      const cap = parseFloat(e.target.getAttribute('max'));
+      const raw = parseFloat(e.target.value);
+      if (!isNaN(cap) && !isNaN(raw) && raw > cap) {
+        e.target.value = cap;
+      }
       const row = e.target.closest('tr');
-      const scores = Array.from(row.querySelectorAll('.score-input'))
-                          .map(input => parseFloat(input.value) || 0);
-      const total = scores.reduce((a, b) => a + b, 0);
-      
-      row.querySelector('.cell-total').textContent = total;
-      row.querySelector('.cell-grade').textContent = getLetter(total);
-    }
-  });
-
-  // Payload Serializer & API Sender
-  async function saveAllGrades() {
-    const rows = document.querySelectorAll('#gradeTable tbody tr');
-    const payload = [];
-
-    rows.forEach(row => {
-      payload.push({
-        student_name: row.querySelector('.field-name').value,
-        student_id: row.querySelector('.field-id').value,
-        attendance: row.querySelector('.field-att').value,
-        participation: row.querySelector('.field-part').value,
-        quiz: row.querySelector('.field-quiz').value,
-        assignment: row.querySelector('.field-assg').value,
-        classwork: row.querySelector('.field-cw').value,
-        homework: row.querySelector('.field-hw').value,
-        test: row.querySelector('.field-test').value,
-        remarks: row.querySelector('.field-remarks').value,
-        sheet_status: row.querySelector('.field-status').value
-      });
+      const examInput = row.querySelector('.field-exam');
+      const caInputs = row.querySelectorAll('.ca-input');
+      let total = 0;
+      if (caInputs.length) {
+        caInputs.forEach(input => { total += parseFloat(input.value) || 0; });
+      } else {
+        total = parseFloat(examInput && examInput.value) || 0;
+      }
+      row.querySelector('.cell-total').textContent = total ? total.toFixed(0) : '0';
+      setGradeClass(row.querySelector('.cell-grade'), getLetter(total));
     });
-
-    try {
-      const res = await fetch('/api/save-grades', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows: payload })
-      });
-      const result = await res.json();
-      alert(result.message || "Grades successfully saved.");
-    } catch (err) {
-      alert("Failed to communicate with the server: " + err);
-    }
   }
 </script>
 {% endblock %}

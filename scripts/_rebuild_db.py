@@ -1,8 +1,8 @@
-﻿import sqlite3, os, sys
+import sqlite3, os, sys
 
-src = r"c:\Users\Francis\Desktop\essential\SCHOOL_MANAGEMENT\instance\keeptrack_full.db"
-dst = r"c:\Users\Francis\Desktop\essential\SCHOOL_MANAGEMENT\instance\keeptrack_full_rebuilt.db"
-sql_path = r"c:\Users\Francis\Desktop\essential\SCHOOL_MANAGEMENT\instance\keeptrack_full_dump.sql"
+src = r"c:\Users\Francis\Desktop\essential\SCHOOL_MANAGEMENT\instance\future_leaders_full.db"
+dst = r"c:\Users\Francis\Desktop\essential\SCHOOL_MANAGEMENT\instance\future_leaders_full_rebuilt.db"
+sql_path = r"c:\Users\Francis\Desktop\essential\SCHOOL_MANAGEMENT\instance\future_leaders_full_dump.sql"
 
 # Phase 1: extract schema+data via writable_schema + manual approach
 conn = sqlite3.connect(src)

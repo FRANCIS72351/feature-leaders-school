@@ -124,12 +124,16 @@
     </form>
 
     <div class="row g-3">
-        {% for card in class_cards %}
+        {% for group in class_cards_by_division %}
+        <div class="col-12 pt-2">
+            <div class="text-cyan small fw-semibold text-uppercase" style="font-size:0.72rem; letter-spacing:0.08em;">{{ group.label }}</div>
+        </div>
+        {% for card in group.classes %}
         <div class="col-md-6 col-lg-4">
             <a href="{{ url_for('principal_class_grading', class_id=card.klass.id) }}" class="pge-class-card">
                 <div class="mb-2">
                     <div class="text-cyan small fw-semibold text-uppercase" style="font-size:0.68rem; letter-spacing:0.04em;">
-                        Grade {{ card.klass.grade_level }}
+                        {{ group.label }} · {{ card.klass.grade_level }}
                     </div>
                     <div class="fw-bold text-white fs-6">{{ card.klass.name }}</div>
                     {% if card.klass.stream %}
@@ -156,6 +160,7 @@
                 </div>
             </a>
         </div>
+        {% endfor %}
         {% else %}
         <div class="col-12 text-center py-5 text-cyan small">
             <i class="fas fa-folder-open opacity-25 me-1.5"></i>

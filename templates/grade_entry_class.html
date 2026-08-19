@@ -546,12 +546,12 @@
     <div class="sheet-wrap">
       <div class="sheet-masthead">
         <div class="sheet-school-row">
-          <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="sheet-school-logo">
+          <img src="{{ school_logo_url }}" alt="School logo" class="sheet-school-logo" onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
           <div>
             <div class="sheet-school-title">Feature Leaders Preparatory Academy</div>
             <div class="sheet-school-sub">Class Grade Entry Sheet</div>
           </div>
-          <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="sheet-school-logo">
+          <img src="{{ school_logo_url }}" alt="School logo" class="sheet-school-logo" onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
         </div>
         <div class="sheet-info-grid">
           <div class="sheet-info-cell"><span class="label-strong">Class:</span> {{ klass.name }}</div>
@@ -673,12 +673,12 @@
   <div class="sheet-wrap">
     <div class="sheet-masthead">
       <div class="sheet-school-row">
-        <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="sheet-school-logo">
+        <img src="{{ school_logo_url }}" alt="School logo" class="sheet-school-logo" onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
         <div>
           <div class="sheet-school-title">Feature Leaders Preparatory Academy</div>
             <div class="sheet-school-sub">Period Activity Grade Sheet</div>
         </div>
-        <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="sheet-school-logo">
+        <img src="{{ school_logo_url }}" alt="School logo" class="sheet-school-logo" onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
       </div>
       <div class="sheet-info-grid">
         <div class="sheet-info-cell"><span class="label-strong">Class:</span> {{ klass.name }}</div>
@@ -732,7 +732,7 @@
             <td class="text-center">
               {% if existing and existing.score is not none %}
               <span class="sheet-total">{{ '%.1f'|format(existing.score) }}</span>
-              <div class="small text-muted mt-1">CA {{ '%.1f'|format(existing.ca_score or 0) }} · Exam {{ '%.1f'|format(existing.exam_score or 0) }}</div>
+              <div class="small text-muted mt-1">Period total /100</div>
               {% else %}
               <span class="text-muted">Awaiting graded activities</span>
               {% endif %}

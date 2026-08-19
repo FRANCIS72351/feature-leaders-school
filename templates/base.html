@@ -3,7 +3,11 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}School System{% endblock %}</title>
+    <title>{% block title %}{{ title|default('Future Leaders School') }}{% endblock %}</title>
+    <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/LOGO.png') }}">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     
     <!-- Google Fonts & Font Awesome Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -54,7 +58,12 @@
               linear-gradient(180deg, #fffcf9 0%, var(--surface-bg) 100%);
             color: var(--text-main);
             overflow-x: hidden;
-            padding-top: 85px; 
+            padding-top: calc(85px + env(safe-area-inset-top, 0px));
+        }
+
+        img, video {
+            max-width: 100%;
+            height: auto;
         }
 
         /* Fixed Glassmorphism Top Navbar Layout */
@@ -63,7 +72,7 @@
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
             border-bottom: 1px solid var(--border-soft);
-            padding: 0.75rem 0;
+            padding: calc(0.75rem + env(safe-area-inset-top, 0px)) 0 0.75rem;
             box-shadow: var(--shadow-soft);
             transition: all 0.3s ease;
             overflow: hidden;
@@ -259,6 +268,33 @@
             white-space: nowrap;
         }
 
+        .dashboard-welcome-avatar,
+        .nav-user-avatar {
+            width: 28px;
+            height: 28px;
+            aspect-ratio: 1 / 1;
+            border-radius: 50%;
+            object-fit: cover;
+            overflow: hidden;
+            border: 1px solid rgba(200, 40, 40, 0.25);
+            background: #fff;
+            flex-shrink: 0;
+            display: block;
+        }
+
+        .dashboard-welcome-settings {
+            color: #c82828;
+            text-decoration: none;
+            font-size: 0.92rem;
+            margin-left: 0.15rem;
+        }
+        .dashboard-welcome-settings:hover { color: #a32020; }
+
+        .nav-user-avatar {
+            width: 32px;
+            height: 32px;
+        }
+
         @media (max-width: 767.98px) {
             .dashboard-welcome-banner {
                 flex-direction: column;
@@ -268,6 +304,68 @@
             .dashboard-welcome-user {
                 width: 100%;
                 justify-content: center;
+            }
+
+            .navbar-brand-text {
+                max-width: 52vw;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+        }
+
+        /* Shared dashboard chrome: keep cards in document flow on phones */
+        body.dashboard-theme {
+            overflow-x: hidden;
+        }
+
+        .pro-dashboard {
+            max-width: 100%;
+            min-width: 0;
+        }
+
+        .pro-dashboard img {
+            max-width: 100%;
+            height: auto;
+        }
+
+        .pro-dashboard .student-avatar {
+            overflow: hidden;
+            aspect-ratio: 1 / 1;
+            border-radius: 50%;
+        }
+
+        .pro-dashboard .student-avatar img,
+        .pro-dashboard .student-avatar-img {
+            width: 96px !important;
+            height: 96px !important;
+            max-width: none !important;
+            aspect-ratio: 1 / 1;
+            object-fit: cover;
+            overflow: hidden;
+            border-radius: 50%;
+        }
+
+        @media (max-width: 767.98px) {
+            body.dashboard-theme {
+                padding-top: calc(96px + env(safe-area-inset-top, 0px));
+            }
+
+            body.dashboard-theme > .container {
+                max-width: 100%;
+                padding-left: 0.7rem;
+                padding-right: 0.7rem;
+                margin-top: 0.65rem !important;
+                margin-bottom: 1rem !important;
+            }
+
+            .pro-dashboard .row {
+                margin-left: 0;
+                margin-right: 0;
+            }
+
+            .pro-dashboard .row > [class*="col"] {
+                min-width: 0;
+                max-width: 100%;
             }
         }
     </style>
@@ -279,7 +377,7 @@
     <nav class="navbar navbar-expand-lg fixed-top navbar-custom">
       <div class="container">
         <a class="navbar-brand navbar-brand-custom" href="{{ url_for('index') }}">
-          <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="navbar-logo">
+          <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="navbar-logo" onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
           <span class="navbar-brand-text">Future Leaders School</span>
         </a>
         
@@ -295,31 +393,42 @@
             <li class="nav-item"><a class="nav-link" href="{{ url_for('contact') }}">Contact</a></li>
             
             {% if current_user.is_authenticated %}
-              {% set user_role = (current_user.role or '')|lower %}
+              {# canonical_role: only registry/registrar aliases map to registrar. #}
+              {% set user_role = nav_user_role %}
               <li class="nav-item dropdown">
                 <a class="nav-link dropdown-toggle font-weight-bold" href="#" id="dashboardDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                   <i class="fas fa-th-large fa-sm me-1 text-primary"></i> Workspaces
                 </a>
                 <ul class="dropdown-menu dropdown-menu-end dropdown-menu-custom border-0" aria-labelledby="dashboardDropdown">
-                  <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('dashboard') }}"><i class="fas fa-user-shield fa-sm me-2"></i>General Dashboard</a></li>
+                  {% if user_role == "vpi" %}
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('vpi_dashboard') }}"><i class="fas fa-book fa-sm me-2"></i>VPI Dashboard</a></li>
+                  {% elif user_role == "vpa" %}
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('vpa_dashboard') }}"><i class="fas fa-paste fa-sm me-2"></i>VPA Dashboard</a></li>
+                  {% elif user_role == "principal" %}
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('principal_dashboard') }}"><i class="fas fa-user-shield fa-sm me-2"></i>General Dashboard</a></li>
+                  {% elif user_role == "registrar" %}
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('registrar_dashboard') }}"><i class="fas fa-user-shield fa-sm me-2"></i>Registrar Dashboard</a></li>
+                  {% elif user_role == "dean" %}
+                    <li><a class="dropdown-item dropdown-item-custom font-weight-bold text-dark" href="{{ url_for('dean_dashboard') }}"><i class="fas fa-user-shield fa-sm me-2 text-info"></i>Dean Command Center</a></li>
+                  {% elif user_role == "teacher" %}
+                    <li><a class="dropdown-item dropdown-item-custom font-weight-bold text-dark" href="{{ url_for('teacher_dashboard') }}"><i class="fas fa-chalkboard-teacher fa-sm me-2 text-primary"></i>Teacher Dashboard</a></li>
+                  {% elif user_role == "business" %}
+                    <li><a class="dropdown-item dropdown-item-custom font-weight-bold text-dark" href="{{ url_for('business_dashboard') }}"><i class="fas fa-coins fa-sm me-2 text-success"></i>Business Office</a></li>
+                  {% elif user_role == "admin" %}
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('dashboard') }}"><i class="fas fa-user-shield fa-sm me-2 text-primary"></i>Admin Dashboard</a></li>
+                  {% else %}
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('dashboard') }}"><i class="fas fa-user-shield fa-sm me-2"></i>General Dashboard</a></li>
+                  {% endif %}
                   {% if user_role in ["admin", "business"] %}
                     <li><a class="dropdown-item dropdown-item-custom font-weight-bold text-dark" href="{{ url_for('business_dashboard') }}"><i class="fas fa-coins fa-sm me-2 text-success"></i>Business Office</a></li>
                   {% endif %}
                   {% if user_role == "teacher" %}
-                    <li><a class="dropdown-item dropdown-item-custom font-weight-bold text-dark" href="{{ url_for('teacher_dashboard') }}"><i class="fas fa-chalkboard-teacher fa-sm me-2 text-primary"></i>Teacher Dashboard</a></li>
+                    {# listed as primary above #}
                   {% endif %}
                   {% if user_role == "principal" %}
                     <li><a class="dropdown-item dropdown-item-custom font-weight-bold text-dark" href="{{ url_for('principal_dashboard') }}"><i class="fas fa-crown fa-sm me-2 text-warning"></i>Principal Portal</a></li>
-                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('dashboard', view='admin') }}"><i class="fas fa-user-shield fa-sm me-2 text-primary"></i>Admin Dashboard</a></li>
-                  {% endif %}
-                  {% if user_role == "vpa" %}
-                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('vpa_dashboard') }}"><i class="fas fa-paste fa-sm me-2"></i>VPA Dashboard</a></li>
-                  {% endif %}
-                  {% if user_role == "vpi" %}
-                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('vpi_dashboard') }}"><i class="fas fa-book fa-sm me-2"></i>VPI Dashboard</a></li>
                   {% endif %}
                   {% if user_role == "dean" %}
-                    <li><a class="dropdown-item dropdown-item-custom font-weight-bold text-dark" href="{{ url_for('dean_dashboard') }}"><i class="fas fa-user-shield fa-sm me-2 text-info"></i>Dean Command Center</a></li>
                     <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('dean_attendance') }}"><i class="fas fa-clipboard-check fa-sm me-2"></i>Attendance &amp; Truancy</a></li>
                   {% endif %}
                 </ul>
@@ -337,7 +446,11 @@
               {% endif %}
               
               <li class="nav-item"><a class="nav-link" href="{{ url_for('events_list') }}"><i class="fas fa-calendar-alt fa-sm me-1"></i> Events</a></li>
-              <li class="nav-item ms-lg-2"><a class="btn btn-sm btn-outline-danger px-3 rounded-pill mt-2 mt-lg-0 font-weight-bold" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt fa-sm"></i> Logout</a></li>
+              <li class="nav-item d-none d-lg-flex align-items-center ms-lg-2 me-lg-1">
+                <img src="{{ current_user.photo_url }}" alt="" class="nav-user-avatar" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
+              </li>
+              <li class="nav-item ms-lg-2"><a class="nav-link" href="{{ url_for('account_settings') }}"><i class="fas fa-user-cog fa-sm me-1"></i> Settings</a></li>
+              <li class="nav-item ms-lg-1"><a class="btn btn-sm btn-outline-danger px-3 rounded-pill mt-2 mt-lg-0 font-weight-bold" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt fa-sm"></i> Logout</a></li>
             {% else %}
               <li class="nav-item ms-lg-2"><a class="btn btn-sm btn-primary text-white rounded-pill shadow-sm px-4 mt-2 mt-lg-0" href="{{ url_for('login') }}"><i class="fas fa-sign-in-alt fa-sm me-1"></i> Portal Login</a></li>
             {% endif %}
@@ -351,18 +464,36 @@
       {% if request.endpoint and 'dashboard' in request.endpoint and current_user.is_authenticated %}
         <div class="dashboard-welcome-banner" role="region" aria-label="Dashboard welcome message">
           <div class="dashboard-welcome-brand">
-            <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="dashboard-welcome-logo">
+            <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="dashboard-welcome-logo" onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
             <div>
-              <p class="dashboard-welcome-title">Welcome to Your {{ (current_user.role or 'user')|title }} Dashboard</p>
+              <p class="dashboard-welcome-title">Welcome to Your {{ dashboard_role_label }} Dashboard</p>
               <p class="dashboard-welcome-sub">Professional school management workspace</p>
             </div>
           </div>
           <div class="dashboard-welcome-user">
-            <i class="fas fa-user-circle"></i>
+            <img src="{{ current_user.photo_url }}" alt="" class="dashboard-welcome-avatar" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
             <span>{{ current_user.full_name or current_user.email }}</span>
+            <a href="{{ url_for('account_settings') }}" class="dashboard-welcome-settings" title="Account settings"><i class="fas fa-user-cog"></i></a>
           </div>
         </div>
       {% endif %}
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% set ns = namespace(seen=[]) %}
+          <div class="flash-stack mb-3" id="flashStack">
+          {% for category, message in messages %}
+            {% if message not in ns.seen %}
+              {% set ns.seen = ns.seen + [message] %}
+              <div class="alert alert-{{ 'danger' if category in ['error', 'danger'] else category }} alert-dismissible fade show shadow-sm rounded-3" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+              </div>
+            {% endif %}
+          {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
 
       {% block content %}{% endblock %}
     </div>
@@ -371,7 +502,30 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://unpkg.com/aos@2.3.4/dist/aos.js"></script>
     <script>
+      (function () {
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        var token = meta && meta.getAttribute('content');
+        if (!token || !window.fetch) return;
+        var originalFetch = window.fetch;
+        window.fetch = function (input, init) {
+          init = init || {};
+          var method = String((init.method || (input && input.method) || 'GET')).toUpperCase();
+          if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+            var headers = new Headers(init.headers || {});
+            if (!headers.has('X-CSRFToken') && !headers.has('X-CSRF-Token')) {
+              headers.set('X-CSRFToken', token);
+            }
+            init.headers = headers;
+          }
+          return originalFetch.call(this, input, init);
+        };
+      })();
       AOS.init({ duration: 800, once: true });
+      setTimeout(function () {
+        document.querySelectorAll('#flashStack .alert').forEach(function (el) {
+          try { bootstrap.Alert.getOrCreateInstance(el).close(); } catch (e) { el.remove(); }
+        });
+      }, 6000);
     </script>
     {% block scripts %}{% endblock %}
   </body>

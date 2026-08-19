@@ -2,7 +2,7 @@
 import os
 import sqlite3
 
-db = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "instance", "keeptrack_full.db"))
+db = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "instance", "future_leaders_full.db"))
 if not os.path.exists(db):
     print("Database not found:", db)
     raise SystemExit(1)

@@ -3,7 +3,7 @@
 
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/grading_hub.css') }}">
-<div class="container-fluid py-4 attendance-overview-page">
+<div class="container-fluid py-4 attendance-overview-page{% if page_title == 'Registrar Attendance Lookup' %} registrar-attendance-lookup{% endif %}">
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
         <div>
             <a href="{{ back_url }}" class="text-blue small text-decoration-none">
@@ -29,7 +29,7 @@
         <div class="att-card-body">
             <form method="GET" class="row g-3 align-items-end">
                 <div class="col-md-3">
-                    <label class="text-blue small mb-1">Academic Year</label>
+                    <label class="text-blue small mb-1 academic-year-label">Academic Year</label>
                     <select name="academic_year_id" class="form-select form-select-sm form-cyber" onchange="this.form.submit()">
                         {% for y in years %}
                         <option value="{{ y.id }}" {% if display_year and y.id == display_year.id %}selected{% endif %}>
@@ -257,6 +257,15 @@
         background: #dff0fb;
         color: #0369a1;
         border-color: #9ec4e5;
+    }
+
+    /* Registrar attendance lookup — brand-red page heading */
+    .attendance-overview-page.registrar-attendance-lookup h2.text-white,
+    .attendance-overview-page.registrar-attendance-lookup h2.text-white i {
+        color: var(--primary-brand, #c82828) !important;
+    }
+    .attendance-overview-page .academic-year-label {
+        color: var(--primary-brand, #c82828) !important;
     }
 </style>
 {% endblock %}

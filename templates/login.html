@@ -152,7 +152,7 @@
     </div>
 
     <!-- LOGO -->
-    <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="Future Leaders Preparatory Academy logo" class="logo">
+    <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="Future Leaders Preparatory Academy logo" class="logo" onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
 
     <h3 class="text-center login-title mb-2">Welcome Back</h3>
     <p class="text-center login-copy mb-4">Sign in to the academy portal to continue your work.</p>

@@ -192,7 +192,7 @@ Set `FRESH_DATABASE=0` in `.env` after successful first boot.
 
 ### 3.6 Backups
 
-- **SQLite**: snapshot the EBS volume or cron-copy `instance/keeptrack_full.db` to S3.
+- **SQLite**: snapshot the EBS volume or cron-copy `instance/future_leaders_full.db` to S3.
 - **RDS**: enable automated backups and retention.
 - **Uploads**: sync `/data/school-management/uploads` to S3 (e.g. `aws s3 sync` nightly).
 

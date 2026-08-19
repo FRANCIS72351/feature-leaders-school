@@ -158,7 +158,7 @@
                 <strong class="text-amber d-block mb-1">Backup Grade Entry — Use When Teacher Is Unavailable</strong>
                 <p class="small mb-0" style="opacity:0.9;">
                     You are entering grades on behalf of the class faculty roster.
-                    Scores use the same MoE model (CA 60 + Exam 40) and flow to report cards when published.
+                    Scores use the period evaluation totaling 100 (ATT 10 + PART 10 + QUIZ 15 + ASSG 20 + CW 15 + HW 10 + TEST 20) and flow to report cards when published.
                     All saves are attributed to your principal account for audit purposes.
                 </p>
             </div>
@@ -344,7 +344,7 @@
                         <td class="text-center">
                             {% if existing and existing.score is not none %}
                             <span class="badge bg-secondary font-monospace">{{ '%.1f'|format(existing.score) }}</span>
-                            <div class="small text-muted mt-1">CA {{ '%.1f'|format(existing.ca_score or 0) }} · Exam {{ '%.1f'|format(existing.exam_score or 0) }}</div>
+                            <div class="small text-muted mt-1">Period total {{ '%.1f'|format(existing.score or 0) }}/100</div>
                             {% else %}
                             <span class="text-muted small">Awaiting graded activities</span>
                             {% endif %}

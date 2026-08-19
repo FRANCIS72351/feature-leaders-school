@@ -22,7 +22,8 @@
             </div>
             <div class="mb-3">
               {{ form.grade_level.label(class_='form-label') }}
-              {{ form.grade_level(class_='form-control', placeholder='Grade 7') }}
+              {{ form.grade_level(class_='form-select') }}
+              <div class="form-text">Place this class in Kindergarten, Elementary, Junior High, or Senior High.</div>
             </div>
             <div class="mb-3">
               {{ form.stream.label(class_='form-label') }}

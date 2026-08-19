@@ -140,7 +140,7 @@
 
         <div class="alumni-body">
             <div class="alumni-profile">
-                <img src="{{ student.photo_url }}" alt="{{ student.full_name }}">
+                <img src="{{ student.photo_url }}" alt="{{ student.full_name }}" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
                 <div class="flex-grow-1">
                     <div class="fw-bold text-white fs-5">{{ student.full_name }}</div>
                     <div class="text-muted small font-monospace">ID: {{ student.student_id }}</div>

@@ -1,5 +1,5 @@
-﻿import sqlite3
-dst = r"c:\Users\Francis\Desktop\essential\SCHOOL_MANAGEMENT\instance\keeptrack_full_rebuilt.db"
+import sqlite3
+dst = r"c:\Users\Francis\Desktop\essential\SCHOOL_MANAGEMENT\instance\future_leaders_full_rebuilt.db"
 conn = sqlite3.connect(dst)
 cur = conn.cursor()
 cur.execute("PRAGMA integrity_check")

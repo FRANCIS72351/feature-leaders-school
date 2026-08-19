@@ -3,7 +3,7 @@ import sqlite3
 
 # Absolute pathing targeting instance folder database asset directly
 base_dir = os.path.abspath(os.path.dirname(__file__))
-db_path = os.path.join(base_dir, 'instance', 'keeptrack_full.db')
+db_path = os.path.join(base_dir, 'instance', 'future_leaders_full.db')
 
 print(f"Targeting Database for missing attribute injection: {db_path}")
 
@@ -26,4 +26,4 @@ if os.path.exists(db_path):
     except Exception as e:
         print(f"Error: {e}")
 else:
-    print("Error: Could not locate 'keeptrack_full.db' inside your instance directory.")
+    print("Error: Could not locate 'future_leaders_full.db' inside your instance directory.")

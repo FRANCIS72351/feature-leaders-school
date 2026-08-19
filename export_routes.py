@@ -670,7 +670,7 @@ def init_export_routes(app):
         pdf = canvas.Canvas(buffer, pagesize=(page_w, page_h))
 
         # Header: logo (if present) and school name
-        logo_path = os.path.join(os.path.dirname(__file__), 'static', 'images', 'school_logo.png')
+        logo_path = os.path.join(os.path.dirname(__file__), 'static', 'images', 'LOGO.png')
         if not os.path.exists(logo_path):
             logo_path = os.path.join(os.path.dirname(__file__), 'static', 'images', 'logo.png')
         if os.path.exists(logo_path):

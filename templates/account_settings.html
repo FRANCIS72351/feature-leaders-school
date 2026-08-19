@@ -1,0 +1,175 @@
+{% extends 'base.html' %}
+{% block title %}Account Settings{% endblock %}
+
+{% block content %}
+<style>
+    .account-settings-page {
+        max-width: 720px;
+        margin: 0 auto 2rem;
+        color: #1f2937;
+    }
+    .account-settings-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        box-shadow: 0 10px 28px rgba(31, 41, 55, 0.08);
+        overflow: hidden;
+    }
+    .account-settings-header {
+        background: #c82828;
+        color: #ffffff;
+        padding: 1.1rem 1.4rem;
+    }
+    .account-settings-header h1 {
+        margin: 0;
+        font-size: 1.15rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+    }
+    .account-settings-header p {
+        margin: 0.25rem 0 0;
+        font-size: 0.85rem;
+        opacity: 0.92;
+    }
+    .account-settings-body {
+        padding: 1.4rem 1.5rem 1.6rem;
+        color: #1f2937;
+        background: #fafafa;
+    }
+    .account-photo-preview-wrap {
+        width: 112px;
+        height: 112px;
+        aspect-ratio: 1 / 1;
+        border-radius: 50%;
+        overflow: hidden;
+        margin: 0 auto 0.75rem;
+        border: 3px solid #c82828;
+        background: #fff;
+        box-shadow: 0 6px 16px rgba(200, 40, 40, 0.18);
+    }
+    .account-photo-preview {
+        width: 100%;
+        height: 100%;
+        aspect-ratio: 1 / 1;
+        object-fit: cover;
+        display: block;
+        border-radius: 50%;
+    }
+    .account-section {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 1.15rem 1.2rem;
+        margin-bottom: 1rem;
+    }
+    .account-section h2 {
+        font-size: 0.95rem;
+        font-weight: 800;
+        color: #1f2937;
+        margin: 0 0 0.85rem;
+    }
+    .account-section .form-label {
+        color: #374151;
+        font-weight: 600;
+        font-size: 0.85rem;
+    }
+    .account-btn {
+        background: #c82828;
+        border-color: #c82828;
+        color: #fff;
+        font-weight: 700;
+    }
+    .account-btn:hover {
+        background: #a32020;
+        border-color: #a32020;
+        color: #fff;
+    }
+    .account-back {
+        color: #c82828;
+        font-weight: 600;
+        text-decoration: none;
+    }
+    .account-back:hover { color: #a32020; }
+</style>
+
+<div class="account-settings-page">
+    <div class="mb-3">
+        <a href="{{ dashboard_url }}" class="account-back"><i class="fas fa-arrow-left me-1"></i>Back to {{ role_label }} dashboard</a>
+    </div>
+    <div class="account-settings-card">
+        <div class="account-settings-header">
+            <h1><i class="fas fa-user-cog me-2"></i>Account Settings</h1>
+            <p>Update your password and profile photo for this login.</p>
+        </div>
+        <div class="account-settings-body">
+            <div class="text-center mb-4">
+                <div class="account-photo-preview-wrap">
+                    <img src="{{ preview_url }}" alt="Current profile photo" class="account-photo-preview"
+                         id="accountPhotoPreview"
+                         onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
+                </div>
+                <div class="fw-bold">{{ current_user.full_name }}</div>
+                <div class="small text-muted">{{ current_user.email }}</div>
+            </div>
+
+            <div class="account-section">
+                <h2><i class="fas fa-camera me-2" style="color:#c82828;"></i>Profile photo</h2>
+                <form method="POST" enctype="multipart/form-data">
+                    {{ photo_form.hidden_tag() }}
+                    <div class="mb-3">
+                        {{ photo_form.photo.label(class="form-label") }}
+                        {{ photo_form.photo(class="form-control", accept="image/jpeg,image/png,image/gif,image/webp", id="accountPhotoInput") }}
+                        <div class="form-text">Automatically cropped to a square ID-card photo so it fits the circular avatar.</div>
+                        {% if photo_form.photo.errors %}
+                        <div class="text-danger small mt-1">{% for error in photo_form.photo.errors %}{{ error }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+                    {{ photo_form.submit_photo(class="btn account-btn") }}
+                </form>
+            </div>
+
+            <div class="account-section mb-0">
+                <h2><i class="fas fa-lock me-2" style="color:#c82828;"></i>Change password</h2>
+                <form method="POST">
+                    {{ password_form.hidden_tag() }}
+                    <div class="mb-3">
+                        {{ password_form.current_password.label(class="form-label") }}
+                        {{ password_form.current_password(class="form-control", autocomplete="current-password") }}
+                        {% if password_form.current_password.errors %}
+                        <div class="text-danger small mt-1">{% for error in password_form.current_password.errors %}{{ error }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+                    <div class="mb-3">
+                        {{ password_form.new_password.label(class="form-label") }}
+                        {{ password_form.new_password(class="form-control", autocomplete="new-password") }}
+                        {% if password_form.new_password.errors %}
+                        <div class="text-danger small mt-1">{% for error in password_form.new_password.errors %}{{ error }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+                    <div class="mb-3">
+                        {{ password_form.confirm_password.label(class="form-label") }}
+                        {{ password_form.confirm_password(class="form-control", autocomplete="new-password") }}
+                        {% if password_form.confirm_password.errors %}
+                        <div class="text-danger small mt-1">{% for error in password_form.confirm_password.errors %}{{ error }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+                    {{ password_form.submit_password(class="btn account-btn") }}
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    var input = document.getElementById('accountPhotoInput');
+    var preview = document.getElementById('accountPhotoPreview');
+    if (!input || !preview) return;
+    input.addEventListener('change', function () {
+        var file = input.files && input.files[0];
+        if (!file) return;
+        var url = URL.createObjectURL(file);
+        preview.src = url;
+    });
+})();
+</script>
+{% endblock %}

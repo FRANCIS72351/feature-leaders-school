@@ -4,29 +4,260 @@ from decimal import Decimal
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy.orm import validates, synonym
+import os
+import struct
+import zlib
 db = SQLAlchemy()
 
 DEFAULT_STUDENT_PHOTO = "uploads/photos/default_student.png"
-DEFAULT_USER_PHOTO = "images/MAN.jpg"
+DEFAULT_USER_PHOTO = "uploads/photos/default_student.png"
+DEFAULT_AVATAR_ALIASES = (
+    "uploads/photos/default_student.png",
+    "images/default-avatar.png",
+    "img/default-avatar.png",
+)
+SCHOOL_LOGO_FILENAME = "images/LOGO.png"
+_PHOTO_SEARCH_DIRS = (
+    "uploads/photos",
+    "uploads/students",
+    "uploads",
+    "images",
+    "img",
+)
+_DEFAULT_AVATAR_READY = False
+
+
+def _static_photo_filename(photo_path):
+    """Normalize a stored photo path to a static-relative filename."""
+    if not photo_path:
+        return None
+    clean_path = str(photo_path).strip().replace("\\", "/")
+    if not clean_path:
+        return None
+    if clean_path.startswith(("http://", "https://", "data:")):
+        return clean_path
+    marker = "/static/"
+    idx = clean_path.lower().find(marker)
+    if idx != -1:
+        return clean_path[idx + len(marker):].lstrip("/")
+    if clean_path.lower().startswith("static/"):
+        return clean_path[7:]
+    # Windows absolute paths (C:/...) are not static URLs; keep the basename.
+    if len(clean_path) >= 2 and clean_path[1] == ":":
+        return clean_path.rsplit("/", 1)[-1] or None
+    return clean_path.lstrip("/")
+
+
+def _photo_candidate_filenames(photo_path):
+    """Possible static-relative paths for a stored photo value."""
+    clean = _static_photo_filename(photo_path)
+    if not clean:
+        return []
+    if clean.startswith(("http://", "https://", "data:")):
+        return [clean]
+    seen = []
+    def _add(item):
+        if item and item not in seen:
+            seen.append(item)
+    _add(clean)
+    basename = clean.rsplit("/", 1)[-1]
+    if basename:
+        for folder in _PHOTO_SEARCH_DIRS:
+            _add(f"{folder}/{basename}")
+        _add(basename)
+    return seen
+
+
+def _png_chunk(tag, data):
+    crc = zlib.crc32(tag + data) & 0xFFFFFFFF
+    return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
+
+
+def _build_default_avatar_png_bytes(size=128):
+    """Circular red badge with a white person silhouette (real RGBA PNG)."""
+    cx = cy = (size - 1) / 2.0
+    r_badge = size / 2.0 - 1.5
+    head_cy = cy - size * 0.16
+    head_r = size * 0.16
+    body_cy = cy + size * 0.28
+    body_rx = size * 0.24
+    body_ry = size * 0.28
+    rows = []
+    for y in range(size):
+        row = bytearray([0])
+        for x in range(size):
+            dx = x - cx
+            dy = y - cy
+            if dx * dx + dy * dy > r_badge * r_badge:
+                row.extend((0, 0, 0, 0))
+                continue
+            hx = x - cx
+            hy = y - head_cy
+            in_head = hx * hx + hy * hy <= head_r * head_r
+            bx = (x - cx) / body_rx
+            by = (y - body_cy) / body_ry
+            in_body = (bx * bx + by * by <= 1.0) and (y > cy - size * 0.02)
+            if in_head or in_body:
+                row.extend((255, 255, 255, 255))
+            else:
+                row.extend((200, 40, 40, 255))
+        rows.append(bytes(row))
+    ihdr = struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _png_chunk(b"IHDR", ihdr)
+        + _png_chunk(b"IDAT", zlib.compress(b"".join(rows), 9))
+        + _png_chunk(b"IEND", b"")
+    )
+
+
+def _looks_like_raster_image(full_path):
+    """True when path is an actual PNG/JPEG/GIF/WebP, not a text placeholder."""
+    try:
+        if not os.path.isfile(full_path) or os.path.getsize(full_path) < 32:
+            return False
+        with open(full_path, "rb") as fh:
+            head = fh.read(16)
+    except OSError:
+        return False
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return True
+    if head.startswith(b"\xff\xd8\xff"):
+        return True
+    if head.startswith((b"GIF87a", b"GIF89a")):
+        return True
+    if head.startswith(b"RIFF") and b"WEBP" in head:
+        return True
+    return False
+
+
+def _ensure_default_avatar_files(static_root):
+    """Replace text .png placeholders with a real circular default avatar."""
+    global _DEFAULT_AVATAR_READY
+    if _DEFAULT_AVATAR_READY or not static_root:
+        return
+    targets = (
+        os.path.join(static_root, "uploads", "photos", "default_student.png"),
+        os.path.join(static_root, "images", "default-avatar.png"),
+        os.path.join(static_root, "img", "default-avatar.png"),
+    )
+    payload = None
+    for path in targets:
+        if _looks_like_raster_image(path):
+            continue
+        if payload is None:
+            payload = _build_default_avatar_png_bytes()
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as fh:
+                fh.write(payload)
+        except OSError:
+            continue
+    _DEFAULT_AVATAR_READY = any(_looks_like_raster_image(path) for path in targets)
+
+
+def _static_file_on_disk(relative_path):
+    """True when relative_path is a real image file under Flask's static folder."""
+    from flask import current_app, has_app_context
+
+    if not relative_path or relative_path.startswith(("http://", "https://", "data:")):
+        return False
+    if not has_app_context():
+        return False
+
+    roots = []
+    static_root = getattr(current_app, "static_folder", None)
+    if static_root:
+        roots.append(static_root)
+    root_path = getattr(current_app, "root_path", None)
+    if root_path:
+        roots.append(os.path.join(root_path, "static"))
+
+    seen = set()
+    rel = relative_path.replace("/", os.sep)
+    for root in roots:
+        norm = os.path.normpath(root)
+        if not norm or norm in seen:
+            continue
+        seen.add(norm)
+        full = os.path.join(root, rel)
+        try:
+            if _looks_like_raster_image(full):
+                return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
+def _static_url(filename):
+    """Build a /static/... URL that never raises outside a request."""
+    from flask import url_for, has_app_context, has_request_context
+
+    filename = (filename or DEFAULT_STUDENT_PHOTO).replace("\\", "/").lstrip("/")
+    if len(filename) >= 2 and filename[1] == ":":
+        filename = DEFAULT_STUDENT_PHOTO
+    if has_request_context() or has_app_context():
+        try:
+            return url_for("static", filename=filename)
+        except Exception:
+            pass
+    return f"/static/{filename}"
+
+
+def static_photo_file_exists(photo_path):
+    """True when the stored photo maps to a real image file under static/."""
+    if not photo_path or not str(photo_path).strip():
+        return False
+    raw = str(photo_path).strip()
+    if raw.startswith(("http://", "https://", "data:")):
+        return True
+    try:
+        if os.path.isabs(raw) and _looks_like_raster_image(raw):
+            return True
+    except (OSError, ValueError):
+        pass
+    for candidate in _photo_candidate_filenames(raw):
+        if candidate.startswith(("http://", "https://", "data:")):
+            return True
+        if _static_file_on_disk(candidate):
+            return True
+    return False
 
 
 def resolve_static_photo_url(photo_path, default_filename=DEFAULT_STUDENT_PHOTO):
-    """Turn a stored relative photo path into a Flask static file URL."""
-    from flask import url_for
+    """Turn a stored photo path into a working static URL (uploaded file or default)."""
+    from flask import current_app, has_app_context
 
-    if photo_path:
-        clean_path = str(photo_path).strip().replace("\\", "/")
-        if clean_path.startswith(("http://", "https://")):
-            return clean_path
-        if clean_path.startswith("static/"):
-            return url_for("static", filename=clean_path[7:])
-        if clean_path.startswith("/static/"):
-            return url_for("static", filename=clean_path[8:])
-        if clean_path.startswith("/"):
-            clean_path = clean_path.lstrip("/")
-        return url_for("static", filename=clean_path)
+    if has_app_context() and getattr(current_app, "static_folder", None):
+        _ensure_default_avatar_files(current_app.static_folder)
 
-    return url_for("static", filename=default_filename)
+    for candidate in _photo_candidate_filenames(photo_path):
+        if candidate.startswith(("http://", "https://", "data:")):
+            return candidate
+        if _static_file_on_disk(candidate):
+            return _static_url(candidate)
+
+    fallbacks = []
+    for name in (default_filename, DEFAULT_STUDENT_PHOTO, DEFAULT_USER_PHOTO) + DEFAULT_AVATAR_ALIASES:
+        if name and name not in fallbacks:
+            fallbacks.append(name)
+    for fallback in fallbacks:
+        if _static_file_on_disk(fallback):
+            return _static_url(fallback)
+    return _static_url(fallbacks[0] if fallbacks else DEFAULT_STUDENT_PHOTO)
+
+
+def default_static_photo_url():
+    """Always-valid default avatar URL for templates and onerror fallbacks."""
+    return resolve_static_photo_url(None, default_filename=DEFAULT_USER_PHOTO)
+
+
+def school_logo_static_url():
+    """Always-valid school logo URL (LOGO.png, with lowercase fallback)."""
+    for name in (SCHOOL_LOGO_FILENAME, "images/logo.png", "images/logo1.png"):
+        if _static_file_on_disk(name):
+            return _static_url(name)
+    return _static_url(SCHOOL_LOGO_FILENAME)
 
 # =====================================================================
 # 1. AUTHENTICATION & CORE USER MODEL
@@ -72,8 +303,27 @@ class User(db.Model, UserMixin):
         return check_password_hash(self.password_hash, password)
 
     @property
+    def has_photo(self):
+        """True when this account has an uploaded photo file on disk."""
+        return static_photo_file_exists(self.photo)
+
+    @property
     def photo_url(self):
-        """Generate a proper photo URL from the photo column safely."""
+        """Always return a working avatar URL (uploaded file, student photo, or default)."""
+        sources = []
+        if self.photo:
+            sources.append(self.photo)
+        profile = getattr(self, "student_profile", None)
+        if profile is not None:
+            if getattr(profile, "photo", None):
+                sources.append(profile.photo)
+            filename = (getattr(profile, "photo_filename", None) or "").strip()
+            if filename and filename.lower() not in ("default_student.png", "default-avatar.png"):
+                sources.append(f"uploads/photos/{filename}")
+                sources.append(f"uploads/students/{filename}")
+        for source in sources:
+            if source and static_photo_file_exists(source):
+                return resolve_static_photo_url(source, default_filename=DEFAULT_USER_PHOTO)
         return resolve_static_photo_url(self.photo, default_filename=DEFAULT_USER_PHOTO)
 
     def __repr__(self):
@@ -200,6 +450,16 @@ class Class(db.Model):
         return text
 
     @property
+    def school_division(self):
+        from school_divisions import resolve_from_class
+        return resolve_from_class(self)
+
+    @property
+    def school_division_label(self):
+        from school_divisions import division_label_for_class
+        return division_label_for_class(self)
+
+    @property
     def student_count(self):
         return self.students.count()
 
@@ -244,7 +504,13 @@ class Teacher(db.Model):
 
     @property
     def full_name(self):
-        return f"{self.first_name} {self.last_name}"
+        return f"{self.first_name} {self.last_name}".strip()
+
+    @property
+    def photo_url(self):
+        """Faculty photos live on the linked User.photo column."""
+        user_photo = getattr(self.user, "photo", None) if self.user else None
+        return resolve_static_photo_url(user_photo, default_filename=DEFAULT_USER_PHOTO)
 
     def __repr__(self):
         return f"<Teacher {self.full_name}>"
@@ -419,12 +685,21 @@ class Student(db.Model):
 
     @property
     def photo_url(self):
-        photo_path = self.photo
-        if not photo_path and self.photo_filename and self.photo_filename != "default_student.png":
-            photo_path = f"uploads/students/{self.photo_filename}"
-        if not photo_path and self.user and getattr(self.user, "photo", None):
-            photo_path = self.user.photo
-        return resolve_static_photo_url(photo_path, default_filename=DEFAULT_STUDENT_PHOTO)
+        """Always return a working avatar URL (student, user, or default)."""
+        sources = []
+        if self.photo:
+            sources.append(self.photo)
+        filename = (self.photo_filename or "").strip()
+        if filename and filename.lower() not in ("default_student.png", "default-avatar.png"):
+            sources.append(f"uploads/photos/{filename}")
+            sources.append(f"uploads/students/{filename}")
+            sources.append(filename)
+        if self.user and getattr(self.user, "photo", None):
+            sources.append(self.user.photo)
+        for source in sources:
+            if static_photo_file_exists(source):
+                return resolve_static_photo_url(source, default_filename=DEFAULT_STUDENT_PHOTO)
+        return resolve_static_photo_url(None, default_filename=DEFAULT_STUDENT_PHOTO)
 
     def __repr__(self):
         return f"<StudentNode ID: {self.student_id} | Name: {self.full_name}>"
@@ -989,12 +1264,12 @@ class Leader(db.Model):
     @property
     def photo_static_path(self):
         """Normalized path for url_for('static', filename=...)."""
-        if not self.photo:
-            return None
-        path = self.photo.replace('\\', '/')
-        if path.startswith('static/'):
-            path = path[7:]
-        return path
+        return _static_photo_filename(self.photo)
+
+    @property
+    def photo_url(self):
+        """Always return a working leader photo URL (uploaded file or default)."""
+        return resolve_static_photo_url(self.photo, default_filename=DEFAULT_USER_PHOTO)
 
     def __repr__(self):
         return f"<Leader {self.name} - {self.role}>"
@@ -1064,7 +1339,7 @@ class SystemSetting(db.Model):
     hold_message = db.Column(
         db.Text,
         default=(
-            "This school's Keep Track system is temporarily on hold for the next academic year. "
+            "This school's Future Leaders system is temporarily on hold for the next academic year. "
             "Please contact the system architect, Francis Brownell, to renew your subscription."
         ),
         nullable=False,

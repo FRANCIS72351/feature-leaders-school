@@ -129,7 +129,7 @@ Only if you want your Windows dev data on PythonAnywhere:
 
 ```bash
 # From your Windows machine (Git Bash or PowerShell with scp)
-scp instance/keeptrack_full.db YOUR_USERNAME@ssh.pythonanywhere.com:/home/YOUR_USERNAME/SCHOOL_MANAGEMENT/instance/
+scp instance/future_leaders_full.db YOUR_USERNAME@ssh.pythonanywhere.com:/home/YOUR_USERNAME/SCHOOL_MANAGEMENT/instance/
 ```
 
 Then reload the web app.

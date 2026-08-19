@@ -127,6 +127,20 @@
         background-color: #eaf2fa !important;
         color: #33506b !important;
     }
+
+    .btn-emerald,
+    .class-provision-terminal .btn-emerald,
+    .class-provision-terminal .btn-emerald.text-white {
+        background-color: var(--primary-brand) !important;
+        border-color: var(--primary-brand) !important;
+        color: #ffffff !important;
+    }
+    .btn-emerald:hover,
+    .class-provision-terminal .btn-emerald:hover {
+        background-color: var(--primary-dark) !important;
+        border-color: var(--primary-dark) !important;
+        color: #ffffff !important;
+    }
 </style>
 
 <div class="container-fluid py-4 px-md-5 class-provision-terminal">
@@ -145,18 +159,6 @@
             </a>
         </div>
     </div>
-
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
-                <div class="alert alert-{{ category if category != 'error' else 'danger' }} border alert-dismissible fade show shadow-sm mb-4 rounded-3" role="alert">
-                    <i class="fas {% if category=='success' %}fa-check-circle text-success{% else %}fa-exclamation-triangle text-danger{% endif %} me-2"></i>
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-            {% endfor %}
-        {% endif %}
-    {% endwith %}
 
     <div class="row g-4">
         
@@ -219,9 +221,18 @@
                     </div>
                     
                     <div class="mb-3">
-                        <label for="grade_level" class="form-label text-blue small font-weight-bold">Grade Level Tracking</label>
-                        <input type="text" class="form-control form-cyber" id="grade_level" name="grade_level"
-                               placeholder="e.g., Grade 7, 10th Grade, JSS 1" maxlength="50" required>
+                        <label for="grade_level" class="form-label text-blue small font-weight-bold">Grade Level / Division</label>
+                        <select class="form-select form-cyber" id="grade_level" name="grade_level" required>
+                            <option value="" disabled selected>Select the grade in its school division...</option>
+                            {% for group in grade_level_groups %}
+                            <optgroup label="{{ group.label }}">
+                                {% for value, label in group.options %}
+                                <option value="{{ value }}">{{ label }}</option>
+                                {% endfor %}
+                            </optgroup>
+                            {% endfor %}
+                        </select>
+                        <small class="text-blue d-block mt-1" style="font-size: 0.75rem;">Kindergarten: ABC, K-1, K-2 &middot; Elementary: 1st–6th &middot; Junior High: 7th–9th &middot; Senior High: 10th–12</small>
                     </div>
 
                     <div class="mb-3">
@@ -280,8 +291,12 @@
                         <label class="form-label text-blue small font-weight-bold">Target Class</label>
                         <select class="form-select form-cyber" id="sponsor_class_id" required>
                             <option value="" disabled selected>Select class...</option>
-                            {% for class in classes %}
-                            <option value="{{ class.id }}">{{ class.name }} (Grade {{ class.grade_level }})</option>
+                            {% for group in classes_by_division %}
+                            <optgroup label="{{ group.label }}">
+                                {% for class in group.classes %}
+                                <option value="{{ class.id }}">{{ class.name }} ({{ class.school_division_label }})</option>
+                                {% endfor %}
+                            </optgroup>
                             {% endfor %}
                         </select>
                     </div>
@@ -334,8 +349,12 @@
                         <label for="class_id" class="form-label text-blue small font-weight-bold">Target Structural Classroom</label>
                         <select class="form-select form-cyber" id="class_id" name="class_id" required>
                             <option value="" disabled selected>Select Target Class...</option>
-                            {% for class in classes %}
-                                <option value="{{ class.id }}">{{ class.name }} (Grade {{ class.grade_level }})</option>
+                            {% for group in classes_by_division %}
+                            <optgroup label="{{ group.label }}">
+                                {% for class in group.classes %}
+                                <option value="{{ class.id }}">{{ class.name }} ({{ class.school_division_label }})</option>
+                                {% endfor %}
+                            </optgroup>
                             {% endfor %}
                         </select>
                     </div>
@@ -382,12 +401,20 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for c in classes %}
+                            {% for group in classes_by_division %}
+                            <tr class="division-header-row">
+                                <td colspan="3" class="py-2">
+                                    <span class="text-cyan fw-bold text-uppercase" style="font-size:0.78rem; letter-spacing:0.06em;">{{ group.label }}</span>
+                                    <span class="text-blue ms-2" style="font-size:0.72rem;">{{ group.classes|length }} class{{ 'es' if group.classes|length != 1 else '' }}</span>
+                                </td>
+                            </tr>
+                            {% for c in group.classes %}
                             <tr>
                                 <td class="align-top">
                                     <div class="fw-bold text-white fs-5">{{ c.name }}</div>
                                     <div class="d-flex flex-column gap-1 mt-2 border-top border-secondary border-opacity-10 pt-2 text-blue" style="font-size: 0.78rem;">
-                                        <div><span class="meta-label">Grade Level:</span> <span class="text-cyan font-weight-bold">Grade {{ c.grade_level }}</span></div>
+                                        <div><span class="meta-label">Division:</span> <span class="text-cyan font-weight-bold">{{ c.school_division_label }}</span></div>
+                                        <div><span class="meta-label">Grade Level:</span> <span class="text-cyan font-weight-bold">{{ c.grade_level }}</span></div>
                                         <div><span class="meta-label">Yearly Fees:</span> <span class="text-warning font-weight-bold">${{ "{:,.2f}".format(c.yearly_fees) }}</span></div>
                                         <div>
                                             <span class="meta-label">Physical Space:</span> 
@@ -453,6 +480,7 @@
                                     </div>
                                 </td>
                             </tr>
+                            {% endfor %}
                             {% else %}
                             <tr>
                                 <td colspan="3" class="text-center py-5 text-blue">

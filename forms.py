@@ -5,8 +5,9 @@ from wtforms import (
     BooleanField, FileField
 )
 from wtforms.validators import DataRequired, Email, Optional, ValidationError, Length
-from flask_wtf.file import FileAllowed
+from flask_wtf.file import FileAllowed, FileRequired
 from constants import GRADING_PERIODS
+from school_divisions import ACADEMIC_LEVEL_CHOICES, GRADE_LEVEL_SELECT_CHOICES
 from utils import parse_currency_amount
 
 
@@ -43,7 +44,7 @@ class LeaderForm(FlaskForm):
     bio = TextAreaField('Short Bio', validators=[DataRequired()])
     contact = StringField('Contact Email or Link', validators=[Optional()])
     category = StringField('Category', validators=[DataRequired(), Length(max=100)])
-    photo = FileField('Photo', validators=[FileAllowed(['jpg', 'png', 'jpeg'], 'Images only!')])
+    photo = FileField('Photo', validators=[FileAllowed(['jpg', 'png', 'jpeg', 'gif', 'webp'], 'Images only!')])
     submit = SubmitField('Save Leader')
 
 def validate_login_identifier(form, field):
@@ -75,6 +76,27 @@ class ChangeDetailsForm(FlaskForm):
     submit = SubmitField("Update")
 
 
+class AccountPasswordForm(FlaskForm):
+    current_password = PasswordField("Current password", validators=[DataRequired()])
+    new_password = PasswordField(
+        "New password",
+        validators=[DataRequired(), Length(min=6, message="Use at least 6 characters.")],
+    )
+    confirm_password = PasswordField("Confirm new password", validators=[DataRequired()])
+    submit_password = SubmitField("Update password")
+
+
+class AccountPhotoForm(FlaskForm):
+    photo = FileField(
+        "Profile photo",
+        validators=[
+            FileRequired(message="Choose a photo to upload."),
+            FileAllowed(["jpg", "jpeg", "png", "gif", "webp"], "Images only!"),
+        ],
+    )
+    submit_photo = SubmitField("Upload photo")
+
+
 # --------------------------------------------------------------
 # STUDENT & CLASS FORMS
 # --------------------------------------------------------------
@@ -97,7 +119,7 @@ class SelfRegistrationForm(FlaskForm):
     )
     level = SelectField(
         "Academic Level",
-        choices=[("Senior High", "Senior High"), ("Junior High", "Junior High"), ("Elementary", "Elementary")],
+        choices=ACADEMIC_LEVEL_CHOICES,
         validators=[DataRequired()],
     )
     parent_email = StringField("Parent/Guardian Email", validators=[Optional(), Email()])
@@ -132,7 +154,7 @@ class RegisterStudentForm(FlaskForm):
     )
     level = SelectField(
         "Academic Level",
-        choices=[("Senior High", "Senior High"), ("Junior High", "Junior High"), ("Elementary", "Elementary")],
+        choices=ACADEMIC_LEVEL_CHOICES,
         validators=[DataRequired()]
     )
     student_id = StringField(
@@ -151,16 +173,41 @@ class RegisterStudentForm(FlaskForm):
         validators=[Optional(), Length(min=4, max=6)],
         description="4–6 digit PIN for scanning report QR without login. Leave blank to keep current.",
     )
-    photo = FileField("Photo", validators=[FileAllowed(["jpg", "png", "jpeg"], "Images only!")])
+    photo = FileField("Photo", validators=[FileAllowed(["jpg", "png", "jpeg", "gif", "webp"], "Images only!")])
     klass = SelectField("Assign Class", coerce=optional_int_coerce, validators=[Optional()])
     academic_year = SelectField("Academic Year", coerce=optional_int_coerce, validators=[DataRequired()])
     registration_fees = CurrencyField(
-        "Registration Fees",
+        "Student Registration Fee",
         validators=[Optional(), validate_currency],
         default="0.00",
+        description="One-time student registration fee for the academic year (not periodic tuition).",
+    )
+    registration_payment_status = SelectField(
+        "Payment Status",
+        choices=[
+            ("unpaid", "Unpaid"),
+            ("partial", "Partial"),
+            ("paid", "Paid"),
+        ],
+        default="unpaid",
+        validators=[Optional()],
+    )
+    receipt_reference = StringField(
+        "Receipt / Reference",
+        validators=[Optional(), Length(max=80)],
+        description="Official receipt number issued to the student after payment.",
     )
     is_returning = BooleanField("Returning Student", default=False)
     submit = SubmitField("Register")
+
+    def validate_receipt_reference(self, field):
+        status = (self.registration_payment_status.data or "").strip().lower()
+        value = (field.data or "").strip()
+        field.data = value
+        if status in {"paid", "partial"} and not value:
+            raise ValidationError(
+                "Enter the receipt number issued to the student after payment."
+            )
 
 
 class ClassForm(FlaskForm):
@@ -173,7 +220,11 @@ class ClassForm(FlaskForm):
 
 class CreateClassForm(FlaskForm):
     name = StringField('Class Name', validators=[DataRequired()])
-    grade_level = StringField('Grade Level', validators=[DataRequired(), Length(max=50)])
+    grade_level = SelectField(
+        'Grade Level',
+        choices=GRADE_LEVEL_SELECT_CHOICES,
+        validators=[DataRequired()],
+    )
     stream = StringField('Stream / Track', validators=[Optional(), Length(max=50)])
     description = TextAreaField('Description', validators=[Optional()])
     yearly_fee = CurrencyField('Yearly Fee', validators=[Optional(), validate_currency])
@@ -480,7 +531,7 @@ class CreateUserForm(FlaskForm):
     ], validators=[DataRequired()])
     home_address = StringField('Home Address', validators=[Optional()])
     telephone_number = StringField('Telephone Number', validators=[Optional()])
-    photo = FileField('Profile Photo', validators=[FileAllowed(['jpg', 'jpeg', 'png', 'gif'], 'Images only!')])
+    photo = FileField('Profile Photo', validators=[FileAllowed(['jpg', 'jpeg', 'png', 'gif', 'webp'], 'Images only!')])
     submit = SubmitField('Create User')
 
 
@@ -504,7 +555,7 @@ class EditUserForm(FlaskForm):
     ], validators=[DataRequired()])
     home_address = StringField('Home Address', validators=[Optional()])
     telephone_number = StringField('Telephone Number', validators=[Optional()])
-    photo = FileField('Profile Photo', validators=[FileAllowed(['jpg', 'jpeg', 'png', 'gif'], 'Images only!')])
+    photo = FileField('Profile Photo', validators=[FileAllowed(['jpg', 'jpeg', 'png', 'gif', 'webp'], 'Images only!')])
     submit = SubmitField('Save Changes')
 
 TransactionForm = BusinessTransactionForm

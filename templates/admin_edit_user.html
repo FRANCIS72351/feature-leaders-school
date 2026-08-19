@@ -45,10 +45,8 @@
         <div class="col-md-6">
             {{ form.photo.label(class="form-label") }}
             {{ form.photo(class="form-control") }}
-            <div class="form-text">Accepted formats: JPG, JPEG, PNG, GIF. Leave blank to keep current photo.</div>
-            {% if user.photo %}
-            <img src="{{ user.photo_url }}" class="mt-2 rounded" width="80" alt="Current photo">
-            {% endif %}
+            <div class="form-text">Accepted: JPG, PNG, GIF, or WEBP. Automatically cropped to a square ID-card photo. Leave blank to keep the current photo.</div>
+            <img src="{{ user.photo_url }}" class="mt-2 rounded-circle" width="80" height="80" alt="Current photo" style="object-fit:cover;aspect-ratio:1/1;overflow:hidden;" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
         </div>
     </div>
     <div class="mt-3">

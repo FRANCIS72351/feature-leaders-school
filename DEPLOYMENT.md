@@ -47,8 +47,8 @@ Only if you intentionally want dev data on production:
 
 ```bash
 # From your Windows/Mac machine (replace user and server IP)
-scp instance/keeptrack_full.db user@your-server:/var/www/school-management/instance/
-ssh user@your-server "sudo chown www-data:www-data /var/www/school-management/instance/keeptrack_full.db"
+scp instance/future_leaders_full.db user@your-server:/var/www/school-management/instance/
+ssh user@your-server "sudo chown www-data:www-data /var/www/school-management/instance/future_leaders_full.db"
 ssh user@your-server "sudo systemctl restart school-management"
 ```
 
@@ -245,4 +245,4 @@ sudo chown -R www-data:www-data /var/www/school-management/static/uploads
 - [ ] Set `SESSION_COOKIE_SECURE=true`
 - [ ] Firewall: `sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw enable`
 - [ ] Restrict `/etc/school-management/env` to root (`chmod 600`)
-- [ ] Regular backups of `instance/keeptrack_full.db`
+- [ ] Regular backups of `instance/future_leaders_full.db`

@@ -102,11 +102,11 @@
     <!-- Institutional Brand Header -->
     <div class="text-center mb-5 pb-3 border-bottom fade-glide-in">
         <div class="d-flex align-items-center justify-content-center mb-3 flex-wrap gap-2">
-            <img src="{{ url_for('static', filename='images/logo-removebg-preview.png') }}" 
+            <img src="{{ url_for('static', filename='images/LOGO.png') }}" 
                  alt="Future Leaders Preparatory Academy Logo" 
                  class="me-md-3" 
                  style="max-height: 65px; width: auto;" 
-                 onerror="this.style.display='none'">
+                 onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
             <div class="text-start">
                 <h2 class="fw-bold mb-0 brand-text-navy">Future Leaders Preparatory Academy</h2>
                 <span class="badge px-2 py-1 fw-semibold" style="background-color: var(--flpa-red); color: white;">F.L.P.A. Portal Support</span>

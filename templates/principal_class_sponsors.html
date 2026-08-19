@@ -39,10 +39,14 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for row in sponsor_matrix %}
+                    {% for group in sponsor_matrix_by_division %}
+                    <tr>
+                        <td colspan="4" class="text-cyan fw-semibold text-uppercase py-2" style="font-size:0.72rem; letter-spacing:0.06em;">{{ group.label }}</td>
+                    </tr>
+                    {% for row in group.classes %}
                     <tr>
                         <td class="fw-semibold text-yellow">{{ row.klass.name }}</td>
-                        <td>Grade {{ row.klass.grade_level }}</td>
+                        <td>{{ row.klass.school_division_label }} · {{ row.klass.grade_level }}</td>
                         <td>
                             {% if row.sponsor_name %}
                             <span class="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25">{{ row.sponsor_name }}</span>
@@ -71,6 +75,7 @@
                             {% endif %}
                         </td>
                     </tr>
+                    {% endfor %}
                     {% else %}
                     <tr>
                         <td colspan="4" class="text-center text-blue py-4">No classes configured yet.</td>

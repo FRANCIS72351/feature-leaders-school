@@ -1,7 +1,7 @@
-﻿import sqlite3
+import sqlite3
 from collections import defaultdict
 
-db = r"c:\Users\Francis\Desktop\essential\SCHOOL_MANAGEMENT\instance\keeptrack_full.db"
+db = r"c:\Users\Francis\Desktop\essential\SCHOOL_MANAGEMENT\instance\future_leaders_full.db"
 
 conn = sqlite3.connect(db)
 conn.execute("PRAGMA writable_schema=ON")

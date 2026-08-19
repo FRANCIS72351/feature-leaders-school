@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import app, get_active_academic_year
 
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'instance', 'keeptrack_full.db')
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'instance', 'future_leaders_full.db')
 
 
 def main():

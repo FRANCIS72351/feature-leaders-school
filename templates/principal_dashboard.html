@@ -403,18 +403,25 @@
         --bs-gutter-y: 0.85rem;
     }
 
-    .principal-layout-grid > .principal-sidebar {
-        width: 29%;
-    }
-
+    .principal-layout-grid > .principal-sidebar,
     .principal-layout-grid > .principal-main {
-        width: 71%;
+        flex: 0 0 100%;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
     }
 
-    @media (max-width: 1199.98px) {
-        .principal-layout-grid > .principal-sidebar,
+    @media (min-width: 1200px) {
+        .principal-layout-grid > .principal-sidebar {
+            flex: 0 0 29%;
+            width: 29%;
+            max-width: 29%;
+        }
+
         .principal-layout-grid > .principal-main {
-            width: 100%;
+            flex: 0 0 71%;
+            width: 71%;
+            max-width: 71%;
         }
     }
 
@@ -463,7 +470,7 @@
     }
     .principal-left-rail {
         position: sticky;
-        top: 1rem;
+        top: calc(96px + env(safe-area-inset-top, 0px));
     }
     .finance-audit-grid {
         display: grid;
@@ -508,7 +515,7 @@
         font-size: 0.79rem;
         color: #2b2623;
         font-weight: 700;
-        max-width: 270px;
+        max-width: 100%;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -591,6 +598,139 @@
             grid-template-columns: 1fr;
         }
     }
+
+    .principal-terminal {
+        max-width: 100%;
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .principal-terminal img {
+        max-width: 100%;
+        height: auto;
+    }
+
+    @media (max-width: 1199.98px) {
+        .principal-left-rail {
+            position: static;
+            top: auto;
+        }
+    }
+
+    @media (max-width: 767.98px) {
+        .principal-terminal.pro-dashboard {
+            padding-top: 0.85rem !important;
+            padding-bottom: 1.25rem !important;
+        }
+
+        .fade-glide-in {
+            opacity: 1;
+            transform: none;
+            animation: none;
+        }
+
+        .principal-terminal .card,
+        .principal-terminal .sec-card,
+        .principal-overview-chip,
+        .principal-terminal .condition-vault-card {
+            position: relative;
+            height: auto !important;
+            transform: none !important;
+            margin-top: 0;
+            z-index: auto;
+        }
+
+        .principal-layout-grid,
+        .principal-kpi-row,
+        .principal-terminal .row {
+            display: flex;
+            flex-wrap: wrap;
+        }
+
+        .principal-layout-grid > .principal-sidebar,
+        .principal-layout-grid > .principal-main,
+        .principal-kpi-row > [class*="col"],
+        .principal-terminal .row > [class*="col"] {
+            flex: 0 0 100%;
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            position: relative;
+            left: auto;
+            top: auto;
+            float: none;
+        }
+
+        .principal-overview-strip .row > [class*="col"] {
+            flex: 0 0 50%;
+            width: 50%;
+            max-width: 50%;
+        }
+
+        .principal-workspace-tabs {
+            gap: 0.4rem;
+        }
+
+        .principal-workspace-tabs a {
+            font-size: 0.72rem;
+            padding: 0.42rem 0.7rem;
+        }
+
+        .principal-terminal .card.sec-card,
+        .principal-terminal .card.bg-dark {
+            padding: 1rem !important;
+        }
+
+        .btn-command:hover,
+        .condition-vault-card:hover {
+            transform: none;
+        }
+    }
+
+    @media (max-width: 575.98px) {
+        .principal-overview-strip .row > [class*="col"],
+        .principal-kpi-row > [class*="col"] {
+            flex: 0 0 100%;
+            width: 100%;
+            max-width: 100%;
+        }
+
+        .principal-overview-chip {
+            min-height: 0;
+        }
+
+        .principal-overview-chip .value {
+            font-size: 1.2rem;
+        }
+    }
+
+    /* Brand-red page headings — school logo color only */
+    .principal-terminal h2.glow-title,
+    .principal-terminal h5.glow-title,
+    .principal-terminal h6.glow-title,
+    .principal-terminal .principal-hero-sub {
+        color: var(--primary-brand) !important;
+    }
+
+    /* Command rows sit on light cards — keep titles/descriptions dark, not white or brand-red */
+    .principal-terminal .btn-command,
+    .principal-terminal .btn-command:hover,
+    .principal-terminal .btn-command .fw-bold,
+    .principal-terminal .btn-command .fw-bold.text-white,
+    .principal-terminal .btn-command .text-white {
+        color: #1f2937 !important;
+    }
+    .principal-terminal .btn-command .cmd-desc,
+    .principal-terminal .btn-command .cmd-desc.text-blue,
+    .principal-terminal .btn-command .text-blue,
+    .principal-terminal .btn-command .principal-hero-sub,
+    .principal-terminal .btn-command.cmd-cyan .cmd-desc,
+    .principal-terminal .btn-command.cmd-cyan .text-blue {
+        color: #0c7db8 !important;
+    }
+    .principal-terminal label[for="academic_year_id"] {
+        color: var(--primary-brand, #c82828) !important;
+    }
 </style>
 
 <div class="container-fluid py-4 px-md-4 principal-terminal pro-dashboard">
@@ -599,7 +739,7 @@
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4 pb-3 border-bottom border-secondary border-opacity-10 fade-glide-in">
         <div>
             <h2 class="glow-title mb-0"><i class="fas fa-shield-halved text-cyan me-2"></i>Principal Oversight Terminal</h2>
-            <p class="text-white small mb-0">System Authority Level: Complete Command & Control Matrix</p>
+            <p class="principal-hero-sub small mb-0">System Authority Level: Complete Command & Control Matrix</p>
         </div>
         <form method="get" class="d-flex gap-2 mt-2 mt-md-0 flex-wrap align-items-center">
             {% if class_id %}<input type="hidden" name="class_id" value="{{ class_id }}">{% endif %}
@@ -654,7 +794,6 @@
 
     <div class="principal-workspace-tabs fade-glide-in delay-1">
         <a href="{{ url_for('principal_dashboard', **year_param) }}"><i class="fas fa-grid-2"></i>Overview</a>
-        <a href="{{ url_for('dashboard', view='admin') }}"><i class="fas fa-user-shield"></i>Admin Dashboard</a>
         <a href="{{ url_for('principal_attendance', academic_year_id=display_year.id if display_year else None) }}"><i class="fas fa-calendar-check"></i>Attendance</a>
         <a href="{{ url_for('principal_grade_entry') }}"><i class="fas fa-pen-to-square"></i>Grade Review</a>
         <a href="{{ url_for('business_dashboard', **year_param) }}"><i class="fas fa-wallet"></i>Finance</a>
@@ -696,12 +835,12 @@
 
     <div class="row g-4 principal-layout-grid">
         
-        <div class="col-xl-4 col-lg-5 d-flex flex-column gap-4 fade-glide-in delay-1 principal-left-rail principal-sidebar">
+        <div class="col-12 col-lg-5 col-xl-4 d-flex flex-column gap-4 fade-glide-in delay-1 principal-left-rail principal-sidebar">
             
             <div class="card sec-card p-4">
                 <div class="d-flex align-items-center gap-3">
                     <div class="position-relative" style="width: 72px; height: 72px;">
-                        <img src="{{ current_user.photo_url }}" class="w-100 h-100 object-fit-cover rounded-3 border border-secondary border-opacity-20" alt="User Avatar">
+                        <img src="{{ current_user.photo_url }}" class="w-100 h-100 object-fit-cover rounded-circle border border-secondary border-opacity-20" alt="User Avatar" style="aspect-ratio:1/1;overflow:hidden;" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
                         <span class="position-absolute bottom-0 end-0 bg-emerald border border-dark rounded-circle p-1.5" title="Operator Status: Active"></span>
                     </div>
                     <div>
@@ -709,6 +848,10 @@
                         <span class="badge bg-cyan bg-opacity-10 text-cyan small border border-cyan border-opacity-10 mt-1 px-2.5 py-1">{{ current_user.role|title }}</span>
                     </div>
                 </div>
+                <hr class="border-secondary opacity-10 my-3">
+                {% with link_class='small text-cyan text-decoration-none' %}
+                {% include 'partials/account_settings_link.html' %}
+                {% endwith %}
                 <hr class="border-secondary opacity-10 my-3">
                 <div class="small text-white d-flex flex-column gap-2">
                     <div><i class="fas fa-envelope text-white me-2 fa-fw"></i>{{ current_user.email }}</div>
@@ -722,10 +865,10 @@
             </div>
 
             <div class="card sec-card p-4">
-                <h6 class="text-white font-weight-bold mb-1">
+                <h6 class="glow-title font-weight-bold mb-1">
                     <i class="fas fa-terminal text-cyan me-2"></i>Executive Action Commands
                 </h6>
-                <p class="text-white small mb-3">Direct access pipelines to execute foundational configuration updates.</p>
+                <p class="principal-hero-sub small mb-3">Direct access pipelines to execute foundational configuration updates.</p>
                 
                 <div class="d-flex flex-column gap-3">
                     <a href="{{ url_for('manage_leaders') }}" class="btn-command cmd-cyan text-decoration-none">
@@ -793,7 +936,7 @@
                             <div class="cmd-icon-box text-emerald me-3"><i class="fas fa-user-plus fa-lg"></i></div>
                             <div>
                                 <div class="fw-bold text-white small">Enroll New User</div>
-                                <div class="text-white small" style="font-size:0.75rem;">Instantiate teacher, student or accountant ids</div>
+                                <div class="cmd-desc text-blue small" style="font-size:0.75rem;">Instantiate teacher, student or accountant ids</div>
                             </div>
                         </div>
                     </a>
@@ -803,7 +946,7 @@
                             <div class="cmd-icon-box text-amber me-3"><i class="fas fa-key-skeleton fa-lg"></i></div>
                             <div>
                                 <div class="fw-bold text-white small">Password Override Pipeline</div>
-                                <div class="text-white small" style="font-size:0.75rem;">Reset and recover credential tracking assets</div>
+                                <div class="cmd-desc text-blue small" style="font-size:0.75rem;">Reset and recover credential tracking assets</div>
                             </div>
                         </div>
                     </a>
@@ -813,7 +956,7 @@
                             <div class="cmd-icon-box text-rose me-3"><i class="fas fa-arrows-rotate fa-lg"></i></div>
                             <div>
                                 <div class="fw-bold text-white small">Academic Year Rollover</div>
-                                <div class="text-white small" style="font-size:0.75rem;">End term, promote classes & re-enroll students</div>
+                                <div class="cmd-desc text-blue small" style="font-size:0.75rem;">End term, promote classes & re-enroll students</div>
                             </div>
                         </div>
                     </a>
@@ -849,35 +992,35 @@
                     </a>
                 </div>
             </div>
-        </div> <div class="col-xl-8 col-lg-7 d-flex flex-column gap-4 fade-glide-in delay-2 principal-main">
+        </div> <div class="col-12 col-lg-7 col-xl-8 d-flex flex-column gap-4 fade-glide-in delay-2 principal-main">
             
-            <div class="row g-3">
-                <div class="col-sm-6 col-xl-3">
+            <div class="row g-3 principal-kpi-row">
+                <div class="col-12 col-sm-6 col-xl-3">
                     <div class="card bg-dark border border-secondary border-opacity-10 p-3 rounded-3 shadow-sm h-100">
-                        <span class="text-white small d-block mb-1">Revenue Stream (Gross)</span>
+                        <span class="principal-hero-sub small d-block mb-1">Revenue Stream (Gross)</span>
                         <h4 class="text-emerald font-weight-bold mb-0">${{ "{:,.2f}".format(financial_stats.total_revenue if financial_stats else 0) }}</h4>
-                        <div class="text-white small mt-1" style="font-size:0.72rem;">Net: ${{ "{:,.2f}".format(financial_stats.net_profit if financial_stats else 0) }}</div>
+                        <div class="text-white small mt-1" style="font-size:0.72rem;"><span class="principal-hero-sub">Net:</span> ${{ "{:,.2f}".format(financial_stats.net_profit if financial_stats else 0) }}</div>
                     </div>
                 </div>
-                <div class="col-sm-6 col-xl-3">
+                <div class="col-12 col-sm-6 col-xl-3">
                     <div class="card bg-dark border border-secondary border-opacity-10 p-3 rounded-3 shadow-sm h-100">
-                        <span class="text-white small d-block mb-1">Passing Success Index</span>
+                        <span class="principal-hero-sub small d-block mb-1">Passing Success Index</span>
                         <h4 class="text-cyan font-weight-bold mb-0">{{ academic_stats.passing_rate }}%</h4>
                         <div class="text-rose small mt-1" style="font-size:0.72rem;"><i class="fas fa-triangle-exclamation me-1"></i>{{ academic_stats.failing_count }} At Risk Nodes</div>
                     </div>
                 </div>
-                <div class="col-sm-6 col-xl-3">
+                <div class="col-12 col-sm-6 col-xl-3">
                     <div class="card bg-dark border border-secondary border-opacity-10 p-3 rounded-3 shadow-sm h-100">
-                        <span class="text-white small d-block mb-1">Disciplinary Isolations</span>
+                        <span class="principal-hero-sub small d-block mb-1">Disciplinary Isolations</span>
                         <h4 class="text-amber font-weight-bold mb-0">{{ disciplinary_stats.active_suspensions }}</h4>
-                        <div class="text-white small mt-1" style="font-size:0.72rem;">Active Suspension Holds</div>
+                        <div class="principal-hero-sub small mt-1" style="font-size:0.72rem;">Active Suspension Holds</div>
                     </div>
                 </div>
-                <div class="col-sm-6 col-xl-3">
+                <div class="col-12 col-sm-6 col-xl-3">
                     <div class="card bg-dark border border-secondary border-opacity-10 p-3 rounded-3 shadow-sm h-100">
-                        <span class="text-white small d-block mb-1">Firewall Block Triggers</span>
+                        <span class="principal-hero-sub small d-block mb-1">Firewall Block Triggers</span>
                         <h4 class="text-rose font-weight-bold mb-0">{{ security_stats.blocked_ips }}</h4>
-                        <div class="text-white small mt-1" style="font-size:0.72rem;">IP Intercepts (24 Hrs)</div>
+                        <div class="principal-hero-sub small mt-1" style="font-size:0.72rem;">IP Intercepts (24 Hrs)</div>
                     </div>
                 </div>
             </div>
@@ -885,10 +1028,10 @@
             <div class="card sec-card p-4">
                 <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2 mb-3">
                     <div>
-                        <h5 class="text-white font-weight-bold mb-0">
+                        <h5 class="glow-title font-weight-bold mb-0">
                             <i class="fas fa-layer-group text-cyan me-2"></i>Active Student Condition Ledger
                         </h5>
-                        <p class="text-white small mb-0 mt-1" style="opacity:0.75;">
+                        <p class="small mb-0 mt-1{% if selected_folder == 'unallocated' or selected_class %} text-white{% else %} principal-hero-sub{% endif %}"{% if selected_folder == 'unallocated' or selected_class %} style="opacity:0.75;"{% endif %}>
                             {% if selected_folder == 'unallocated' %}
                                 Unallocated roster — students pending class assignment in <strong class="text-amber">Unallocated Folder</strong>
                             {% elif selected_class %}
@@ -939,13 +1082,17 @@
                     </div>
                     {% endif %}
 
-                    {% for portfolio in class_portfolios %}
+                    {% for group in class_portfolios_by_division %}
+                    <div class="col-12 pt-2">
+                        <div class="text-cyan small fw-semibold text-uppercase" style="font-size:0.72rem; letter-spacing:0.08em;">{{ group.label }}</div>
+                    </div>
+                    {% for portfolio in group.classes %}
                     {% set ring_class = 'alert' if portfolio.health_pct < 50 else ('warn' if portfolio.health_pct < 70 else '') %}
                     <div class="col-md-6 col-xl-4">
                         <a href="{{ url_for('principal_dashboard', class_id=portfolio.klass.id, **year_param) }}" class="condition-vault-card">
                             <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
                                 <div>
-                                    <div class="text-cyan small fw-semibold text-uppercase" style="font-size:0.68rem; letter-spacing:0.04em;">Grade {{ portfolio.klass.grade_level }}</div>
+                                    <div class="text-cyan small fw-semibold text-uppercase" style="font-size:0.68rem; letter-spacing:0.04em;">{{ group.label }} · {{ portfolio.klass.grade_level }}</div>
                                     <div class="fw-bold text-white fs-6">{{ portfolio.klass.name }}</div>
                                     {% if portfolio.klass.stream %}
                                     <div class="small mt-1" style="opacity:0.7;">{{ portfolio.klass.stream }} Stream</div>
@@ -964,6 +1111,7 @@
                             <div class="small text-cyan mt-3 fw-semibold"><i class="fas fa-folder-open me-1.5"></i>Open class &amp; search students</div>
                         </a>
                     </div>
+                    {% endfor %}
                     {% else %}
                     {% if not unallocated_portfolio %}
                     <div class="col-12 text-center py-5 text-white small">

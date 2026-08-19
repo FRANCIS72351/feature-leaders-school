@@ -105,7 +105,7 @@
             <strong class="me-1"><i class="fas fa-eye me-1"></i>Principal Finance Oversight</strong>
             Live monitoring is active for every income and expense entry in this ledger.
         </div>
-        <a href="{{ url_for('dashboard', view='admin') }}" class="btn btn-sm btn-outline-primary">Admin Dashboard</a>
+        <a href="{{ url_for('principal_dashboard', **year_param) }}" class="btn btn-sm btn-outline-primary">Principal Hub</a>
     </div>
     {% endif %}
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
@@ -138,11 +138,12 @@
             </form>
             {% endif %}
             {% if show_admin_hub_link %}
-            <a href="{{ url_for('dashboard', view='admin') }}" class="btn btn-sm btn-outline-dark"><i class="fas fa-user-shield me-1"></i> Admin Hub</a>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline-dark"><i class="fas fa-user-shield me-1"></i> Admin Hub</a>
             {% endif %}
             {% if show_principal_hub_link %}
             <a href="{{ url_for('principal_dashboard', **year_param) }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-crown me-1"></i> Principal Hub</a>
             {% endif %}
+            <a href="{{ url_for('account_settings') }}" class="btn btn-sm btn-outline-danger"><i class="fas fa-user-cog me-1"></i>Settings</a>
             <a href="{{ url_for('business_management') }}" class="btn btn-sm btn-outline-secondary">Advanced Ledger</a>
             <a href="{{ url_for('export_business', year=selected_year) }}" class="btn btn-sm btn-outline-primary">Export Transactions CSV</a>
             <a href="{{ url_for('export_payments', year=selected_year) }}" class="btn btn-sm btn-outline-secondary">Export Payments CSV</a>

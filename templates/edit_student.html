@@ -7,7 +7,11 @@
     .text-cyan { color: #00f2ff !important; }
     .text-emerald { color: #10b981 !important; }
     .text-muted { color: #94a3b8 !important; }
-    .glow-title { font-weight: 700; color: #fff; text-shadow: 0 0 20px rgba(0, 242, 255, 0.15); }
+    .glow-title { font-weight: 700; color: var(--primary-brand, #c82828) !important; text-shadow: none; }
+    .glow-title i { color: var(--primary-brand, #c82828) !important; }
+    .d-flex.border-bottom p.text-muted {
+        color: var(--primary-brand, #c82828) !important;
+    }
     .sec-card {
         background: #111827;
         border: 1px solid #1f2937;
@@ -32,11 +36,31 @@
     }
     .btn-emerald:hover { background-color: #059669 !important; color: #fff !important; }
     .fee-highlight {
-        border: 1px solid rgba(16, 185, 129, 0.35);
-        background: rgba(16, 185, 129, 0.06);
-        border-radius: 10px;
-        padding: 1rem;
+        background: #fff8f7;
+        border: 1px solid #e8c4c4;
+        border-left: 4px solid #c82828;
+        border-radius: 12px;
+        padding: 1.15rem 1.25rem;
+        color: #1f2937;
     }
+    .fee-highlight h6 { color: #c82828 !important; }
+    .fee-highlight .form-label,
+    .fee-highlight label { color: #1f2937 !important; font-weight: 600; }
+    .fee-highlight .form-control,
+    .fee-highlight .form-select {
+        background: #ffffff !important;
+        border: 1px solid #d9c4c4 !important;
+        color: #1f2937 !important;
+    }
+    .fee-highlight .form-control:focus,
+    .fee-highlight .form-select:focus {
+        border-color: #c82828 !important;
+        box-shadow: 0 0 0 0.2rem rgba(200, 40, 40, 0.18) !important;
+        color: #1f2937 !important;
+    }
+    .fee-highlight .text-muted { color: #4b5563 !important; }
+    .fee-highlight .req-star { color: #c82828; }
+    .receipt-field-wrap.is-inactive { display: none; }
 </style>
 
 <div class="container-fluid py-4 px-md-4">
@@ -63,7 +87,7 @@
     </div>
 
     <div class="card sec-card p-4">
-        <form method="POST" enctype="multipart/form-data">
+        <form method="POST" enctype="multipart/form-data" novalidate>
             {{ form.hidden_tag() }}
             {% if return_to %}
             <input type="hidden" name="return_to" value="{{ return_to }}">
@@ -148,6 +172,10 @@
                 <div class="col-sm-6 col-md-4">
                     <label class="text-muted small mb-1">Photo</label>
                     {{ form.photo(class_='form-control form-cyber py-2') }}
+                    <div class="form-text text-muted" style="font-size:0.72rem;">Automatically cropped to a square ID-card photo.</div>
+                    {% if student %}
+                    <img src="{{ student.photo_url }}" alt="Current photo" class="mt-2 rounded-circle" width="72" height="72" style="object-fit:cover;aspect-ratio:1/1;overflow:hidden;" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
+                    {% endif %}
                 </div>
             </div>
 
@@ -171,22 +199,33 @@
 
             <div class="fee-highlight mb-4" id="fee">
                 <div class="d-flex align-items-center gap-2 mb-2">
-                    <i class="fas fa-coins text-emerald"></i>
-                    <h6 class="text-emerald mb-0 fw-bold">Registration Fee</h6>
+                    <i class="fas fa-file-invoice-dollar" style="color:#c82828;"></i>
+                    <h6 class="mb-0 fw-bold">Student Registration Fee</h6>
+                    <span class="ms-auto small fw-bold" style="color:#9b1c1c; letter-spacing:.06em; text-transform:uppercase;">One-time intake</span>
                 </div>
-                <p class="text-muted small mb-2">
-                    Enter the registration fee for this student. Values like <strong>60,000</strong> are accepted.
-                    If a registration payment already exists for the selected academic year, it will be updated automatically.
+                <p class="small mb-3" style="color:#4b5563;">
+                    Record the fee. After payment, enter the receipt number issued to the student.
+                    This is the one-time school enrollment fee for this year (not monthly tuition).
+                    Choose Unpaid if they have not paid yet. You can save even if unpaid.
                 </p>
                 <div class="row g-3">
                     <div class="col-sm-6 col-md-4">
-                        <label class="text-muted small mb-1">Registration Fee Amount ($)</label>
-                        {{ form.registration_fees(class_='form-control form-cyber py-2', placeholder='60,000.00') }}
+                        <label class="form-label small mb-1" for="registration_fees">Amount <span class="req-star">*</span></label>
+                        {{ form.registration_fees(class_='form-control py-2', placeholder='9,000.00', inputmode='decimal', autocomplete='off') }}
                     </div>
-                    <div class="col-sm-6 col-md-4 d-flex align-items-end">
-                        <div class="small text-muted">
+                    <div class="col-sm-6 col-md-4">
+                        <label class="form-label small mb-1" for="registration_payment_status">Payment Status</label>
+                        {{ form.registration_payment_status(class_='form-select py-2') }}
+                    </div>
+                    <div class="col-sm-6 col-md-4 receipt-field-wrap" id="receiptFieldWrap">
+                        <label class="form-label small mb-1" for="receipt_reference">Receipt / Reference <span class="req-star">*</span></label>
+                        {{ form.receipt_reference(class_='form-control py-2', placeholder='e.g. REC-99201', maxlength='80') }}
+                        <div class="small mt-1" style="color:#6b7280;">Required after Paid or Partial — the official receipt number issued to the student.</div>
+                    </div>
+                    <div class="col-sm-6 col-md-6 d-flex align-items-end">
+                        <div class="small" style="color:#4b5563;">
                             Current stored fee:
-                            <span class="text-emerald font-monospace fw-bold">
+                            <span class="font-monospace fw-bold" style="color:#c82828;">
                                 ${{ "{:,.2f}".format(student.registration_fees|float) if student.registration_fees else "0.00" }}
                             </span>
                         </div>
@@ -207,5 +246,24 @@
         </form>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const status = document.getElementById('registration_payment_status');
+    const receipt = document.getElementById('receipt_reference');
+    const wrap = document.getElementById('receiptFieldWrap');
+    function syncReceipt() {
+        const needed = status && (status.value === 'paid' || status.value === 'partial');
+        if (wrap) wrap.classList.toggle('is-inactive', !needed);
+        if (receipt) {
+            receipt.required = !!needed;
+            receipt.disabled = !needed;
+            if (!needed) receipt.removeAttribute('required');
+        }
+    }
+    if (status) status.addEventListener('change', syncReceipt);
+    syncReceipt();
+});
+</script>
 
 {% endblock %}

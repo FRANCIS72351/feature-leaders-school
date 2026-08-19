@@ -469,12 +469,12 @@
     <div class="sheet-wrap">
       <div class="sheet-masthead">
         <div class="sheet-school-row">
-          <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="sheet-school-logo">
+          <img src="{{ school_logo_url }}" alt="School logo" class="sheet-school-logo" onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
           <div>
             <div class="sheet-school-title">Feature Leaders Preparatory Academy</div>
             <div class="sheet-school-sub">Class Grade Entry Sheet</div>
           </div>
-          <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="sheet-school-logo">
+          <img src="{{ school_logo_url }}" alt="School logo" class="sheet-school-logo" onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
         </div>
         <div class="sheet-info-grid">
           <div class="sheet-info-cell"><span class="label-strong">Class:</span> {{ klass.name }}</div>

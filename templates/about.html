@@ -262,7 +262,7 @@
                 {% endif %}
             </div>
             
-            {% set default_leader_img = url_for('static', filename='uploads/photos/default_student.png') %}
+            {% set default_leader_img = default_avatar_url %}
 
             {% for category in categories %}
             <div class="mb-5">
@@ -276,9 +276,9 @@
                         <div class="h-100 shadow-sm border-0 leader-card-wrapper">
                             <div class="leader-photo-shell">
                                 <div class="leader-photo-frame">
-                                    {% if leader.photo_static_path %}
+                                    {% if leader.photo_url %}
                                     <img
-                                        src="{{ url_for('static', filename=leader.photo_static_path) }}"
+                                        src="{{ leader.photo_url }}"
                                         class="leader-img"
                                         alt="{{ leader.name }}"
                                         loading="lazy"

@@ -11,7 +11,7 @@
             <div class="card-body d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
                 <div>
                     <h1 class="h5 mb-1 fw-bold text-dark">Student Dashboard</h1>
-                    <p class="text-muted small mb-0">
+                    <p class="small mb-0 academic-year-header">
                         {% if display_year %}
                             Academic Year: <strong>{{ display_year.name }}</strong>
                             {% if display_year.is_active %}<span class="badge bg-primary ms-1">Active</span>{% endif %}
@@ -24,7 +24,7 @@
                     <input type="hidden" name="tab" value="{{ active_tab }}">
                     {% if selected_subject %}<input type="hidden" name="subject" value="{{ selected_subject }}">{% endif %}
                     {% if selected_period %}<input type="hidden" name="period" value="{{ selected_period }}">{% endif %}
-                    <label for="academic_year_id" class="small text-muted mb-0">Year</label>
+                    <label for="academic_year_id" class="small mb-0 academic-year-label">Academic Year</label>
                     <select name="academic_year_id" id="academic_year_id" class="form-select form-select-sm" onchange="this.form.submit()">
                         {% for year in past_years %}
                         <option value="{{ year.id }}" {% if display_year and year.id == display_year.id %}selected{% endif %}>{{ year.name }}</option>
@@ -64,14 +64,16 @@
                     <div class="card-body p-4">
                         <div class="text-center pb-3 border-bottom">
                             <div class="student-avatar mx-auto mb-3">
-                                {% if student and student.photo_url %}
-                                <img src="{{ student.photo_url }}" alt="Photo" class="rounded-circle w-100 h-100 object-fit-cover">
-                                {% else %}
-                                <img src="{{ current_user.photo_url or url_for('static', filename='img/default-avatar.png') }}" alt="Photo" class="rounded-circle w-100 h-100 object-fit-cover">
-                                {% endif %}
+                                <img src="{{ student.photo_url if student else (current_user.photo_url if current_user else default_avatar_url) }}"
+                                     alt="{{ student.full_name if student else (current_user.full_name if current_user else 'Student') }}"
+                                     class="student-avatar-img"
+                                     width="96" height="96"
+                                     onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
                             </div>
                             {% if student %}
                             <h2 class="h5 fw-bold mb-1">{{ student.full_name }}</h2>
+                            <div class="mb-2">{% with link_class='small fw-semibold text-decoration-none', link_style='color:#c82828;' %}{% include 'partials/account_settings_link.html' %}{% endwith %}
+                            </div>
                             <div class="student-id-display mb-2">
                                 <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-3 py-2">
                                     <i class="fas fa-id-card me-1"></i>Student ID: <strong>{{ student.student_id }}</strong>
@@ -211,9 +213,9 @@
                                         <div class="standing-sub">{{ selected_subject or 'Subject' }} · {{ selected_period | marking_period_label }}</div>
                                         {% if draft_standing %}
                                         <div class="standing-score">{{ '%.1f'|format(draft_standing.total or 0) }}<span>/100</span></div>
-                                        <div class="small text-muted">Auto-updated from graded activities · CA {{ draft_standing.ca_score or 0 }} + Exam {{ draft_standing.exam_score or 0 }}</div>
+                                        <div class="small text-muted">Draft from period activities (ATT · PART · QUIZ · ASSG · CW · HW · TEST). Not yet on the report card.</div>
                                         {% else %}
-                                        <div class="text-muted small mt-1">Updates automatically when your teacher grades activities</div>
+                                        <div class="text-muted small mt-1">Appears when your teacher saves a draft of this period’s activity scores</div>
                                         {% endif %}
                                     </div>
                                 </div>
@@ -237,7 +239,47 @@
                             </div>
                         </div>
 
-                        <h4 class="h6 fw-bold mb-3">Activity Scores <span class="text-muted fw-normal small">— this subject &amp; period</span></h4>
+                        <h4 class="h6 fw-bold mb-3">Period Activity Scores <span class="text-muted fw-normal small">— {{ period_scheme_note if period_scheme_note is defined else 'ATT 10 + PART 10 + QUIZ 15 + ASSG 20 + CW 15 + HW 10 + TEST 20 = 100' }}</span></h4>
+                        <div class="table-responsive mb-4">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Activity</th>
+                                        <th class="text-center">Code</th>
+                                        <th class="text-center">Score</th>
+                                        <th class="text-center">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if activity_scores %}
+                                    {% for item in activity_scores %}
+                                    <tr {% if item.key == 'total' %}class="table-light fw-semibold"{% endif %}>
+                                        <td>{{ item.name }}</td>
+                                        <td class="text-center font-monospace">{{ item.code }}</td>
+                                        <td class="text-center font-monospace fw-bold">
+                                            {% if item.score is not none %}{{ item.score }}/{{ item.max_score|int }}{% else %}—{% endif %}
+                                        </td>
+                                        <td class="text-center">
+                                            {% if item.key == 'total' %}
+                                                {% if published_standing %}<span class="badge bg-success">Published total</span>
+                                                {% elif draft_standing %}<span class="badge bg-warning text-dark">Draft standing</span>
+                                                {% else %}<span class="badge bg-secondary">Pending</span>{% endif %}
+                                            {% elif item.score is not none %}
+                                                <span class="badge bg-info text-dark">{{ 'Draft' if not published_standing else 'Recorded' }}</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">Open</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                    {% else %}
+                                    <tr><td colspan="4" class="text-center text-muted py-3">No period activity scores yet. They appear as soon as your teacher saves a draft.</td></tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <h4 class="h6 fw-bold mb-3">Other Activities <span class="text-muted fw-normal small">— this subject &amp; period</span></h4>
                         <div class="table-responsive">
                             <table class="table table-sm table-hover align-middle mb-0">
                                 <thead class="table-light">
@@ -286,8 +328,6 @@
                                     <tr>
                                         <th>Subject</th>
                                         <th>Period</th>
-                                        <th class="text-center">CA</th>
-                                        <th class="text-center">Exam</th>
                                         <th class="text-center">Total</th>
                                         <th class="text-center">Grade</th>
                                     </tr>
@@ -297,8 +337,6 @@
                                     <tr>
                                         <td class="fw-semibold">{{ row.subject }}</td>
                                         <td class="small">{{ row.period_label }}</td>
-                                        <td class="text-center font-monospace">{{ row.ca_score if row.ca_score is not none else '—' }}</td>
-                                        <td class="text-center font-monospace">{{ row.exam_score if row.exam_score is not none else '—' }}</td>
                                         <td class="text-center font-monospace fw-bold">{{ row.total if row.total is not none else '—' }}</td>
                                         <td class="text-center"><span class="badge bg-success">{{ row.grade_letter or '—' }}</span></td>
                                     </tr>
@@ -583,9 +621,36 @@
 </div>
 
 <style>
+    .academic-year-label,
+    .academic-year-header {
+        color: var(--primary-brand, #c82828) !important;
+    }
+    .academic-year-header strong {
+        color: var(--primary-brand, #c82828) !important;
+    }
     .student-dashboard { background: #f1f5f9; min-height: calc(100vh - 80px); }
     .student-layout { max-width: 1200px; margin: 0 auto; }
-    .student-avatar { width: 96px; height: 96px; overflow: hidden; border: 3px solid #e2e8f0; }
+    .student-avatar {
+        width: 96px;
+        height: 96px;
+        aspect-ratio: 1 / 1;
+        border-radius: 50%;
+        overflow: hidden;
+        border: 3px solid #e2e8f0;
+        background: #e2e8f0;
+        flex-shrink: 0;
+    }
+    .student-avatar img,
+    .student-avatar-img {
+        width: 96px !important;
+        height: 96px !important;
+        max-width: none !important;
+        aspect-ratio: 1 / 1;
+        object-fit: cover;
+        display: block;
+        border-radius: 50%;
+        overflow: hidden;
+    }
     .student-class-banner { margin-top: 0.25rem; }
     .student-grade-badge {
         background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);

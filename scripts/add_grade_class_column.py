@@ -1,6 +1,6 @@
 import sqlite3, os
 BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-db_path = os.path.join(BASE_DIR, 'instance', 'keeptrack_full.db')
+db_path = os.path.join(BASE_DIR, 'instance', 'future_leaders_full.db')
 print('DB path:', db_path)
 if not os.path.exists(db_path):
     print('Database not found:', db_path)

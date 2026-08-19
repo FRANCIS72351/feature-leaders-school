@@ -112,6 +112,18 @@
         border-radius: 999px;
         margin-top: 0.75rem;
     }
+    .reg-fee-card {
+        background: #fff8f7;
+        border: 1px solid #e8c4c4;
+        border-left: 4px solid #c82828;
+        border-radius: 12px;
+        padding: 1rem 1.15rem;
+        margin-top: 1.25rem;
+        color: #1f2937;
+    }
+    .reg-fee-card h6 { color: #c82828; font-weight: 800; margin: 0; }
+    .reg-fee-card p { color: #4b5563; font-size: 0.82rem; margin: 0.4rem 0 0; }
+    .reg-fee-card .fee-amount { font-size: 1.25rem; font-weight: 800; color: #1f2937; }
     .section-divider {
         border-top: 1px solid rgba(55, 65, 81, 0.6);
         margin: 1.5rem 0;
@@ -194,7 +206,24 @@
                     </div>
                     <div class="col-md-6">
                         <label class="field-label">Class (Optional)</label>
-                        {{ form.klass(class_='form-select form-cyber py-2') }}
+                        {{ form.klass(class_='form-select form-cyber py-2', id='klassField') }}
+                    </div>
+                </div>
+
+                <div class="reg-fee-card" id="selfRegFeeCard">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="fas fa-file-invoice-dollar" style="color:#c82828;"></i>
+                        <h6>Student Registration Fee</h6>
+                        <span class="ms-auto small fw-bold" style="color:#9b1c1c; letter-spacing:.06em; text-transform:uppercase;">Pay at Business Office</span>
+                    </div>
+                    <p>
+                        After you submit, pay the one-time registration fee at the Business Office to unlock your portal.
+                        This is not periodic tuition.
+                    </p>
+                    <div class="mt-2" id="selfRegFeeAmount" style="display:none;">
+                        Scheduled amount:
+                        <span class="fee-amount" id="selfRegFeeValue">$0.00</span>
+                        {% if active_year %}<span class="small" style="color:#6b7280;"> · {{ active_year.name }}</span>{% endif %}
                     </div>
                 </div>
 
@@ -223,6 +252,10 @@
     const lookupIcon = document.getElementById('lookupIcon');
     const isReturning = document.getElementById('isReturning');
     const identityFields = document.querySelectorAll('.identity-field');
+    const klassField = document.getElementById('klassField');
+    const selfRegFeeAmount = document.getElementById('selfRegFeeAmount');
+    const selfRegFeeValue = document.getElementById('selfRegFeeValue');
+    const classRegFees = {{ class_registration_fees|default({})|tojson }};
     let lookupTimer = null;
 
     function setLocked(locked) {
@@ -260,6 +293,27 @@
         if (parentEl && data.parent_email) parentEl.value = data.parent_email;
         const klassEl = document.querySelector('[name="klass"]');
         if (klassEl && data.klass_id) klassEl.value = String(data.klass_id);
+        updateSelfRegFee();
+    }
+
+    function updateSelfRegFee() {
+        if (!klassField || !selfRegFeeAmount || !selfRegFeeValue) return;
+        const scheduled = classRegFees[String(klassField.value)];
+        const num = Number(scheduled);
+        if (Number.isFinite(num) && num > 0) {
+            selfRegFeeValue.textContent = '$' + num.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            });
+            selfRegFeeAmount.style.display = '';
+        } else {
+            selfRegFeeAmount.style.display = 'none';
+        }
+    }
+
+    if (klassField) {
+        klassField.addEventListener('change', updateSelfRegFee);
+        updateSelfRegFee();
     }
 
     async function runLookup() {
@@ -272,7 +326,10 @@
         try {
             const resp = await fetch('{{ url_for("api_lookup_student") }}', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': (document.querySelector('meta[name="csrf-token"]') || {}).content || '',
+                },
                 body: JSON.stringify({ email: email }),
             });
             const data = await resp.json();

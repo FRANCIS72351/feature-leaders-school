@@ -3,7 +3,7 @@ import sqlite3
 
 # Define path to the database file
 base_dir = os.path.abspath(os.path.dirname(__file__))
-db_path = os.path.join(base_dir, 'instance', 'keeptrack_full.db')
+db_path = os.path.join(base_dir, 'instance', 'future_leaders_full.db')
 
 print(f"Connecting to database at: {db_path}")
 
@@ -35,4 +35,4 @@ if os.path.exists(db_path):
     except Exception as e:
         print(f"Database Error: {e}")
 else:
-    print("Error: Could not locate 'keeptrack_full.db' inside the instance folder.")
+    print("Error: Could not locate 'future_leaders_full.db' inside the instance folder.")

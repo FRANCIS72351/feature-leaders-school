@@ -1,4 +1,4 @@
-# app.py — Keep Track Digital School Management System
+# app.py — Future Leaders Academy Management System
 from flask import Flask, render_template, redirect, url_for, flash, request, Response, jsonify, send_file, send_from_directory, current_app, abort, session
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_migrate import Migrate
@@ -1171,7 +1171,7 @@ def render_attendance_overview(back_url, back_label, page_title):
     scope = get_attendance_visibility_scope(current_user)
     if not can_view_attendance_overview(current_user):
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     session_key = _attendance_overview_session_key(normalize_role(current_user))
     display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
@@ -3575,7 +3575,7 @@ INSTANCE_PATH = os.path.join(BASE_DIR, 'instance')
 os.makedirs(INSTANCE_PATH, exist_ok=True)
 
 # Generate an absolute path to ensure desynchronization bugs are impossible
-db_path = os.path.abspath(os.path.join(INSTANCE_PATH, 'keeptrack_full.db'))
+db_path = os.path.abspath(os.path.join(INSTANCE_PATH, 'future_leaders_full.db'))
 
 # Assign SQLALCHEMY configuration parameters
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', f'sqlite:///{db_path}')
@@ -4196,7 +4196,7 @@ def login():
                 return redirect(url_for('teacher_dashboard'))
             if normalize_role(user) == 'dean':
                 return redirect(url_for('dean_dashboard'))
-            return redirect(url_for('dashboard'))
+            return redirect(url_for('login'))
 
         track_failed_attempt(ip, identifier)
         if user:
@@ -4220,7 +4220,7 @@ def logout():
 def admin_system_control():
     if normalize_role(current_user) != 'admin':
         flash('Administrator access required.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     settings = get_system_settings()
     if request.method == 'POST':
@@ -4252,7 +4252,7 @@ def admin_system_control():
 def admin_system_activate():
     if normalize_role(current_user) != 'admin':
         flash('Administrator access required.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
     settings = get_system_settings()
     settings.system_active = True
     settings.deactivated_at = None
@@ -4267,7 +4267,7 @@ def admin_system_activate():
 def admin_system_deactivate():
     if normalize_role(current_user) != 'admin':
         flash('Administrator access required.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
     settings = get_system_settings()
     settings.system_active = False
     settings.deactivated_at = datetime.now(timezone.utc)
@@ -4275,30 +4275,37 @@ def admin_system_deactivate():
     db.session.commit()
     flash('System placed on hold. Only administrators can sign in.', 'warning')
     return redirect(url_for('admin_system_control'))
+# -------------------------------------------------------------------------
+# Dashboard Access Control & Core Routing Gateway
+# -------------------------------------------------------------------------
 
-
-# --------------------------- DASHBOARD -----------------------------
-BUSINESS_DASHBOARD_ROLES = frozenset({'admin', 'business', 'principal', 'vpi'})
+BUSINESS_DASHBOARD_ROLES = frozenset({
+    'admin', 'business', 'principal', 'vpi', 'vpa', 'registrar', 'registry', 'dean'
+})
 PRINCIPAL_GRADE_ENTRY_ROLES = frozenset({'principal', 'admin'})
 
 
 def _require_business_dashboard_access():
-    """Allow business office dashboard for admin, business manager, principal, and VPI."""
+    """Verify authorization for business office functions without unauthenticating valid users."""
     if not current_user.is_authenticated:
         flash('Please log in to continue.', 'danger')
         return redirect(url_for('login'))
-    if normalize_role(current_user) not in BUSINESS_DASHBOARD_ROLES:
-        flash('Business dashboard access required.', 'danger')
-        return redirect(url_for('dashboard'))
+
+    user_role = normalize_role(current_user)
+    if user_role not in BUSINESS_DASHBOARD_ROLES:
+        flash('Access restricted: Business dashboard privileges required.', 'danger')
+        return render_template('errors/403.html'), 403
+
     return None
 
 
 def _render_business_dashboard():
-    """Shared business-office dashboard (tuition, ledger, class payments)."""
+    """Render shared business office dashboard (tuition ledger, payments, analytics)."""
     active_year = get_active_academic_year()
     selected_year_name = active_year.name if active_year else "No Active Year Setup"
     all_students = Student.query.all()
-    current_role = (current_user.role or "").lower()
+    current_role = normalize_role(current_user)
+
     admin_view_requested = (request.args.get('view') or '').strip().lower() == 'admin'
     can_open_admin_view = current_role in {'admin', 'principal'}
     effective_role = 'admin' if admin_view_requested and can_open_admin_view else current_role
@@ -4309,6 +4316,7 @@ def _render_business_dashboard():
     )
     biz_stats = _registrar_counts_for_year(display_year, viewing_archived=viewing_archived_biz)
     payment_form = PaymentForm()
+
     if request.method == 'POST' and 'submit_payment' in request.form:
         populate_business_payment_form(
             payment_form,
@@ -4322,7 +4330,7 @@ def _render_business_dashboard():
             try:
                 student = db.session.get(Student, payment_form.student.data)
                 if not student:
-                    flash('Student not found.', 'danger')
+                    flash('Student record not found.', 'danger')
                 else:
                     paid_amount = parse_currency_amount(payment_form.amount_paid.data)
                     record_student_payment_with_income(
@@ -4345,14 +4353,16 @@ def _render_business_dashboard():
                     }
                     if display_year:
                         redirect_kwargs['academic_year_id'] = display_year.id
-                    return redirect(url_for('business_dashboard', **redirect_kwargs))
+
+                    target_endpoint = 'business_dashboard' if 'business_dashboard' in app.view_functions else 'dashboard'
+                    return redirect(url_for(target_endpoint, **redirect_kwargs))
             except Exception as exc:
                 db.session.rollback()
-                flash(f'Could not record payment: {exc}', 'danger')
+                flash(f'Failed to record transaction: {exc}', 'danger')
         else:
             for field, errors in payment_form.errors.items():
                 for err in errors:
-                    flash(f'Payment ({field}): {err}', 'danger')
+                    flash(f'Payment Validation ({field}): {err}', 'danger')
 
     selected_year_label = display_year.name if display_year else selected_year_name
     business_ctx = build_business_dashboard_context(
@@ -4364,77 +4374,120 @@ def _render_business_dashboard():
         payment_form=payment_form,
         viewing_archived=viewing_archived_biz,
     )
+
+    counts = {
+        'students': biz_stats.get('students', len(all_students)) if isinstance(biz_stats, dict) else len(all_students),
+        'teachers': Teacher.query.count() if 'Teacher' in globals() else 0,
+        'classes': ClassGroup.query.count() if 'ClassGroup' in globals() else 0,
+        'users': User.query.count() if 'User' in globals() else 0,
+    }
+    business_ctx['counts'] = counts
+
+    # Explicit template rendering by role
+    if current_role in {'admin', 'principal'} or effective_role == 'admin':
+        template_name = 'dashboard_admin.html'
+        dashboard_title = f"Welcome to Your {current_role.capitalize()} Dashboard"
+    else:
+        template_name = 'dashboard_business.html'
+        dashboard_title = "Welcome to Your Business Office Dashboard"
+
     return render_template(
-        'dashboard_business.html',
+        template_name,
+        dashboard_title=dashboard_title,
         announcements_link=announcements_link,
         all_students=all_students,
         selected_year_name=selected_year_label,
         active_year=display_year,
         system_active_year=active_year_biz,
-        show_admin_hub_link=normalize_role(current_user) in {'admin', 'principal'},
-        show_principal_hub_link=normalize_role(current_user) == 'principal',
-        **business_ctx,
+        effective_role=effective_role,
+        show_admin_hub_link=current_role in {'admin', 'principal'},
+        show_principal_hub_link=current_role == 'principal',
+        **business_ctx
     )
 
 
-@app.route('/business/dashboard', methods=['GET', 'POST'])
+@app.route('/dashboard', methods=['GET', 'POST'], endpoint='dashboard')
+@app.route('/dashboard', methods=['GET', 'POST'], endpoint='business_dashboard')
 @login_required
-def business_dashboard():
-    redirect_resp = _require_business_dashboard_access()
-    if redirect_resp:
-        return redirect_resp
+def core_dashboard_gateway():
+    """
+    Centralized Core Routing Gateway.
+    Evaluates active user roles and dispatches request contexts to appropriate 
+    operational dashboards.
+    """
+    user_role = normalize_role(current_user)
+
+    # 1. Handle Principal Role First
+    if user_role == 'principal':
+        for ep in ('principal_dashboard', 'principal.dashboard', 'principal_hub'):
+            if ep in app.view_functions:
+                return redirect(url_for(ep))
+        # If no separate principal endpoint exists, render admin template
+        return _render_business_dashboard()
+
+    # 2. Handle Registry / Registrar Role explicitly
+    if user_role in ('registrar', 'registry'):
+        for ep in ('registry_dashboard', 'registrar_dashboard', 'registry', 'registrar'):
+            if ep in app.view_functions:
+                return redirect(url_for(ep))
+        for func_name in ('registry_dashboard', 'registrar_dashboard'):
+            if func_name in globals() and callable(globals()[func_name]):
+                return globals()[func_name]()
+
+    # 3. Handle Other Roles
+    role_route_map = {
+        'teacher': 'teacher_dashboard',
+        'vpi': 'vpi_dashboard',
+        'vpa': 'vpa_dashboard',
+        'dean': 'dean_dashboard',
+        'student': 'student_dashboard',
+    }
+
+    target_endpoint = role_route_map.get(user_role)
+    if target_endpoint and target_endpoint in app.view_functions:
+        return redirect(url_for(target_endpoint))
+
+    # 4. Fallback check for business/admin roles
+    access_check = _require_business_dashboard_access()
+    if access_check:
+        return access_check
+
     return _render_business_dashboard()
 
-
-@app.route('/dashboard', methods=['GET', 'POST'])
-@login_required
-def dashboard():
-    """
-    Centralized Core Routing Gateway for School Management Platform.
-    Dynamically orchestrates backend telemetry state processing and safely dispatches
-    role-based permissions contexts across 10 operational profiles.
-    
-    SAFE-FALLBACK VERSION: Gracefully accommodates freshly initialized/empty databases.
-    """
-    # ----------------------------------------------------------------------
+# ----------------------------------------------------------------------
     # 1. CORE TELEMETRY & SYSTEM STATE INITIALIZATION
     # ----------------------------------------------------------------------
-    # Extract the foundational active terminal anchor
     active_year = get_active_academic_year()
-    
-    # SAFE FALLBACK: If no academic year exists yet, store None instead of crashing or looping
     active_year_id = active_year.id if active_year else None
     selected_year_name = active_year.name if active_year else "No Active Year Setup"
     selected_year = active_year
 
-    # Query year-scoped students for admin template (strict enrolled roster only)
+    # Query year-scoped students
     all_students = []
     if active_year_id:
         all_students = students_for_academic_year(
             active_year_id, registered_only=True,
         ).order_by(Student.last_name.asc(), Student.first_name.asc()).all()
 
-    # Build standardized administrative analytic stats metrics tracking matrix
+    # Base analytics tracking matrix
     stats = {
         'students': Student.query.filter_by(academic_year_id=active_year_id).count() if active_year_id else 0,
         'new_students': Student.query.filter_by(registration_type='New', academic_year_id=active_year_id).count() if active_year_id else 0,
         'returning_students': Student.query.filter_by(registration_type='Returning', academic_year_id=active_year_id).count() if active_year_id else 0,
-        'teachers': Teacher.query.count(),
-        'classes': Class.query.count(),
-        'payments': StudentPayment.query.count()
+        'teachers': Teacher.query.count() if 'Teacher' in globals() else 0,
+        'classes': Class.query.count() if 'Class' in globals() else 0,
+        'payments': StudentPayment.query.count() if 'StudentPayment' in globals() else 0
     }
 
     # Global template view model layer anchors
     years = all_academic_years()
     current_role = (current_user.role or "").strip().lower()
-    
-    # RESOLVE EFFECTIVE ROLE (Check session override or default to current_role)
     effective_role = session.get('effective_role', current_role)
 
     announcements_link = current_role in {"admin", "principal", "dean"}
 
     # ======================================================================
-    # 1.5 SPECIALIZED FACULTY / INSTRUCTOR DIRECT ROUTING (EARLY DISPATCH)
+    # 1.5 SPECIALIZED ROLE DISPATCH (PREVENT INFINITE REDIRECTS)
     # ======================================================================
     if current_role == "principal" and effective_role != 'admin':
         return principal_dashboard()
@@ -4446,52 +4499,40 @@ def dashboard():
         return redirect(url_for('vpa_dashboard', _external=False))
     elif current_role == "dean":
         return redirect(url_for('dean_dashboard', _external=False))
-    elif current_role == "business":
-        return redirect(url_for('business_dashboard', _external=False))
     elif current_role == "student":
         return redirect(url_for('student_dashboard', _external=False))
     elif current_role == "sponsor":
         return redirect(url_for('teacher_dashboard', _external=False))
 
-    # Define strict interface mapping layout dictionary
+    # Interface mapping
     template_map = {
         "admin": "dashboard_admin.html",
         "student": "dashboard_student.html",
         "registrar": "dashboard_registrar.html",
+        "registry": "dashboard_registrar.html",
         "parent": "dashboard_parent.html",
     }
 
     template_name = template_map.get(effective_role, "dashboard_admin.html")
 
-    return render_template(
-        template_name,
-        students=all_students,
-        stats=stats,
-        years=years,
-        active_year=active_year,
-        selected_year=selected_year,
-        selected_year_name=selected_year_name,
-        announcements_link=announcements_link,
-        effective_role=effective_role,
-    )
+    # ======================================================================
+    # 2. TEMPLATE RENDER DISPATCH
+    # ======================================================================
     if template_name == 'dashboard_admin.html':
         display_year, active_year_admin, years_admin, viewing_archived = resolve_dashboard_academic_year(
             session_key=ADMIN_YEAR_SESSION_KEY,
         )
         admin_stats = _registrar_counts_for_year(display_year, viewing_archived=viewing_archived)
-        recent_payments = (
-            StudentPayment.query.order_by(StudentPayment.paid_on.desc())
-            .limit(8)
-            .all()
-        )
-        if display_year:
-            recent_payments = (
-                StudentPayment.query.filter_by(academic_year_id=display_year.id)
-                .order_by(StudentPayment.paid_on.desc())
-                .limit(8)
-                .all()
-            )
+        
+        recent_payments = []
+        if 'StudentPayment' in globals():
+            query = StudentPayment.query
+            if display_year:
+                query = query.filter_by(academic_year_id=display_year.id)
+            recent_payments = query.order_by(StudentPayment.paid_on.desc()).limit(8).all()
+
         selected_year_label = display_year.name if display_year else selected_year_name
+
         return render_template(
             template_name,
             stats=admin_stats,
@@ -4506,22 +4547,22 @@ def dashboard():
             selected_year_name=selected_year_label,
             announcements_link=announcements_link,
             payments=recent_payments,
+            effective_role=effective_role,
         )
 
-    # Safely forward all critical layout variables down to the UI views
+    # Standard Fallback Render for non-admin mapped templates (e.g., Registrar, Parent)
     return render_template(
         template_name,
-        stats=stats,                        # Supports templates that reference stats directly
-        counts=stats,                      # Admin dashboard expects counts
-        active_year=active_year,           # Required for dashboard header display
+        stats=stats,
+        counts=stats,
+        active_year=active_year,
         all_students=all_students,
         years=years,
         selected_year=selected_year,
         selected_year_name=selected_year_name,
         announcements_link=announcements_link,
-        **extra_context
+        effective_role=effective_role,
     )
-
 
 @app.route('/registrar/class/<int:class_id>/students', methods=['GET'])
 @login_required
@@ -4722,12 +4763,12 @@ def grade_entry():
     """
     if normalize_role(current_user) != 'teacher':
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     teacher = Teacher.query.filter_by(user_id=current_user.id).first()
     if not teacher:
         flash('Teacher profile not found.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     all_classes = get_teacher_classes(teacher, current_user)
     if not all_classes:
@@ -4753,14 +4794,14 @@ def grade_entry_class(class_id):
     """
     if normalize_role(current_user) != 'teacher':
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     teacher = Teacher.query.filter_by(user_id=current_user.id).first()
     klass = Class.query.get_or_404(class_id)
 
     if not teacher or not teacher_can_access_class(teacher, current_user, class_id):
         flash('Access mapping violation: You do not possess clearance for this room.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     active_year = get_active_academic_year()
     if not active_year:
@@ -4875,10 +4916,10 @@ def save_period_activity_sheet(class_id):
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if role not in ('teacher', 'admin'):
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
     if role == 'teacher' and not teacher_profile:
         flash('Teacher profile not found.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     klass = Class.query.get_or_404(class_id)
     if not can_enter_class_grades(current_user, teacher_profile, class_id):
@@ -5034,17 +5075,17 @@ def save_period_activity_sheet(class_id):
 def save_grades(class_id):
     if normalize_role(current_user) != 'teacher':
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     teacher = Teacher.query.filter_by(user_id=current_user.id).first()
     if not teacher:
         flash('Teacher profile not found.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     klass = Class.query.get_or_404(class_id)
     if not teacher_can_access_class(teacher, current_user, class_id):
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     active_year = get_active_academic_year()
     if not active_year:
@@ -5255,11 +5296,10 @@ def save_grades(class_id):
                 period=period,
             )
         )
-    if request.form.get('return_to') == 'teacher_dashboard':
+    if request.form.get('return_to') in ('teacher_dashboard', 'teacher_grade_sheet'):
         return redirect(
             url_for(
                 'teacher_dashboard',
-                tab='grades',
                 grade_class_id=class_id,
                 grade_subject=subject_name,
                 grade_period=period,
@@ -5430,10 +5470,10 @@ def publish_period_grades(class_id):
     teacher = Teacher.query.filter_by(user_id=current_user.id).first()
     if role not in ('teacher', 'admin'):
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
     if role == 'teacher' and not teacher:
         flash('Teacher profile not found.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     klass = Class.query.get_or_404(class_id)
     if role == 'teacher' and not teacher_can_access_class(teacher, current_user, class_id):
@@ -5518,14 +5558,14 @@ def download_grades(class_id):
     role = normalize_role(current_user)
     if role not in ('registrar', 'teacher', 'admin'):
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     klass = Class.query.get_or_404(class_id)
     if role == 'teacher':
         teacher = Teacher.query.filter_by(user_id=current_user.id).first()
         if not teacher or not teacher_can_access_class(teacher, current_user, class_id):
             flash('Access denied.', 'danger')
-            return redirect(url_for('dashboard'))
+            return redirect(url_for('login'))
 
     year_name = request.args.get('year')
     active_year = AcademicYear.query.filter_by(name=year_name).first() if year_name else None
@@ -5533,7 +5573,7 @@ def download_grades(class_id):
         active_year = get_active_academic_year()
     if not active_year:
         flash('No academic year found for export.', 'warning')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     subject = (request.args.get('subject') or '').strip()
     period = request.args.get('period', type=int)
@@ -5604,12 +5644,12 @@ def teacher_download_activity(assessment_id):
     """Let teachers download the assignment file they attached to an activity."""
     if normalize_role(current_user) != 'teacher':
         flash('Only teachers can download activity resources.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if not teacher_profile:
         flash('Teacher profile not found.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     assessment = Assessment.query.get_or_404(assessment_id)
     klass = assessment.klass
@@ -5630,12 +5670,12 @@ def student_download_activity(assessment_id):
     """Let a student download the teacher's assignment file for an activity."""
     if normalize_role(current_user) != 'student':
         flash('Only students can download class activities.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     student = get_student_for_user(current_user)
     if not student:
         flash('Student profile not found.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     assessment = Assessment.query.get_or_404(assessment_id)
     class_id = get_student_class_id(student)
@@ -5656,12 +5696,12 @@ def student_download_submission(assessment_id):
     """Let a student download their own submitted work."""
     if normalize_role(current_user) != 'student':
         flash('Only students can download submissions.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     student = get_student_for_user(current_user)
     if not student:
         flash('Student profile not found.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     assessment = Assessment.query.get_or_404(assessment_id)
     class_id = get_student_class_id(student)
@@ -5688,12 +5728,12 @@ def student_download_submission(assessment_id):
 def student_upload(assessment_id):
     if normalize_role(current_user) != 'student':
         flash('Only students can upload activities.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     student = get_student_for_user(current_user)
     if not student:
         flash('Student profile not found.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     if 'assignment' not in request.files:
         flash('No file part', 'danger')
@@ -5738,12 +5778,12 @@ def student_upload(assessment_id):
 def submit_activity(assessment_id):
     if normalize_role(current_user) != 'student':
         flash('Only students can submit activities.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     student = get_student_for_user(current_user)
     if not student:
         flash('Student profile not found.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     assessment = Assessment.query.get_or_404(assessment_id)
     if get_student_class_id(student) != assessment.klass_id:
@@ -5781,12 +5821,12 @@ def submit_activity(assessment_id):
 def activity_detail(assessment_id):
     if normalize_role(current_user) != 'teacher':
         flash('Only teachers can view activity review pages.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if not teacher_profile:
         flash('Teacher profile not found.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     assessment = Assessment.query.get_or_404(assessment_id)
     klass = assessment.klass
@@ -5824,7 +5864,7 @@ def activity_detail(assessment_id):
 def finalize_grades(class_id):
     if normalize_role(current_user) != 'registrar':
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
     
     klass = Class.query.get_or_404(class_id)
     active_year = get_active_academic_year()
@@ -5837,7 +5877,7 @@ def finalize_grades(class_id):
     
     db.session.commit()
     flash('Grades finalized for this class.', 'success')
-    return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
 #--------------------------------------------
 #Report card generation and download
 #--------------------------------------------
@@ -5864,14 +5904,14 @@ def report_card(student_id):
         linked_student = get_student_for_user(current_user)
         if not linked_student or linked_student.id != student.id:
             flash('Access denied.', 'danger')
-            return redirect(url_for('dashboard'))
+            return redirect(url_for('login'))
     elif user_role == 'parent':
         if student.parent_email != current_user.email:
             flash('Access denied.', 'danger')
-            return redirect(url_for('dashboard'))
+            return redirect(url_for('login'))
     elif user_role not in staff_roles:
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     if user_role == 'teacher':
         teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
@@ -6516,7 +6556,7 @@ def student_grade_sheet():
 def update_tuition(student_id):
     if (current_user.role or '').lower() not in ('admin', 'business'):
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
     
     if student_id == 0:
         student_id = request.form.get('student_id', type=int)
@@ -6527,7 +6567,7 @@ def update_tuition(student_id):
     db.session.commit()
     
     flash('Tuition status updated.', 'success')
-    return redirect(url_for('business_dashboard'))
+    pass
 
 @app.route('/verify/transcript/<token>')
 def verify_transcript(token):
@@ -6575,7 +6615,7 @@ def transcript(student_id):
     is_parent = user_role == 'parent' and student.parent_email == current_user.email
     if user_role not in ['admin', 'registrar'] and not is_owner and not is_parent:
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
     
     all_grades = official_grade_records(student_id)
 
@@ -7314,13 +7354,13 @@ def add_grade():
     # 1. Access Control: Restrict to teachers only
     if normalize_role(current_user) != 'teacher':
         flash("Unauthorized.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     # 2. Strict Session Safety Check: Verify an active academic year exists
     active_year = get_active_academic_year()
     if not active_year:
         flash("No active academic year found. Please contact the administrator.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     # 3. Extract and parse incoming form data safely
     student_id = request.form.get("student_id", type=int)
@@ -7556,10 +7596,10 @@ def record_classroom_activity(class_id):
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if role not in ('teacher', 'admin'):
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
     if role == 'teacher' and not teacher_profile:
         flash('Teacher profile not found.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     if not can_enter_class_grades(current_user, teacher_profile, class_id):
         flash('You are not authorized to record activities for this class.', 'danger')
@@ -8294,7 +8334,7 @@ def teacher_class_folder(class_id):
     """Class folder view: roster and quick links for an assigned class."""
     if (current_user.role or '').strip().lower() != 'teacher':
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if not teacher_profile or not teacher_can_access_class(teacher_profile, current_user, class_id):
@@ -8334,12 +8374,12 @@ def teacher_attendance_picker():
     role = normalize_role(current_user)
     if role not in {'teacher', 'admin'}:
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if role == 'teacher' and not teacher_profile:
         flash('Teacher profile not found.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     active_year = resolve_teacher_attendance_year()
     if not active_year:
@@ -8388,7 +8428,7 @@ def teacher_class_attendance(class_id):
     role = normalize_role(current_user)
     if role not in {'teacher', 'admin'}:
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if role == 'teacher' and not can_take_class_attendance(current_user, teacher_profile, class_id):
@@ -8462,7 +8502,7 @@ def principal_attendance():
     """Principal executive attendance overview."""
     if normalize_role(current_user) not in ('principal', 'admin'):
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
     return render_attendance_overview(
         url_for('principal_dashboard'),
         'Principal Dashboard',
@@ -8558,7 +8598,7 @@ def principal_grade_entry():
     """Principal backup grade entry — class roster picker."""
     if not can_principal_enter_class_grades(current_user):
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     active_year = get_active_academic_year()
     if not active_year:
@@ -8583,7 +8623,7 @@ def principal_class_grading(class_id):
     """Principal MoE period grade sheet for a class roster (teacher backup)."""
     if not can_principal_enter_class_grades(current_user):
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     klass = Class.query.get_or_404(class_id)
     active_year = get_active_academic_year()
@@ -8659,7 +8699,7 @@ def principal_save_grades(class_id):
     """Persist principal-entered MoE period grades."""
     if not can_principal_enter_class_grades(current_user):
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     Class.query.get_or_404(class_id)
     active_year = get_active_academic_year()
@@ -8738,7 +8778,7 @@ def principal_publish_period_grades(class_id):
     """Publish draft period grades entered by principal."""
     if not can_principal_enter_class_grades(current_user):
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     Class.query.get_or_404(class_id)
     active_year = get_active_academic_year()
@@ -8796,7 +8836,7 @@ def dean_attendance():
     """Dean attendance & truancy oversight."""
     if normalize_role(current_user) != 'dean':
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
     return render_attendance_overview(
         url_for('dean_dashboard'),
         'Dean Dashboard',
@@ -8810,7 +8850,7 @@ def registrar_attendance():
     """Read-only registrar attendance lookup."""
     if normalize_role(current_user) not in ('registrar', 'admin'):
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
     return render_attendance_overview(
         url_for('dashboard'),
         'Registrar Dashboard',
@@ -8830,7 +8870,7 @@ def attendance_class_day_detail(class_id, date_str):
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if not can_view_class_attendance_detail(current_user, class_id, teacher_profile):
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     klass = db.session.get(Class, class_id)
     if not klass:
@@ -8875,7 +8915,7 @@ def class_grading_hub(class_id):
     """
     if normalize_role(current_user) != 'teacher':
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     teacher = Teacher.query.filter_by(user_id=current_user.id).first()
     klass = Class.query.get_or_404(class_id)
@@ -8913,7 +8953,7 @@ def sponsor_class_hub(class_id):
     """Class Sponsor & Form Teacher command center."""
     if normalize_role(current_user) != 'teacher':
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if not teacher_profile or not teacher_is_class_sponsor(teacher_profile, current_user, class_id):
@@ -8941,7 +8981,7 @@ def sponsor_class_hub(class_id):
 @login_required
 def sponsor_save_attendance(class_id):
     if normalize_role(current_user) != 'teacher':
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if not teacher_profile or not teacher_is_class_sponsor(teacher_profile, current_user, class_id):
@@ -8974,7 +9014,7 @@ def sponsor_save_attendance(class_id):
 @login_required
 def sponsor_log_incident(class_id):
     if normalize_role(current_user) != 'teacher':
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if not teacher_profile or not teacher_is_class_sponsor(teacher_profile, current_user, class_id):
@@ -9019,7 +9059,7 @@ def sponsor_log_incident(class_id):
 @login_required
 def sponsor_welfare_note(class_id):
     if normalize_role(current_user) != 'teacher':
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if not teacher_profile or not teacher_is_class_sponsor(teacher_profile, current_user, class_id):
@@ -9064,7 +9104,7 @@ def sponsor_welfare_note(class_id):
 @login_required
 def sponsor_class_announce(class_id):
     if normalize_role(current_user) != 'teacher':
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if not teacher_profile or not teacher_is_class_sponsor(teacher_profile, current_user, class_id):
@@ -9300,7 +9340,7 @@ def _apply_activity_score(teacher_profile, assessment, student, score, feedback=
 def grade_submission(submission_id):
     if normalize_role(current_user) != 'teacher':
         flash('Only teachers can grade submissions.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     submission = Submission.query.get_or_404(submission_id)
     assessment = submission.assessment
@@ -9308,7 +9348,7 @@ def grade_submission(submission_id):
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if not teacher_profile:
         flash('Teacher profile not found.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     klass = assessment.klass if assessment else None
     if not klass or not teacher_can_access_class(teacher_profile, current_user, klass.id):
@@ -9340,12 +9380,12 @@ def grade_activity_student(assessment_id, student_id):
     """Let teachers set activity scores for any student in the class roster."""
     if normalize_role(current_user) != 'teacher':
         flash('Only teachers can grade activities.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if not teacher_profile:
         flash('Teacher profile not found.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     assessment = Assessment.query.get_or_404(assessment_id)
     student = Student.query.get_or_404(student_id)
@@ -9384,10 +9424,10 @@ def bulk_grade_activity(assessment_id):
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if role not in ('teacher', 'admin'):
         flash('Only teachers can grade activities.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
     if role == 'teacher' and not teacher_profile:
         flash('Teacher profile not found.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     assessment = Assessment.query.get_or_404(assessment_id)
     klass = assessment.klass
@@ -9463,10 +9503,10 @@ def save_quick_activity_grades(class_id):
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if role not in ('teacher', 'admin'):
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
     if role == 'teacher' and not teacher_profile:
         flash('Teacher profile not found.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     klass = Class.query.get_or_404(class_id)
     if not can_enter_class_grades(current_user, teacher_profile, class_id):
@@ -9569,10 +9609,10 @@ def manual_activity_grades(class_id):
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if role not in ('teacher', 'admin'):
         flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
     if role == 'teacher' and not teacher_profile:
         flash('Teacher profile not found.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     klass = Class.query.get_or_404(class_id)
     if not can_enter_class_grades(current_user, teacher_profile, class_id):
@@ -9731,12 +9771,12 @@ def teacher_download_submission(submission_id):
     """Download a student's submitted file for review."""
     if normalize_role(current_user) != 'teacher':
         flash('Only teachers can download student submissions.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
     if not teacher_profile:
         flash('Teacher profile not found.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     submission = Submission.query.get_or_404(submission_id)
     assessment = submission.assessment
@@ -9902,7 +9942,7 @@ def _reset_build_role_users(role_keys, search_q, operator):
 def administrative_password_reset():
     if not current_user.role or current_user.role.lower() not in ['admin', 'principal']:
         flash("Unauthorized access matrix. Insufficient clearance permissions.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     role_groups = _reset_role_groups_for_operator(current_user)
     selected_role = request.args.get('role') or request.form.get('return_role') or role_groups[0]['key']
@@ -10010,7 +10050,7 @@ def class_edit(class_id):
     user_role = current_user.role.lower() if current_user.role else ""
     if user_role not in ['admin', 'principal']:
         flash("Unauthorized access. Administrative privileges required.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     # Modern SQLAlchemy 2.0 implementation fallback for query
     klass = Class.query.get_or_404(class_id)
@@ -10113,7 +10153,7 @@ def principal_class_sponsors():
     user_role = (current_user.role or '').lower()
     if user_role not in ['admin', 'principal']:
         flash('Unauthorized access.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     classes = Class.query.order_by(Class.grade_level.asc(), Class.name.asc()).all()
     teachers = Teacher.query.filter_by(status='ACTIVE').order_by(
@@ -10134,7 +10174,7 @@ def class_set_sponsor(class_id):
     user_role = current_user.role.lower() if current_user.role else ""
     if user_role not in ['admin', 'principal']:
         flash("Unauthorized access. Administrative privileges required.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     klass = Class.query.get_or_404(class_id)
     sponsor_id = request.form.get('sponsor_id', type=int)
@@ -10614,7 +10654,7 @@ def format_rollover_flash_summary(results):
 def _rollover_role_guard():
     if current_user.role.lower() not in ['admin', 'principal']:
         flash("Unauthorized access.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
     return None
 
 
@@ -11014,7 +11054,7 @@ def academic_rollover():
         db.session.rollback()
         flash(f"Rollover failed: {exc}", "danger")
 
-    return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
 
 
 @app.route('/academic-years/rollover', methods=['GET', 'POST'])
@@ -11206,7 +11246,7 @@ def academic_years():
     # We use .lower() to completely eliminate case-sensitivity bugs!
     if current_user.role.lower() not in ['admin', 'principal', 'vpa']:
         flash("Unauthorized access.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     form = AcademicYearForm()
 
@@ -11242,7 +11282,7 @@ def end_academic_year(year_id):
     # ✨ Secured role authentication matrix
     if current_user.role.lower() not in ['admin', 'principal']:
         flash("Unauthorized access.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     # ✨ Modern, crash-proof database query fetch
     year = db.first_or_404(db.select(AcademicYear).filter_by(id=year_id))
@@ -11273,7 +11313,7 @@ def end_academic_year(year_id):
 def activate_academic_year(year_id):
     if current_user.role.lower() not in ['admin', 'principal']:
         flash("Unauthorized access.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     year = db.first_or_404(db.select(AcademicYear).filter_by(id=year_id))
     try:
@@ -11293,7 +11333,7 @@ def edit_academic_year(year_id):
     # ✨ Fixed: Clean multi-role checking with lowercase protection
     if current_user.role.lower() not in ['admin', 'principal']:
         flash("Unauthorized access.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     # ✨ Fixed: Modern Flask-SQLAlchemy lookup to avoid deprecation warnings
     year = db.first_or_404(db.select(AcademicYear).filter_by(id=year_id))
@@ -11327,7 +11367,7 @@ def edit_academic_year(year_id):
 def reregister_students():
     if current_user.role.lower() not in ['admin', 'principal']:
         flash("Unauthorized access.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     active_year = get_active_academic_year()
     if not active_year:
@@ -11352,7 +11392,7 @@ def reregister_students():
 def delete_academic_year(year_id):
     if current_user.role.lower() not in ['admin', 'principal']:
         flash("Unauthorized access.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     year = AcademicYear.query.get_or_404(year_id)
 
@@ -12869,12 +12909,12 @@ def admin_repair_alumni_bulk():
     """Mark misclassified Grade 12 students in the active year as alumni."""
     if normalize_role(current_user) not in ('admin', 'registrar', 'principal'):
         flash('Unauthorized access.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     active_year = get_active_academic_year()
     if not active_year:
         flash('No active academic year configured.', 'warning')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     candidates = Student.query.filter(
         Student.academic_year_id == active_year.id,
@@ -12923,7 +12963,7 @@ def register_student():
     # 1. Authorize user permissions (case-insensitive)
     if (current_user.role or '').lower() not in {"admin", "principal", "registrar"}:
         flash("Unauthorized access.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     form = RegisterStudentForm()
     context = build_registrar_dashboard_context(form=form)
@@ -13052,7 +13092,7 @@ def register_student():
 def edit_student(student_id):
     if (current_user.role or '').lower() not in {"admin", "principal", "registrar"}:
         flash("Unauthorized access.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     student = Student.query.get_or_404(student_id)
     ensure_student_secure_qr_token(student)
@@ -13178,7 +13218,7 @@ def class_create():
     # Access Authorization Protocol Layer
     if not current_user.role:
         flash("System Protection Fault: Your account lacks a defined systemic role configuration.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     # Case-Insensitive Hardened Role Verification Check
     user_role_clean = str(current_user.role).strip().lower()
@@ -13186,7 +13226,7 @@ def class_create():
 
     if user_role_clean not in allowed_roles:
         flash(f"Access Denied: Role operational capacity '{current_user.role}' lacks administrative elevation metrics.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     # Handle Class Submission Payloads
     if request.method == 'POST':
@@ -13287,7 +13327,7 @@ def room_quick_create():
     
     if user_role_clean not in allowed_roles:
         flash("Access Denied: Unauthorized infrastructure modification request.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     # Extract and Cleanse Asset Payload
     room_name = request.form.get('room_name', '').strip()
@@ -13349,7 +13389,7 @@ def assign_teacher():
     if user_role not in ['admin', 'principal']:
         logger.warning(f"Unauthorized assignment manipulation attempt by User ID: {current_user.id} with role: {current_user.role}")
         flash("Unauthorized access: Restricted to administrative personnel.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     form = AssignTeacherForm()
     
@@ -13448,7 +13488,7 @@ def subject_setup(class_id=None):
     user_role = (current_user.role or '').lower()
     if user_role not in ['admin', 'principal', 'vpa']:
         flash('Unauthorized access.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     classes = Class.query.order_by(Class.grade_level.asc(), Class.name.asc()).all()
     selected_class = db.session.get(Class, class_id) if class_id else None
@@ -13541,7 +13581,7 @@ def announcements():
     # 1. Secure case-insensitive executive gatekeeping
     if current_user.role.lower() not in ["admin", "teacher", "principal", "vpa", "dean"]:
         flash("Unauthorized access to communications management.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     # Explicit local import from your clean forms.py file
     from forms import AnnouncementForm
@@ -13805,7 +13845,7 @@ def daily_expense_report():
 def business_overview():
     if (current_user.role or '').strip().lower() not in {"admin", "business", "principal", "vpi"}:
         flash("Unauthorized access to business overview.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     income_total = db.session.query(func.sum(BusinessTransaction.amount)).filter(BusinessTransaction.type == "income", BusinessTransaction.is_deleted == False).scalar() or 0
     expense_total = db.session.query(func.sum(BusinessTransaction.amount)).filter(BusinessTransaction.type == "expense", BusinessTransaction.is_deleted == False).scalar() or 0
@@ -13826,7 +13866,7 @@ def business_overview():
 def payroll_summary():
     if normalize_role(current_user) not in {'admin', 'business'}:
         flash("Unauthorized access to payroll summary.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     payroll_records = Payroll.query.order_by(Payroll.created_on.desc()).all()
     total_paid = sum(record.salary_amount for record in payroll_records if record.paid)
@@ -13844,7 +13884,7 @@ def payroll_summary():
 def financial_reports():
     if (current_user.role or '').strip().lower() not in {"admin", "business", "vpi", "principal"}:
         flash("Unauthorized access to financial reports.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     years = all_academic_years()
 
@@ -15044,7 +15084,7 @@ def vpa_dashboard():
 def payroll():
     if current_user.role not in ["admin", "business"]:
         flash("Unauthorized access.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     form = PayrollForm()
     if form.validate_on_submit():
@@ -15140,7 +15180,7 @@ def analytics_enrollment():
 def delete_user(user_id):
     if normalize_role(current_user) != "admin":
         flash("Unauthorized access.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
     if user_id == current_user.id:
         flash("You cannot delete your own account.", "danger")
         return redirect(url_for('admin_users'))
@@ -15225,7 +15265,7 @@ app = init_export_routes(app)
 def edit_user(user_id):
     if normalize_role(current_user) not in ('admin', 'principal'):
         flash("Unauthorized access.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     from forms import EditUserForm
     user = db.first_or_404(db.select(User).filter_by(id=user_id))
@@ -15298,7 +15338,7 @@ def edit_user(user_id):
 def transfer_role():
     if normalize_role(current_user) not in ('admin', 'principal'):
         flash('Unauthorized access.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     role = (request.form.get('role') or '').strip().lower()
     to_user_id = request.form.get('to_user_id', type=int)
@@ -15335,7 +15375,7 @@ def transfer_role():
 def deactivate_staff_user(user_id):
     if normalize_role(current_user) not in ('admin', 'principal'):
         flash('Unauthorized access.', 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     if user_id == current_user.id:
         flash('You cannot deactivate your own account.', 'danger')
@@ -15368,7 +15408,7 @@ def admin_users():
     # ✨ FIX 1: Grant permission to BOTH Admin and Principal roles (case-insensitive protection)
     if current_user.role.lower() not in ['admin', 'principal']:
         flash("Unauthorized access.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     from forms import CreateUserForm
     form = CreateUserForm()
@@ -15443,7 +15483,7 @@ def admin_users():
 def unlock_user(user_id):
     if normalize_role(current_user) not in ('admin', 'principal'):
         flash("Unauthorized access.", "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
 
     # ✨ Modern Flask-SQLAlchemy lookup format
     user = db.first_or_404(db.select(User).filter_by(id=user_id))

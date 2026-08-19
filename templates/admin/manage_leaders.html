@@ -34,11 +34,7 @@
         {% for leader in leaders %}
         <tr>
           <td>
-            {% if leader.photo_static_path %}
-              <img src="{{ url_for('static', filename=leader.photo_static_path) }}" width="60" height="60" class="rounded-circle object-fit-cover" alt="{{ leader.name }}">
-            {% else %}
-              <span class="text-muted small">No photo</span>
-            {% endif %}
+            <img src="{{ leader.photo_url }}" width="60" height="60" class="rounded-circle object-fit-cover" alt="{{ leader.name }}" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
           </td>
           <td class="fw-semibold">{{ leader.name }}</td>
           <td>{{ leader.role }}</td>

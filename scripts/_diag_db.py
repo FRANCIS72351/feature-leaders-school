@@ -1,7 +1,7 @@
-﻿import sqlite3
+import sqlite3
 from collections import Counter
 
-db = r"c:\Users\Francis\Desktop\essential\SCHOOL_MANAGEMENT\instance\keeptrack_full.db"
+db = r"c:\Users\Francis\Desktop\essential\SCHOOL_MANAGEMENT\instance\future_leaders_full.db"
 
 try:
     conn = sqlite3.connect(db)

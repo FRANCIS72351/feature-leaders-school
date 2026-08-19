@@ -1,4 +1,4 @@
-﻿{% extends 'base.html' %}
+{% extends 'base.html' %}
 {% block title %}Business & Institutional Management{% endblock %}
 {% block content %}
 
@@ -13,7 +13,7 @@
             <div class="card bg-primary text-white">
                 <div class="card-body">
                     <h6>Total Revenue</h6>
-                    <h3>â‚±{{ "{:,.2f}".format(income_total|float) }}</h3>
+                    <h3>₱{{ "{:,.2f}".format(income_total|float) }}</h3>
                 </div>
             </div>
         </div>
@@ -21,7 +21,7 @@
             <div class="card bg-danger text-white">
                 <div class="card-body">
                     <h6>Total Expense</h6>
-                    <h3>â‚±{{ "{:,.2f}".format(expense_total|float) }}</h3>
+                    <h3>₱{{ "{:,.2f}".format(expense_total|float) }}</h3>
                 </div>
             </div>
         </div>
@@ -29,7 +29,7 @@
             <div class="card bg-dark text-white">
                 <div class="card-body">
                     <h6>Institutional Net</h6>
-                    <h3>â‚±{{ "{:,.2f}".format((income_total - expense_total)|float) }}</h3>
+                    <h3>₱{{ "{:,.2f}".format((income_total - expense_total)|float) }}</h3>
                 </div>
             </div>
         </div>
@@ -103,9 +103,9 @@
                 <tr>
                     <td><strong>{{ klass.name }}</strong></td>
                     <td>{{ klass.students_count }}</td>
-                    <td>â‚±{{ "{:,.2f}".format(klass.yearly_fee|float) }}</td>
-                    <td>â‚±{{ "{:,.2f}".format(klass.total_collected|float) }}</td>
-                    <td class="text-danger fw-bold">â‚±{{ "{:,.2f}".format(klass.balance|float) }}</td>
+                    <td>₱{{ "{:,.2f}".format(klass.yearly_fee|float) }}</td>
+                    <td>₱{{ "{:,.2f}".format(klass.total_collected|float) }}</td>
+                    <td class="text-danger fw-bold">₱{{ "{:,.2f}".format(klass.balance|float) }}</td>
                     <td>
                         <span class="badge {{ 'bg-success' if klass.balance <= 0 else 'bg-warning text-dark' }}">
                             {{ 'Fully Funded' if klass.balance <= 0 else 'Arrears' }}
@@ -162,9 +162,9 @@
         <tr>
           <td><strong>{{ klass.name }}</strong></td>
           <td>{{ klass.students_count }}</td>
-          <td>â‚±{{ "{:,.2f}".format(klass.yearly_fee|float) }}</td>
-          <td>â‚±{{ "{:,.2f}".format(klass.total_collected|float) }}</td>
-          <td class="text-danger fw-bold">â‚±{{ "{:,.2f}".format(klass.balance|float) }}</td>
+          <td>₱{{ "{:,.2f}".format(klass.yearly_fee|float) }}</td>
+          <td>₱{{ "{:,.2f}".format(klass.total_collected|float) }}</td>
+          <td class="text-danger fw-bold">₱{{ "{:,.2f}".format(klass.balance|float) }}</td>
           <td>
             <span class="badge {{ 'bg-success' if klass.balance <= 0 else 'bg-warning text-dark' }}">
               {{ 'Fully Funded' if klass.balance <= 0 else 'Arrears' }}
@@ -193,7 +193,7 @@
       <tr>
         <td>{{ t.date }}</td>
         <td>{{ t.type|capitalize }}</td>
-        <td>â‚±{{ t.amount }}</td>
+        <td>₱{{ t.amount }}</td>
         <td>{{ t.category }}</td>
         <td>{{ t.description }}</td>
         <td>
@@ -227,7 +227,7 @@
           <td>{{ p.staff.first_name }} {{ p.staff.last_name }} ({{ p.staff.role }})</td>
           <td>{{ p.occupation }}</td>
           <td>{{ p.month }}</td>
-          <td>â‚±{{ p.salary_amount }}</td>
+          <td>₱{{ p.salary_amount }}</td>
           <td>{% if p.paid %}<span class="badge bg-success">Paid</span>{% else %}<span class="badge bg-warning text-dark">Pending</span>{% endif %}</td>
           <td>
             <a href="{{ url_for('edit_payroll', payroll_id=p.id) }}" class="btn btn-sm btn-primary">Edit</a>

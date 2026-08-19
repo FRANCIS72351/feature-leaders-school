@@ -231,6 +231,9 @@
     .admin-terminal .log-entry {
         border-bottom-color: #e5edf6;
     }
+    .admin-terminal .academic-year-label {
+        color: var(--primary-brand, #c82828) !important;
+    }
 </style>
 
 <div class="container-fluid py-3 admin-terminal pro-dashboard">
@@ -281,7 +284,7 @@
                 </a>
             </div>
             <div class="border-start border-secondary border-opacity-25 ps-4">
-                <span class="text-muted small text-uppercase d-block mb-1">Academic Year</span>
+                <span class="text-muted small text-uppercase d-block mb-1 academic-year-label">Academic Year</span>
                 <form method="get" class="d-inline">
                     <select name="academic_year_id" class="form-select form-select-sm form-cyber" style="min-width: 180px;" onchange="this.form.submit()">
                         {% for y in (years or all_years or []) %}
@@ -317,6 +320,7 @@
             </a>
             {% endif %}
             <a href="{{ url_for('admin_users') }}" class="btn btn-sm btn-outline-secondary text-white"><i class="fas fa-users-cog"></i> Users</a>
+            <a href="{{ url_for('account_settings') }}" class="btn btn-sm btn-outline-danger text-white"><i class="fas fa-user-cog"></i> Settings</a>
             <a href="{{ url_for('business_dashboard') }}" class="btn btn-sm btn-outline-success text-white"><i class="fas fa-coins"></i> Business Office</a>
             <a href="{{ url_for('school_media_create', type='video', category='advertisement') }}" class="btn btn-sm btn-outline-info text-cyan"><i class="fas fa-video"></i> Upload Video</a>
             <a href="{{ url_for('school_media_manage') }}" class="btn btn-sm btn-outline-secondary text-white"><i class="fas fa-photo-video"></i> School Media</a>

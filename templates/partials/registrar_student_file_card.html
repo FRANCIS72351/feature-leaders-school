@@ -1,0 +1,126 @@
+{% set portal_email = student.user.email if student.user else none %}
+{% set portal_phone = student.user.telephone_number if student.user else none %}
+{% set portal_address = student.user.home_address if student.user else none %}
+{% set parent_name = student.parent_user.full_name if student.parent_user else none %}
+{% set session_name = student.academic_year.name if student.academic_year else (display_year.name if display_year else none) %}
+{% set fee_amount = student.registration_fees %}
+{% set fee_status = student.registration_fee_status if student.registration_fee_status else (
+    'Unpaid' if (fee_amount is not none and fee_amount|float > 0) else none
+) %}
+
+<article class="student-file-card">
+    <div class="student-file-head">
+        <div class="student-file-photo">
+            <img src="{{ student.photo_url }}" alt="{{ student.full_name }}" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
+        </div>
+        <div class="student-file-identity">
+            <h6 class="student-file-name">{{ student.full_name }}</h6>
+            {% if student.student_id %}
+            <div class="student-file-id">{{ student.student_id }}</div>
+            {% endif %}
+        </div>
+    </div>
+    <div class="student-file-grid">
+        {% if student.gender %}
+        <div class="student-file-field">
+            <span class="student-file-label">Gender</span>
+            <span class="student-file-value">{{ student.gender }}</span>
+        </div>
+        {% endif %}
+        {% if student.dob %}
+        <div class="student-file-field">
+            <span class="student-file-label">Date of birth</span>
+            <span class="student-file-value">{{ student.dob }}</span>
+        </div>
+        {% endif %}
+        {% if session_name %}
+        <div class="student-file-field">
+            <span class="student-file-label">Session / year</span>
+            <span class="student-file-value">{{ session_name }}</span>
+        </div>
+        {% endif %}
+        {% if student.status %}
+        <div class="student-file-field">
+            <span class="student-file-label">Status</span>
+            <span class="student-file-value">{{ student.status }}</span>
+        </div>
+        {% endif %}
+        {% if student.level %}
+        <div class="student-file-field">
+            <span class="student-file-label">Academic level</span>
+            <span class="student-file-value">{{ student.level }}</span>
+        </div>
+        {% endif %}
+        {% if student.grade_level %}
+        <div class="student-file-field">
+            <span class="student-file-label">Grade</span>
+            <span class="student-file-value">{{ student.grade_level }}</span>
+        </div>
+        {% endif %}
+        {% if student.registration_type %}
+        <div class="student-file-field">
+            <span class="student-file-label">Registration type</span>
+            <span class="student-file-value">{{ student.registration_type }}</span>
+        </div>
+        {% endif %}
+        {% if fee_amount is not none %}
+        <div class="student-file-field">
+            <span class="student-file-label">Registration fee</span>
+            <span class="student-file-value">
+                ${{ "{:,.2f}".format(fee_amount|float) }}
+                {% if fee_status %}
+                    {% set chip = fee_status|lower %}
+                    <span class="fee-chip {{ chip }}">{{ fee_status }}</span>
+                {% endif %}
+            </span>
+        </div>
+        {% endif %}
+        {% if parent_name %}
+        <div class="student-file-field">
+            <span class="student-file-label">Parent / guardian</span>
+            <span class="student-file-value">{{ parent_name }}</span>
+        </div>
+        {% endif %}
+        {% if student.parent_phone %}
+        <div class="student-file-field">
+            <span class="student-file-label">Parent phone</span>
+            <span class="student-file-value">{{ student.parent_phone }}</span>
+        </div>
+        {% endif %}
+        {% if student.parent_email %}
+        <div class="student-file-field">
+            <span class="student-file-label">Parent email</span>
+            <span class="student-file-value">{{ student.parent_email }}</span>
+        </div>
+        {% endif %}
+        {% if portal_phone %}
+        <div class="student-file-field">
+            <span class="student-file-label">Student phone</span>
+            <span class="student-file-value">{{ portal_phone }}</span>
+        </div>
+        {% endif %}
+        {% if portal_email %}
+        <div class="student-file-field">
+            <span class="student-file-label">Portal email</span>
+            <span class="student-file-value">{{ portal_email }}</span>
+        </div>
+        {% endif %}
+        {% if portal_address %}
+        <div class="student-file-field span-2">
+            <span class="student-file-label">Home address</span>
+            <span class="student-file-value">{{ portal_address }}</span>
+        </div>
+        {% endif %}
+        {% if student.registrar %}
+        <div class="student-file-field">
+            <span class="student-file-label">Registered by</span>
+            <span class="student-file-value">{{ student.registrar }}</span>
+        </div>
+        {% endif %}
+    </div>
+    <div class="student-file-actions">
+        <a href="{{ url_for('edit_student', student_id=student.id, return_to='class_roster') }}" class="btn-folder-edit">
+            <i class="fas fa-pen-to-square"></i> Edit
+        </a>
+    </div>
+</article>

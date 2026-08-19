@@ -36,9 +36,8 @@
     <div class="mb-3">
       {{ form.photo.label(class="form-label fw-semibold") }}
       {{ form.photo(class="form-control") }}
-      {% if leader.photo_static_path %}
-        <img src="{{ url_for('static', filename=leader.photo_static_path) }}" class="mt-2 rounded" width="120">
-      {% endif %}
+      <div class="form-text">Automatically cropped to a square ID-card photo.</div>
+      <img src="{{ leader.photo_url }}" class="mt-2 rounded-circle" width="120" height="120" alt="Current photo" style="object-fit:cover;aspect-ratio:1/1;overflow:hidden;" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
     </div>
 
     <button type="submit" class="btn btn-primary">{{ form.submit.label.text }}</button>

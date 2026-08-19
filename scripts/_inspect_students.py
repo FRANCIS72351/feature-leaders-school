@@ -1,5 +1,5 @@
-﻿import sqlite3
-src = r"c:\Users\Francis\Desktop\essential\SCHOOL_MANAGEMENT\instance\keeptrack_full.db.bak"
+import sqlite3
+src = r"c:\Users\Francis\Desktop\essential\SCHOOL_MANAGEMENT\instance\future_leaders_full.db.bak"
 conn = sqlite3.connect(src)
 conn.execute("PRAGMA writable_schema=ON")
 cur = conn.cursor()
