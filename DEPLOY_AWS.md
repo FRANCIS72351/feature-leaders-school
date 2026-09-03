@@ -149,7 +149,7 @@ sudo usermod -aG docker $USER
 sudo git clone <your-repo-url> /opt/school-management
 cd /opt/school-management
 sudo cp .env.production.example .env
-sudo nano .env   # SECRET_KEY, SITE_URL, ADMIN_PASSWORD, FRESH_DATABASE=1 once
+sudo nano .env   # SECRET_KEY, SITE_URL, ADMIN_PASSWORD, FRESH_DATABASE=0
 ```
 
 Create `docker-compose.prod.yml` override on the server:
@@ -172,7 +172,9 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 curl -s http://127.0.0.1:8000/health
 ```
 
-Set `FRESH_DATABASE=0` in `.env` after successful first boot.
+Keep `FRESH_DATABASE=0` in `.env` at all times on an existing deployment.
+The application creates missing tables non-destructively; do not use a fresh
+database setting to deploy an update.
 
 ### 3.5 HTTPS with Application Load Balancer
 
@@ -257,7 +259,7 @@ To add **S3 + CloudFront** later:
 | `SITE_URL` | `https://your-domain.com` |
 | `SESSION_COOKIE_SECURE` | `true` |
 | `PROXY_FIX_HOPS` | `1` behind one ALB/Nginx hop |
-| `FRESH_DATABASE` | `1` only on first install |
+| `FRESH_DATABASE` | `0` — never use `1` on an existing production database |
 | `.env` | chmod 600, never in git |
 | SSH | Key-only, restrict source IP |
 | RDS | Not publicly accessible; security group to app only |
