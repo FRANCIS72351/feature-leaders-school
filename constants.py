@@ -48,6 +48,27 @@ PERIOD_COMPONENT_MAXIMA = {
 PERIOD_COMPONENT_SCHEME_NOTE = (
     'ATT 10 + PART 10 + QUIZ 15 + ASSG 20 + CW 15 + HW 10 + TEST 20 = 100'
 )
+# Extra credit / professional override: listed max is the published weight.
+# Each activity input accepts 0–100 so teachers can enter above the listed weight.
+PERIOD_COMPONENT_EXTRA_CREDIT_FACTOR = 2.0
+PERIOD_COMPONENT_FIELD_MAX = 100.0
+PERIOD_TOTAL_LISTED_MAX = 100.0
+PERIOD_TOTAL_EXTRA_CREDIT_MAX = 110.0
+
+
+def period_component_ceiling(listed_max):
+    """Highest score accepted for a component, including extra credit."""
+    try:
+        listed_max = float(listed_max)
+    except (TypeError, ValueError):
+        listed_max = 0.0
+    return round(listed_max * PERIOD_COMPONENT_EXTRA_CREDIT_FACTOR, 1)
+
+
+PERIOD_COMPONENT_CEILINGS = {
+    key: period_component_ceiling(max_score)
+    for key, max_score in PERIOD_COMPONENT_MAXIMA.items()
+}
 PERIOD_COMPONENT_ACTIVITY_TYPES = {
     'attendance': 'Class Work',
     'participation': 'Class Work',

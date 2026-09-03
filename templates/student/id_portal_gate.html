@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Student Portal — {{ school_print_brand.name }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --cardinal: {{ school_print_brand.brand_red or '#c82828' }};
+            --navy: #002d62;
+            --gold: #c9a227;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Montserrat, "Segoe UI", sans-serif;
+            background: linear-gradient(180deg, var(--navy) 0%, #061428 55%, #0b1220 100%);
+            color: #fff;
+        }
+        .wrap { max-width: 420px; margin: 0 auto; padding: 1.5rem 1.1rem 2.5rem; }
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.25rem;
+        }
+        .brand img {
+            width: 56px;
+            height: 56px;
+            object-fit: contain;
+            background: #fff;
+            border-radius: 50%;
+            padding: 4px;
+        }
+        .brand h1 {
+            margin: 0;
+            font-size: 0.95rem;
+            line-height: 1.25;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        .brand p { margin: 0.2rem 0 0; font-size: 0.75rem; color: #cbd5e1; }
+        .card {
+            background: #fff;
+            color: #111827;
+            border-radius: 18px;
+            overflow: hidden;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+        }
+        .card-top {
+            background: var(--cardinal);
+            color: #fff;
+            padding: 1.1rem 1.2rem 1rem;
+            text-align: center;
+        }
+        .card-top h2 { margin: 0; font-size: 1.05rem; }
+        .card-top p { margin: 0.4rem 0 0; font-size: 0.78rem; opacity: 0.95; }
+        .photo {
+            width: 84px;
+            height: 84px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid var(--gold);
+            margin: -42px auto 0.85rem;
+            display: block;
+            background: #e5e7eb;
+            position: relative;
+        }
+        .body { padding: 0 1.25rem 1.35rem; }
+        .flash {
+            margin: 0 0 0.85rem;
+            padding: 0.7rem 0.8rem;
+            border-radius: 10px;
+            font-size: 0.82rem;
+            font-weight: 600;
+        }
+        .flash.danger { background: #fee2e2; color: #991b1b; }
+        .flash.success { background: #dcfce7; color: #166534; }
+        .flash.info { background: #e0e7ff; color: #1e3a8a; }
+        .meta { font-size: 0.82rem; color: #4b5563; margin-bottom: 1rem; text-align: center; }
+        .meta strong { color: var(--navy); }
+        label { display: block; font-size: 0.75rem; font-weight: 700; color: var(--navy); margin-bottom: 0.35rem; }
+        input[type=password] {
+            width: 100%;
+            border: 1.5px solid #cbd5e1;
+            border-radius: 10px;
+            padding: 0.75rem 0.85rem;
+            font-size: 1rem;
+            margin-bottom: 0.9rem;
+        }
+        button {
+            width: 100%;
+            border: 0;
+            border-radius: 10px;
+            padding: 0.85rem;
+            background: var(--navy);
+            color: #fff;
+            font-weight: 800;
+            font-size: 0.92rem;
+            cursor: pointer;
+        }
+        .note { margin: 0.85rem 0 0; font-size: 0.72rem; color: #6b7280; line-height: 1.4; text-align: center; }
+        .empty { padding: 1.5rem 1.2rem; text-align: center; color: #4b5563; }
+        a { color: var(--cardinal); font-weight: 700; }
+    </style>
+</head>
+<body>
+    {% set brand = school_print_brand %}
+    <div class="wrap">
+        <div class="brand">
+            <img src="{{ school_logo_url }}" alt="">
+            <div>
+                <h1>{{ brand.name }}</h1>
+                <p>Official student ID access</p>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-top">
+                <h2>Student Portal</h2>
+                <p>Sign in to open grades, attendance, and school records.</p>
+            </div>
+            {% if valid and student %}
+            <img class="photo" src="{{ student.photo_url }}" alt="">
+            <div class="body">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% for category, message in messages %}
+                    <div class="flash {{ category }}">{{ message }}</div>
+                    {% endfor %}
+                {% endwith %}
+                <p class="meta">
+                    <strong>{{ student.full_name }}</strong><br>
+                    Student ID {{ student.student_id }}
+                </p>
+                {% if other_session %}
+                <p class="note" style="margin-top:0;">Another account is signed in on this phone.
+                    <a href="{{ url_for('student_id_portal', token=student.secure_qr_token, switch=1) }}">Sign out and continue</a>
+                </p>
+                {% elif not portal_user %}
+                <p class="note" style="margin-top:0;">A portal account is not linked to this ID yet. Please see the Registrar.</p>
+                {% else %}
+                <form method="POST" action="">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <label for="password">Portal password</label>
+                    <input id="password" name="password" type="password" autocomplete="current-password" required>
+                    <button type="submit">Open my portal</button>
+                </form>
+                <p class="note">A lost card cannot open your account without this password. Forgot it? See the Registrar.</p>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="empty">
+                <p>This ID code is not valid. Ask the Registrar to reprint your student ID card.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

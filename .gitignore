@@ -1,5 +1,24 @@
-venv/ 
-__pycache__/ 
-*.pyc 
-instance/ 
-.env 
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local databases and SQLite sidecar files must never enter source control.
+instance/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Runtime uploads, generated exports, logs, and local secrets.
+static/uploads/
+*.log
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Local exploratory helpers.
+_tmp_*

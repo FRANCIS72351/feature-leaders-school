@@ -14,6 +14,7 @@ document titles should go through this module.
 """
 from __future__ import annotations
 
+from difflib import SequenceMatcher
 import re
 
 DIVISION_KINDERGARTEN = 'kindergarten'
@@ -46,7 +47,7 @@ SCHOOL_PRINT_PHONES = '0777-287-456 / 0770-203-098 / 0881-164-147'
 SCHOOL_PRINT_PHONE = f'Telephone: {SCHOOL_PRINT_PHONES}'
 SCHOOL_PRINT_EMAIL_ADDRESS = 'flpacardinals@gmail.com'
 SCHOOL_PRINT_EMAIL = f'Email: {SCHOOL_PRINT_EMAIL_ADDRESS}'
-SCHOOL_PRINT_MOTTO = 'Honor, Excellence, Academic, Discipline and Success'
+SCHOOL_PRINT_MOTTO = 'Honor, Excellence, Academics, Discipline, Success'
 SCHOOL_PRINT_BRAND_RED = '#c82828'
 SCHOOL_PRINT_VPI_TITLE = 'VPI'
 SCHOOL_PRINT_VPI_NAME = 'Othello B. Gbarjuewaye'
@@ -141,6 +142,196 @@ PERIOD_COLUMNS = (
 )
 REPORT_CARD_PERIOD_COLUMNS = PERIOD_COLUMNS
 
+
+def numeric_report_score(value):
+    """Coerce a stored period/exam score to float; blank / dash / None stay empty."""
+    if value in (None, '', '-', '—'):
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        value = value.strip().rstrip('%').strip()
+        if value in ('', '-', '—'):
+            return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        try:
+            return float(str(value).strip().rstrip('%').strip())
+        except (TypeError, ValueError):
+            return None
+
+
+def display_report_score(value):
+    """Show whole numbers without a trailing .0 on official tables."""
+    num = numeric_report_score(value)
+    if num is None:
+        return ''
+    if num == int(num):
+        return int(num)
+    return round(num, 1)
+
+
+def mean_available_scores(values):
+    """Mean of present numeric scores (official SEM.AVE / yearly formula)."""
+    scores = [numeric_report_score(value) for value in values]
+    scores = [score for score in scores if score is not None]
+    if not scores:
+        return ''
+    return round(sum(scores) / len(scores), 1)
+
+
+def official_subject_score_row(name, scores_by_period, division_key=None):
+    """One official report-card / grade-sheet subject row from period scores.
+
+    Period keys: 1–6 = P1–P6, 7 = semester 1 exam, 8 = semester 2 exam.
+    SEM.AVE is the mean of whichever of that semester's period/exam scores exist.
+    """
+    scores_by_period = scores_by_period or {}
+
+    def cell(period_num):
+        return display_report_score(scores_by_period.get(period_num))
+
+    p1, p2, p3 = cell(1), cell(2), cell(3)
+    p4, p5, p6 = cell(4), cell(5), cell(6)
+    exam1, exam2 = cell(7), cell(8)
+    sem1 = display_report_score(mean_available_scores([p1, p2, p3, exam1]))
+    sem2 = display_report_score(mean_available_scores([p4, p5, p6, exam2]))
+    yearly = display_report_score(
+        mean_available_scores([p1, p2, p3, exam1, p4, p5, p6, exam2])
+    )
+    remark_source = yearly if yearly != '' else (sem2 if sem2 != '' else sem1)
+    remark = division_score_remark(remark_source, division_key)
+    return {
+        'name': name,
+        'p1': p1, 'p2': p2, 'p3': p3,
+        'exam': exam1, 'exam1': exam1,
+        'avg': sem1, 'sem1': sem1,
+        'p4': p4, 'p5': p5, 'p6': p6,
+        'final_exam': exam2, 'exam2': exam2,
+        'sem2_avg': sem2, 'sem2': sem2,
+        'final_avg': yearly, 'yearly': yearly,
+        'remark': remark, 'remarks': remark,
+    }
+
+
+# Score columns on the official grid (aliases share one printed cell).
+_AVERAGE_COLUMN_SPECS = (
+    ('p1', ('p1',)),
+    ('p2', ('p2',)),
+    ('p3', ('p3',)),
+    ('exam', ('exam', 'exam1')),
+    ('avg', ('avg', 'sem1')),
+    ('p4', ('p4',)),
+    ('p5', ('p5',)),
+    ('p6', ('p6',)),
+    ('final_exam', ('final_exam', 'exam2')),
+    ('sem2_avg', ('sem2_avg', 'sem2')),
+    ('final_avg', ('final_avg', 'yearly')),
+)
+
+
+def _blank_score_row(name, *, is_summary=True, blank_empty=True):
+    return {
+        'name': name,
+        'is_summary': is_summary,
+        'blank_empty': blank_empty,
+        'p1': '', 'p2': '', 'p3': '',
+        'exam': '', 'exam1': '',
+        'avg': '', 'sem1': '',
+        'p4': '', 'p5': '', 'p6': '',
+        'final_exam': '', 'exam2': '',
+        'sem2_avg': '', 'sem2': '',
+        'final_avg': '', 'yearly': '',
+        'remark': '', 'remarks': '',
+    }
+
+
+def _subject_column_values(subjects, keys):
+    """Numeric scores in one printed column, skipping AVERAGE / CONDUCT rows."""
+    values = []
+    for subject in subjects or []:
+        if not isinstance(subject, dict):
+            continue
+        if subject.get('is_summary') or is_report_summary_subject(subject.get('name')):
+            continue
+        raw = None
+        for key in keys:
+            candidate = subject.get(key)
+            if candidate not in (None, ''):
+                raw = candidate
+                break
+        num = numeric_report_score(raw)
+        if num is not None:
+            values.append(num)
+    return values
+
+
+def column_average_from_subjects(subjects, keys, *, yearly=False):
+    """Mean of subject scores in one column. Yearly prints as 76.71%."""
+    values = _subject_column_values(subjects, keys)
+    if not values:
+        return ''
+    mean = sum(values) / len(values)
+    if yearly:
+        return f'{mean:.2f}%'
+    return display_report_score(mean)
+
+
+def official_average_row(subjects, division_key=None):
+    """Footer AVERAGE row: mean of each score column across academic subjects."""
+    _ = division_key  # Remarks stay blank on the printed AVERAGE row.
+    cells = {}
+    for dest, keys in _AVERAGE_COLUMN_SPECS:
+        cells[dest] = column_average_from_subjects(
+            subjects, keys, yearly=(dest == 'final_avg'),
+        )
+    yearly = cells['final_avg']
+    return {
+        'name': AVERAGE_ROW_NAME,
+        'is_summary': True,
+        'blank_empty': True,
+        'p1': cells['p1'], 'p2': cells['p2'], 'p3': cells['p3'],
+        'exam': cells['exam'], 'exam1': cells['exam'],
+        'avg': cells['avg'], 'sem1': cells['avg'],
+        'p4': cells['p4'], 'p5': cells['p5'], 'p6': cells['p6'],
+        'final_exam': cells['final_exam'], 'exam2': cells['final_exam'],
+        'sem2_avg': cells['sem2_avg'], 'sem2': cells['sem2_avg'],
+        'final_avg': yearly, 'yearly': yearly,
+        'remark': '', 'remarks': '',
+    }
+
+
+def official_conduct_row(scores_by_period=None, division_key=None):
+    """Footer CONDUCT row. Period cells stay blank when no conduct grades exist."""
+    scores_by_period = scores_by_period or {}
+    has_scores = any(
+        numeric_report_score(value) is not None
+        for value in scores_by_period.values()
+    )
+    if not has_scores:
+        return _blank_score_row(CONDUCT_ROW_NAME)
+    row = official_subject_score_row(
+        CONDUCT_ROW_NAME, scores_by_period, division_key,
+    )
+    row['is_summary'] = True
+    row['blank_empty'] = True
+    row['remark'] = ''
+    row['remarks'] = ''
+    return row
+
+
+def report_card_footer_rows(
+    academic_subjects,
+    conduct_scores_by_period=None,
+    division_key=None,
+):
+    """AVERAGE then CONDUCT — always the last two rows of the grades table."""
+    return [
+        official_average_row(academic_subjects, division_key),
+        official_conduct_row(conduct_scores_by_period, division_key),
+    ]
+
 _DIVISION_SUBJECT_ALIASES = {
     'kindergarten': DIVISION_KINDERGARTEN,
     'elementary': DIVISION_ELEMENTARY,
@@ -157,7 +348,17 @@ _SUBJECT_ALIAS_GROUPS = (
     ('GEN SCIENCE', 'GENERAL SCIENCE', 'INT SCIENCE', 'INTEGRATED SCIENCE'),
     ('COMP SCIENCE', 'COMPUTER SCIENCE', 'ICT', 'COMPUTER', 'COMPUTER STUDIES'),
     ('P EDUCATION', 'PHYSICAL EDUCATION', 'PE', 'P E', 'PHY EDUCATION'),
-    ('RE EDUCATION', 'RELIGIOUS EDUCATION', 'R EDUCATION', 'R E', 'RELIGION'),
+    (
+        'RE EDUCATION',
+        'RELIGIOUS EDUCATION',
+        'R EDUCATION',
+        'R E EDUCATION',
+        'REL EDUCATION',
+        'REL ED',
+        'RE',
+        'R E',
+        'RELIGION',
+    ),
     ('PHON O ENG', 'PHONICS ORAL ENGLISH', 'ORAL ENGLISH', 'PHONICS O ENG'),
     ('O ENG VOCAB', 'ORAL ENGLISH VOCABULARY', 'O ENG VOCABULARY'),
     ('ALPH WRITING', 'ALPHABET WRITING', 'ALPHA WRITING'),
@@ -242,6 +443,13 @@ GRADE_LEVEL_SELECT_CHOICES = [
     (value, f'{DIVISION_LABELS[division]} — {label}')
     for division, options in GRADE_LEVEL_GROUPS
     for value, label in options
+]
+
+# [{'label': 'Kindergarten', 'options': (('ABC', 'ABC'), ...)}, ...] for
+# templates that render an <optgroup> per division (e.g. class_create.html).
+GRADE_LEVEL_GROUPS_FOR_TEMPLATE = [
+    {'label': DIVISION_LABELS[division], 'options': options}
+    for division, options in GRADE_LEVEL_GROUPS
 ]
 
 _GRADE_CHOICE_VALUES = {value for value, _label in GRADE_LEVEL_SELECT_CHOICES}
@@ -415,6 +623,29 @@ def division_label(division_key):
 
 def division_label_for_class(klass, *extra_parts):
     return division_label(resolve_from_class(klass, *extra_parts))
+
+
+def academic_level_for_student(student):
+    """Kindergarten / Elementary / Junior High / Senior High for enrollment forms.
+
+    Assigned class is the source of truth so a blank or stale student.level
+    does not leave Academic Level empty on returning-student screens.
+    """
+    if student is None:
+        return ''
+
+    klass = getattr(student, 'assigned_class', None) or getattr(student, 'klass', None)
+    stored_level = (getattr(student, 'level', None) or '').strip()
+    grade_level = getattr(student, 'grade_level', None)
+    key = resolve_from_class(klass, grade_level, stored_level)
+    if key and key != DIVISION_UNASSIGNED:
+        return division_label(key)
+    if stored_level in DIVISION_LABELS.values():
+        return stored_level
+    from_stored = resolve_school_division(stored_level)
+    if from_stored != DIVISION_UNASSIGNED:
+        return division_label(from_stored)
+    return ''
 
 
 def class_sort_key(name=None, grade_level=None, stream=None):
@@ -604,6 +835,22 @@ def canonical_subject_name(name, division_key=None):
     for official in catalog:
         if subject_match_key(official) == needle:
             return official
+    # Legacy imports sometimes contain a small typo that is not a known alias.
+    # Accept only a strong, unambiguous catalog match so unrelated subjects do
+    # not get merged merely because they share a word such as "Science".
+    fuzzy_matches = sorted(
+        (
+            SequenceMatcher(None, needle, subject_match_key(official)).ratio(),
+            official,
+        )
+        for official in catalog
+        if subject_match_key(official)
+    )
+    if fuzzy_matches:
+        best_ratio, best_name = fuzzy_matches[-1]
+        runner_up = fuzzy_matches[-2][0] if len(fuzzy_matches) > 1 else 0.0
+        if best_ratio >= 0.88 and best_ratio - runner_up >= 0.08:
+            return best_name
     if not catalog:
         for subjects in DIVISION_SUBJECT_CATALOGS.values():
             for official in subjects:
@@ -670,16 +917,76 @@ def next_class_display_label(*parts):
     return grade_print_label(nxt)
 
 
-def format_academic_year_label(name):
-    """Print as 2025/2026 when the stored year looks like a span."""
+# 4-digit start (optional 2-digit end) or compact 2+2, any dash/slash, extra words OK.
+_YEAR_SPAN_RE = re.compile(
+    r'(?<!\d)(\d{4})\s*[-–—/]\s*(\d{2,4})(?!\d)'
+    r'|(?<!\d)(\d{2})\s*[-–—/]\s*(\d{2})(?!\d)'
+)
+
+
+def _expand_span_end_year(start, end_raw):
+    """Resolve a 2-digit end year without assuming the current century prefix."""
+    if end_raw >= 100:
+        return end_raw
+    end = (start // 100) * 100 + end_raw
+    if end < start:
+        end += 100
+    return end
+
+
+def parse_academic_year_span(name):
+    """Return (start_year, end_year) for labels like 2035-2036, 2035–36, 35-36.
+
+    Century wrap uses the start year, not today's date: 2099-00 → (2099, 2100).
+    Two-digit starts are read as 20xx (35-36 → 2035-2036).
+    """
     text = (name or '').strip()
-    match = re.search(r'(\d{4})\s*[-–/]\s*(\d{2,4})', text)
+    if not text:
+        return None
+    match = _YEAR_SPAN_RE.search(text)
     if not match:
-        return text
-    start, end = match.group(1), match.group(2)
-    if len(end) == 2:
-        end = start[:2] + end
-    return f'{start}/{end}'
+        return None
+    if match.group(1) is not None:
+        start = int(match.group(1))
+        end = _expand_span_end_year(start, int(match.group(2)))
+        return (start, end)
+    start = 2000 + int(match.group(3))
+    end = 2000 + int(match.group(4))
+    if end < start:
+        end += 100
+    return (start, end)
+
+
+def academic_year_span_key(name):
+    """Canonical YYYY-YYYY key, or None when the label is not a year span."""
+    span = parse_academic_year_span(name)
+    if not span:
+        return None
+    return f'{span[0]}-{span[1]}'
+
+
+def normalize_academic_year_name(name):
+    """Store parseable spans as hyphenated YYYY-YYYY; leave other labels as typed."""
+    key = academic_year_span_key(name)
+    if key:
+        return key
+    return (name or '').strip()
+
+
+def next_academic_year_label(name):
+    """Advance 2035-2036 / 2035–36 / 2035/2036 to 2036-2037."""
+    span = parse_academic_year_span(name)
+    if not span:
+        return None
+    return f'{span[0] + 1}-{span[1] + 1}'
+
+
+def format_academic_year_label(name):
+    """Print as 2035/2036 when the stored year looks like a span."""
+    span = parse_academic_year_span(name)
+    if not span:
+        return (name or '').strip()
+    return f'{span[0]}/{span[1]}'
 
 
 def division_document_titles(division_key, kind='sheet'):
@@ -767,6 +1074,313 @@ def next_canonical_grade(*parts):
     if idx + 1 >= len(sequence):
         return 'Graduation'
     return sequence[idx + 1]
+
+
+# Official Transcript letterhead (paper form — do not change report-card phones).
+TRANSCRIPT_PRINT_ADDRESS = 'CENTER STREET-SOUTH BEACH, MONROVIA, LIBERIA'
+TRANSCRIPT_PRINT_PHONES = '0777-287-456 / 0775-313-359 / 0770-203-098'
+TRANSCRIPT_PRINT_EMAIL = 'flpacardinals@gmail.com'
+
+_GRADE_NUMBER_WORDS = {
+    1: 'One', 2: 'Two', 3: 'Three', 4: 'Four', 5: 'Five', 6: 'Six',
+    7: 'Seven', 8: 'Eight', 9: 'Nine', 10: 'Ten', 11: 'Eleven', 12: 'Twelve',
+}
+
+# Paper slots: (print name, alias names that map onto that row).
+_TRANSCRIPT_CATEGORY_SLOTS = (
+    (
+        'LANGUAGE ARTS',
+        (
+            ('English', ('English', 'ENG', 'English Language')),
+            ('Literature/Reading', ('Literature', 'Reading', 'Literature/Reading', 'English Literature')),
+            ('French', ('French',)),
+            (
+                'Oral English/Vocabulary',
+                (
+                    'O.Eng/Vocab', 'Oral English/Vocabulary', 'Phon. /O. Eng',
+                    'Vocabulary', 'Oral English',
+                ),
+            ),
+            (
+                'Religious Moral Edu. / Bible',
+                (
+                    'R/Education', 'RE/ Education', 'Religious Moral Edu. / Bible',
+                    'Bible', 'Religious Education',
+                ),
+            ),
+        ),
+    ),
+    (
+        'SOCIAL STUDIES',
+        (
+            ('History', ('History',)),
+            ('Economics/Civics', ('Economics', 'Civics', 'Economics/Civics')),
+            ('Geography', ('Geography',)),
+            ('Government', ('Government',)),
+        ),
+    ),
+    (
+        'MATHEMATICS',
+        (
+            ('Algebra/Geometry', ('Mathematics', 'Algebra/Geometry', 'Algebra', 'Geometry')),
+        ),
+    ),
+    (
+        'GENERAL SCIENCE',
+        (
+            ('Biology', ('Biology',)),
+            ('Chemistry', ('Chemistry',)),
+            ('Physics', ('Physics',)),
+            ('Health Science', ('Health Science', 'Health')),
+            (
+                'Agri. Science',
+                ('Agri. Science', 'Agriculture', 'Agricultural Science', 'Agric. Science'),
+            ),
+        ),
+    ),
+)
+
+_TRANSCRIPT_STANDALONE_SLOT = (
+    'R.O.T.C. / Physical Edu.',
+    ('R.O.T.C', 'R.O.T.C.', 'P. Education', 'Physical Education', 'PE'),
+)
+
+_TRANSCRIPT_EXTRA_CATEGORY_KEYS = {
+    'LANGUAGE ARTS': {
+        'ENGLISH', 'LITERATURE', 'READING', 'FRENCH', 'O ENG VOCAB', 'PHON O ENG',
+        'VOCABULARY', 'RE EDUCATION', 'BIBLE', 'SPELLING', 'PHONICS', 'HAND WRITING',
+        'ALPH WRITING',
+    },
+    'SOCIAL STUDIES': {
+        'HISTORY', 'ECONOMICS', 'CIVICS', 'GEOGRAPHY', 'GOVERNMENT', 'SOCIAL STUDIES',
+    },
+    'MATHEMATICS': {
+        'MATHEMATICS', 'ALGEBRA', 'GEOMETRY', 'NUM WRITING', 'SHAPES COLORS',
+    },
+    'GENERAL SCIENCE': {
+        'BIOLOGY', 'CHEMISTRY', 'PHYSICS', 'HEALTH SCIENCE', 'AGRI SCIENCE',
+        'AGRICULTURE', 'AGRICULTURAL SCIENCE', 'GEN SCIENCE', 'SCIENCE',
+        'COMP SCIENCE',
+    },
+}
+
+_TRANSCRIPT_STANDALONE_KEYS = {'R O T C', 'P EDUCATION'}
+
+
+def transcript_letterhead():
+    """Paper Official Transcript header (phones/address as on the FLPA form)."""
+    brand = dict(school_print_brand())
+    brand['transcript_address'] = TRANSCRIPT_PRINT_ADDRESS
+    brand['transcript_phones'] = TRANSCRIPT_PRINT_PHONES
+    brand['transcript_email'] = TRANSCRIPT_PRINT_EMAIL
+    return brand
+
+
+def _transcript_ordinal(number):
+    try:
+        number = int(number)
+    except (TypeError, ValueError):
+        return 'N/A'
+    if number <= 0:
+        return 'N/A'
+    if 10 <= (number % 100) <= 20:
+        suffix = 'th'
+    else:
+        suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(number % 10, 'th')
+    return f'{number}{suffix}'
+
+
+def transcript_grade_heading(*parts):
+    """GRADE: (10) Ten — kindergarten and unlabeled values stay as printed."""
+    number = parse_grade_number(*parts)
+    if number in _GRADE_NUMBER_WORDS:
+        return f'({number}) {_GRADE_NUMBER_WORDS[number]}'
+    canon = canonical_grade_value(*parts)
+    if canon:
+        return grade_print_label(canon) or str(canon)
+    for part in parts:
+        text = str(part).strip() if part is not None else ''
+        if text:
+            return text
+    return 'N/A'
+
+
+def transcript_grade_ordinal(*parts):
+    """11th / Graduation / K-I for the certified-paragraph blanks."""
+    number = parse_grade_number(*parts)
+    if number:
+        return _transcript_ordinal(number)
+    canon = canonical_grade_value(*parts)
+    if not canon:
+        return 'N/A'
+    if canon == 'Graduation':
+        return 'Graduation'
+    return grade_print_label(canon) or str(canon)
+
+
+def transcript_promotion_fields(promotion, *current_grade_parts):
+    """(promoted_to, conditioned_in, retained_in) from year-end MoE decision."""
+    current_ord = transcript_grade_ordinal(*current_grade_parts)
+    nxt = next_canonical_grade(*current_grade_parts)
+    next_ord = transcript_grade_ordinal(nxt) if nxt else 'N/A'
+    decision = (promotion or {}).get('decision')
+    if decision == 'graduate':
+        return 'Graduation', 'N/A', 'N/A'
+    if decision == 'promote':
+        if nxt == 'Graduation':
+            return 'Graduation', 'N/A', 'N/A'
+        return next_ord, 'N/A', 'N/A'
+    if decision == 'summer_school':
+        return 'N/A', current_ord, 'N/A'
+    if decision == 'repeat':
+        return 'N/A', 'N/A', current_ord
+    return 'N/A', 'N/A', 'N/A'
+
+
+def transcript_conduct_label(value):
+    """Paper CONDUCT wording (VERY GOOD, not the 6-period remark scale)."""
+    number = numeric_report_score(value)
+    if number is None:
+        return ''
+    if number >= 90:
+        return 'EXCELLENT'
+    if number >= 80:
+        return 'VERY GOOD'
+    if number >= 70:
+        return 'GOOD'
+    if number >= 60:
+        return 'FAIR'
+    return 'POOR'
+
+
+def _transcript_score_cells(subject):
+    subject = subject or {}
+    return {
+        'sem1': subject.get('sem1') if subject.get('sem1') not in (None, '') else subject.get('avg', ''),
+        'sem2': subject.get('sem2') if subject.get('sem2') not in (None, '') else subject.get('sem2_avg', ''),
+        'yearly': (
+            subject.get('yearly')
+            if subject.get('yearly') not in (None, '')
+            else subject.get('final_avg', '')
+        ),
+    }
+
+
+def _transcript_row(subject, display_name):
+    cells = _transcript_score_cells(subject)
+    return {
+        'name': display_name,
+        'kind': 'subject',
+        'sem1': cells['sem1'] or '',
+        'sem2': cells['sem2'] or '',
+        'yearly': cells['yearly'] or '',
+    }
+
+
+def _pop_matching_subject(remaining, alias_names):
+    keys = {subject_match_key(name) for name in alias_names if subject_match_key(name)}
+    for index, subject in enumerate(remaining):
+        if subject_match_key(subject.get('name')) in keys:
+            return remaining.pop(index)
+    return None
+
+
+def _transcript_category_for_name(name):
+    key = subject_match_key(name)
+    if not key or key in _TRANSCRIPT_STANDALONE_KEYS:
+        return None
+    for category, keys in _TRANSCRIPT_EXTRA_CATEGORY_KEYS.items():
+        if key in keys:
+            return category
+    return None
+
+
+def build_transcript_grade_groups(subjects, division_key=None):
+    """Group report-card rows into the Official Transcript paper layout.
+
+    Senior High keeps the FLPA paper list (blank Health Science / Agri. Science
+    when those scores are missing). Other divisions print category headers and
+    only the subjects the student actually has.
+    """
+    academic = []
+    average_row = None
+    conduct_row = None
+    for subject in subjects or []:
+        if not isinstance(subject, dict):
+            continue
+        name = subject.get('name') or ''
+        if is_conduct_subject(name):
+            conduct_row = subject
+            continue
+        if is_report_summary_subject(name):
+            average_row = subject
+            continue
+        academic.append(dict(subject))
+
+    remaining = list(academic)
+    use_paper = division_key == DIVISION_SENIOR_HIGH
+    groups = []
+
+    for category, slots in _TRANSCRIPT_CATEGORY_SLOTS:
+        rows = []
+        for paper_name, aliases in slots:
+            matched = _pop_matching_subject(remaining, aliases)
+            if matched:
+                display = paper_name if use_paper else (matched.get('name') or paper_name)
+                rows.append(_transcript_row(matched, display))
+            elif use_paper:
+                rows.append(_transcript_row(_blank_score_row(paper_name, is_summary=False), paper_name))
+        extras = [
+            subject for subject in remaining
+            if _transcript_category_for_name(subject.get('name')) == category
+        ]
+        for extra in extras:
+            remaining.remove(extra)
+            rows.append(_transcript_row(extra, extra.get('name') or 'Subject'))
+        if rows:
+            groups.append({'kind': 'category', 'label': category, 'rows': rows})
+
+    standalone_name, standalone_aliases = _TRANSCRIPT_STANDALONE_SLOT
+    matched_pe = _pop_matching_subject(remaining, standalone_aliases)
+    pe_rows = []
+    if matched_pe:
+        display = standalone_name if use_paper else (matched_pe.get('name') or standalone_name)
+        pe_rows.append(_transcript_row(matched_pe, display))
+    elif use_paper:
+        pe_rows.append(_transcript_row(
+            _blank_score_row(standalone_name, is_summary=False),
+            standalone_name,
+        ))
+    leftover_pe = [
+        subject for subject in remaining
+        if subject_match_key(subject.get('name')) in _TRANSCRIPT_STANDALONE_KEYS
+    ]
+    for extra in leftover_pe:
+        remaining.remove(extra)
+        pe_rows.append(_transcript_row(extra, extra.get('name') or standalone_name))
+    if pe_rows:
+        groups.append({'kind': 'standalone', 'label': None, 'rows': pe_rows})
+
+    if remaining:
+        groups.append({
+            'kind': 'category',
+            'label': 'ADDITIONAL SUBJECTS',
+            'rows': [
+                _transcript_row(subject, subject.get('name') or 'Subject')
+                for subject in remaining
+            ],
+        })
+
+    return groups, average_row, conduct_row
+
+
+def transcript_conduct_cells(conduct_row):
+    cells = _transcript_score_cells(conduct_row)
+    return {
+        'sem1': transcript_conduct_label(cells.get('sem1')),
+        'sem2': transcript_conduct_label(cells.get('sem2')),
+        'yearly': transcript_conduct_label(cells.get('yearly')),
+    }
 
 
 def school_print_brand():

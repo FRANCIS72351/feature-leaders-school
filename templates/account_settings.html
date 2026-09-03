@@ -128,6 +128,13 @@
                 </form>
             </div>
 
+            {% if current_user.must_change_password %}
+            <div class="account-section" style="border-color:#c9a227; background:#fffdf6;">
+                <h2 style="color:#002d62;"><i class="fas fa-key me-2" style="color:#c82828;"></i>Change your initial password</h2>
+                <p class="mb-0" style="font-size:0.9rem; color:#1f2937;">You are using the password printed on your registrar credential slip. Choose a new password before opening the rest of the portal.</p>
+            </div>
+            {% endif %}
+
             <div class="account-section mb-0">
                 <h2><i class="fas fa-lock me-2" style="color:#c82828;"></i>Change password</h2>
                 <form method="POST">

@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block title %}Staff ID Card Setup{% endblock %}
+{% block content %}
+<style>
+    .staff-setup-page { max-width:900px; margin:0 auto; padding:2rem 1rem; }
+    .staff-setup-card { background:#fff; border:1px solid #e2e8f0; border-top:4px solid #c82828; border-radius:12px; padding:1.5rem; box-shadow:0 10px 30px rgba(15,23,42,.08); }
+    .staff-setup-title { color:#002d62; font-weight:800; margin-bottom:.25rem; }
+    .staff-setup-subtitle { color:#64748b; margin-bottom:1.25rem; }
+    .staff-upload-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; }
+    .staff-upload-box { border:1px solid #dbe7f3; border-radius:10px; padding:1rem; background:#f8fafc; }
+    .staff-upload-box label { font-weight:700; color:#002d62; display:block; margin-bottom:.5rem; }
+    .staff-preview { min-height:130px; display:flex; align-items:center; justify-content:center; background:#fff; border:1px dashed #cbd5e1; border-radius:8px; margin-top:.75rem; overflow:hidden; }
+    .staff-preview img { max-width:100%; max-height:180px; object-fit:contain; }
+    .staff-actions { display:flex; justify-content:space-between; gap:.75rem; flex-wrap:wrap; margin-top:1.5rem; }
+    .btn-staff-save { background:#c82828; color:#fff; border:none; border-radius:8px; padding:.65rem 1.1rem; font-weight:700; }
+    .btn-staff-back { background:#fff; color:#334155; border:1px solid #cbd5e1; border-radius:8px; padding:.65rem 1.1rem; text-decoration:none; font-weight:700; }
+    .signature-mark { font-family:Georgia, 'Times New Roman', serif; font-size:1.4rem; color:#002d62; }
+</style>
+<div class="staff-setup-page">
+    <div class="staff-setup-card">
+        <h1 class="staff-setup-title"><i class="fas fa-id-card me-2"></i>Staff ID Card Setup</h1>
+        <p class="staff-setup-subtitle">
+            Upload the same ID files used for student cards: a portrait photo and an optional handwritten signature.
+            The system will prepare this staff account for print and download once both sides are ready.
+        </p>
+        <p><strong>Staff:</strong> {{ user.full_name }} · <strong>Position:</strong> {{ user.role|title }} · <strong>Staff ID:</strong> FLPA-{{ '%04d'|format(user.id) }}</p>
+        <form method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="staff-upload-grid">
+                <div class="staff-upload-box">
+                    <label for="photo">Staff Photo</label>
+                    <input type="file" id="photo" name="photo" class="form-control" accept="image/*">
+                    <div class="staff-preview">
+                        {% if photo_url %}
+                            <img src="{{ photo_url }}" alt="{{ user.full_name }}">
+                        {% else %}
+                            <span class="text-muted">No staff photo uploaded yet.</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="staff-upload-box">
+                    <label for="signature">Staff Signature</label>
+                    <input type="file" id="signature" name="signature" class="form-control" accept="image/*">
+                    <div class="staff-preview">
+                        {% if signature_url %}
+                            <img src="{{ signature_url }}" alt="Signature for {{ user.full_name }}">
+                        {% else %}
+                            <span class="signature-mark">{{ signature_mark }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="staff-actions">
+                <a href="{{ url_for('staff_id_cards_folder') }}" class="btn-staff-back"><i class="fas fa-arrow-left me-1"></i> Back to Staff Folder</a>
+                <button type="submit" class="btn-staff-save"><i class="fas fa-save me-1"></i> Save Staff ID Files</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

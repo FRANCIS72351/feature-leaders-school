@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student File — {{ student.full_name }}</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --flpa-red: #c82828;
+            --ink: #111827;
+            --muted: #4b5563;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 24px 16px 40px;
+            background: #e8edf3;
+            color: var(--ink);
+            font-family: "Segoe UI", system-ui, sans-serif;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .action-bar {
+            max-width: 8.5in;
+            margin: 0 auto 16px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+        .btn-print, .btn-back {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 18px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .btn-print { background: var(--flpa-red); color: #fff; }
+        .btn-back { background: #fff; color: var(--flpa-red); border: 1px solid var(--flpa-red); }
+        .sheet {
+            width: 8.5in;
+            max-width: 100%;
+            margin: 0 auto;
+            background: #fff;
+            border: 1.5px solid #111;
+            padding: 0.55in 0.55in 0.45in;
+            box-shadow: 0 10px 28px rgba(17, 24, 39, 0.12);
+        }
+        .brand-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            border-bottom: 3px solid var(--flpa-red);
+            padding-bottom: 12px;
+            margin-bottom: 16px;
+        }
+        .brand-logo {
+            width: 72px;
+            height: 72px;
+            object-fit: contain;
+            flex-shrink: 0;
+        }
+        .brand-center { flex: 1; text-align: center; }
+        .brand-center h1 {
+            margin: 0;
+            font-size: 1.15rem;
+            letter-spacing: 0.04em;
+            color: var(--flpa-red);
+        }
+        .brand-center p {
+            margin: 2px 0 0;
+            font-size: 0.78rem;
+            color: var(--muted);
+        }
+        .doc-title {
+            text-align: center;
+            font-size: 0.95rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--flpa-red);
+            margin: 0 0 18px;
+        }
+        .identity {
+            display: flex;
+            gap: 18px;
+            align-items: flex-start;
+            margin-bottom: 18px;
+        }
+        .photo {
+            width: 1.35in;
+            height: 1.35in;
+            border: 2px solid var(--flpa-red);
+            border-radius: 8px;
+            overflow: hidden;
+            flex-shrink: 0;
+            background: #f3e8e8;
+        }
+        .photo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .identity h2 {
+            margin: 0 0 6px;
+            font-size: 1.45rem;
+        }
+        .student-id {
+            font-family: ui-monospace, Menlo, Consolas, monospace;
+            font-weight: 800;
+            color: var(--flpa-red);
+            font-size: 1rem;
+        }
+        .meta-line {
+            margin-top: 6px;
+            font-size: 0.9rem;
+            color: var(--muted);
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px 22px;
+            border-top: 1px solid #e5e7eb;
+            padding-top: 14px;
+        }
+        .field.span-2 { grid-column: 1 / -1; }
+        .label {
+            display: block;
+            font-size: 0.68rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--flpa-red);
+            margin-bottom: 2px;
+        }
+        .value {
+            font-size: 0.95rem;
+            font-weight: 600;
+            word-break: break-word;
+        }
+        .sheet-foot {
+            margin-top: 28px;
+            padding-top: 10px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--muted);
+        }
+        @media print {
+            body { background: #fff; padding: 0; }
+            .action-bar { display: none !important; }
+            .sheet {
+                box-shadow: none;
+                border: 0;
+                width: auto;
+                padding: 0.35in;
+            }
+        }
+        @media (max-width: 700px) {
+            .sheet { width: 100%; padding: 18px; }
+            .grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    {% set brand = school_print_brand %}
+    {% set portal_email = student.user.email if student.user else none %}
+    {% set portal_phone = student.user.telephone_number if student.user else none %}
+    {% set portal_address = student.user.home_address if student.user else none %}
+    {% set parent_name = student.parent_guardian_name or student.guardian_name or (student.parent_user.full_name if student.parent_user else none) %}
+    {% set session_name = student.academic_year.name if student.academic_year else (display_year.name if display_year else none) %}
+    {% set fee_amount = student.registration_fees %}
+    {% set fee_status = student.registration_fee_status if student.registration_fee_status else none %}
+
+    <div class="action-bar">
+        <a class="btn-back" href="{{ url_for('dashboard') }}#student-folder-{{ student.id }}"><i class="fas fa-arrow-left"></i> Back to folder</a>
+        <button type="button" class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Print student file</button>
+    </div>
+
+    <article class="sheet">
+        <div class="brand-row">
+            <img class="brand-logo" src="{{ school_logo_url }}" alt="School logo" onerror="this.style.visibility='hidden'">
+            <div class="brand-center">
+                <h1>{{ brand.name|upper }}</h1>
+                <p>{{ brand.full_address }}</p>
+                <p>{{ brand.phones }}{% if brand.email_address or brand.email %} · {{ brand.email_address or brand.email }}{% endif %}</p>
+            </div>
+            <img class="brand-logo" src="{{ school_logo_url }}" alt="" onerror="this.style.visibility='hidden'">
+        </div>
+        <p class="doc-title">Official Student Registry File</p>
+
+        <div class="identity">
+            <div class="photo">
+                <img src="{{ student.photo_url }}" alt="{{ student.full_name }}" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
+            </div>
+            <div>
+                <h2>{{ student.full_name }}</h2>
+                {% if student.student_id %}<div class="student-id">{{ student.student_id }}</div>{% endif %}
+                <div class="meta-line">Class folder: <strong>{{ class_label }}</strong></div>
+                {% if session_name %}<div class="meta-line">Academic year: <strong>{{ session_name }}</strong></div>{% endif %}
+            </div>
+        </div>
+
+        <div class="grid">
+            {% if student.gender %}
+            <div class="field"><span class="label">Gender</span><span class="value">{{ student.gender }}</span></div>
+            {% endif %}
+            {% if student.dob %}
+            <div class="field"><span class="label">Date of birth</span><span class="value">{{ student.dob }}</span></div>
+            {% endif %}
+            {% if student.status %}
+            <div class="field"><span class="label">Status</span><span class="value">{{ student.status }}</span></div>
+            {% endif %}
+            {% if student.level %}
+            <div class="field"><span class="label">Academic level</span><span class="value">{{ student.level }}</span></div>
+            {% endif %}
+            {% if student.grade_level %}
+            <div class="field"><span class="label">Grade</span><span class="value">{{ student.grade_level }}</span></div>
+            {% endif %}
+            {% if student.registration_type %}
+            <div class="field"><span class="label">Registration type</span><span class="value">{{ student.registration_type }}</span></div>
+            {% endif %}
+            {% if fee_amount is not none %}
+            <div class="field">
+                <span class="label">Registration fee</span>
+                <span class="value">${{ "{:,.2f}".format(fee_amount|float) }}{% if fee_status %} · {{ fee_status }}{% endif %}</span>
+            </div>
+            {% endif %}
+            {% if parent_name %}
+            <div class="field"><span class="label">Parent / guardian</span><span class="value">{{ parent_name }}</span></div>
+            {% endif %}
+            {% if student.parent_phone %}
+            <div class="field"><span class="label">Parent phone</span><span class="value">{{ student.parent_phone }}</span></div>
+            {% endif %}
+            {% if student.parent_email %}
+            <div class="field"><span class="label">Parent email</span><span class="value">{{ student.parent_email }}</span></div>
+            {% endif %}
+            {% if portal_phone %}
+            <div class="field"><span class="label">Student phone</span><span class="value">{{ portal_phone }}</span></div>
+            {% endif %}
+            {% if portal_email %}
+            <div class="field"><span class="label">Portal email</span><span class="value">{{ portal_email }}</span></div>
+            {% endif %}
+            {% if portal_address %}
+            <div class="field span-2"><span class="label">Home address</span><span class="value">{{ portal_address }}</span></div>
+            {% endif %}
+            {% if student.registrar %}
+            <div class="field"><span class="label">Registered by</span><span class="value">{{ student.registrar }}</span></div>
+            {% endif %}
+        </div>
+
+        <div class="sheet-foot">
+            <span>Printed by {{ printed_by or 'Registry' }}</span>
+            <span>{{ printed_at.strftime('%d %b %Y, %H:%M UTC') if printed_at else '' }}</span>
+        </div>
+    </article>
+</body>
+</html>

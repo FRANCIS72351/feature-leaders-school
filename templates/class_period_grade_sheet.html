@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Period Grade Sheet — {{ klass.name if klass else 'Class' }}{% endblock %}
+
+{% block content %}
+{% set brand = data.school or school_print_brand %}
+{% set release = data.release %}
+{% set status = release.status if release else 'draft' %}
+<style>
+    .cpgs-page { background:#e8edf3; padding:32px 16px; font-family:'Source Serif 4','Times New Roman',Times,serif; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .cpgs-actions { max-width:1200px; margin:0 auto 16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; font-family:system-ui,sans-serif; }
+    .cpgs-status { display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border-radius:999px; font-size:0.78rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; }
+    .cpgs-status.draft { background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; }
+    .cpgs-status.pending_vpa { background:#fff7ed; color:#c2410c; border:1px solid #fdba74; }
+    .cpgs-status.returned { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
+    .cpgs-status.approved { background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; }
+    .btn-cpgs { background:#002d62; color:#fff; border:none; padding:9px 20px; font-size:0.85rem; font-weight:600; border-radius:8px; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; gap:8px; }
+    .btn-cpgs:hover { background:#c82828; color:#fff; }
+    .cpgs-sheet-scroll { width:100%; overflow-x:auto; }
+    .cpgs-sheet { background:#fff; max-width:1200px; min-width:900px; margin:0 auto; border-radius:6px; box-shadow:0 10px 30px rgba(0,0,0,0.08); padding:14px 18px 20px; box-sizing:border-box; color:#111; }
+    .cpgs-official { border:1.5px solid #111; padding:12px 16px 10px; }
+    .cpgs-brand-row { display:flex; align-items:center; gap:14px; }
+    .cpgs-logo { width:72px; height:72px; border-radius:50%; border:2px solid #c82828; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; }
+    .cpgs-logo img { width:64px; height:64px; object-fit:contain; }
+    .cpgs-header-center { flex:1; text-align:center; }
+    .cpgs-school-name { font-family:Algerian,'Times New Roman',serif; font-size:19pt; font-weight:700; color:#002d62; margin:0; letter-spacing:0.02em; }
+    .cpgs-header-center p { margin:1px 0; font-size:9.5pt; color:#334155; }
+    .cpgs-title-row { display:flex; justify-content:space-between; align-items:baseline; border-top:1.5px solid #111; border-bottom:1.5px solid #111; margin-top:10px; padding:6px 2px; }
+    .cpgs-doc-title { font-weight:700; font-size:13pt; letter-spacing:0.03em; color:#c82828; text-transform:uppercase; }
+    .cpgs-meta { font-size:9.5pt; color:#334155; }
+    .cpgs-meta-row { display:flex; flex-wrap:wrap; gap:18px; margin:8px 0 6px; font-size:10pt; }
+    .cpgs-meta-row strong { color:#002d62; }
+    table.cpgs-table { width:100%; border-collapse:collapse; margin-top:8px; font-size:9.5pt; }
+    table.cpgs-table th, table.cpgs-table td { border:1px solid #94a3b8; padding:4px 6px; text-align:center; }
+    table.cpgs-table thead th { background:#002d62; color:#fff; font-size:8pt; text-transform:uppercase; letter-spacing:0.02em; }
+    table.cpgs-table td.cpgs-name-cell { text-align:left; font-weight:600; white-space:nowrap; }
+    table.cpgs-table tbody tr:nth-child(even) { background:#f8fafc; }
+    td.cpgs-avg { font-weight:700; color:#002d62; }
+    .cpgs-footer { display:flex; justify-content:space-between; margin-top:26px; font-size:9.5pt; }
+    .cpgs-sig { width:30%; text-align:center; }
+    .cpgs-sig .line { border-top:1px solid #111; margin-top:26px; padding-top:4px; }
+    .cpgs-legend { margin-top:10px; font-size:8.5pt; color:#475569; }
+    .cpgs-review-form { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .cpgs-review-form textarea { font-size:0.82rem; border-radius:6px; border:1px solid #cbd5e1; padding:6px; min-width:220px; }
+    @media print {
+        .cpgs-actions { display:none !important; }
+        .cpgs-page { background:#fff; padding:0; }
+        .cpgs-sheet { box-shadow:none; margin:0; max-width:100%; min-width:0; }
+    }
+</style>
+
+<div class="cpgs-page">
+    <div class="cpgs-actions">
+        <div>
+            <a href="{{ url_for('vpa_grade_releases') }}" class="btn-cpgs" style="background:#334155;">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            <span class="cpgs-status {{ status }}">
+                {% if status == 'approved' %}<i class="fas fa-check-circle"></i> Approved{% endif %}
+                {% if status == 'pending_vpa' %}<i class="fas fa-hourglass-half"></i> Pending VPA{% endif %}
+                {% if status == 'returned' %}<i class="fas fa-undo"></i> Returned to teacher{% endif %}
+                {% if status == 'draft' %}<i class="fas fa-pen"></i> Draft{% endif %}
+            </span>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;">
+            {% if can_review and status == 'pending_vpa' and release %}
+            <form method="POST" action="{{ url_for('vpa_approve_grade_release', release_id=release.id) }}" class="cpgs-review-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <textarea name="review_comment" rows="1" placeholder="Optional comment"></textarea>
+                <button type="submit" class="btn-cpgs">Approve</button>
+                <button type="submit" formaction="{{ url_for('vpa_return_grade_release', release_id=release.id) }}" class="btn-cpgs" style="background:#b91c1c;">Return</button>
+            </form>
+            {% endif %}
+            <button class="btn-cpgs" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
+        </div>
+    </div>
+
+    <div class="cpgs-sheet-scroll">
+    <div class="cpgs-sheet">
+        <div class="cpgs-official">
+            <div class="cpgs-brand-row">
+                <div class="cpgs-logo"><img src="{{ school_logo_url }}" alt="School logo" onerror="this.style.visibility='hidden';"></div>
+                <div class="cpgs-header-center">
+                    <p class="cpgs-school-name">{{ brand.name|upper }}</p>
+                    <p>{{ brand.full_address }}</p>
+                    <p>{{ brand.phones }} &middot; {{ brand.email_address or brand.email }}</p>
+                </div>
+                <div class="cpgs-logo"><img src="{{ school_logo_url }}" alt="School logo" onerror="this.style.visibility='hidden';"></div>
+            </div>
+
+            <div class="cpgs-title-row">
+                <span class="cpgs-doc-title">Period Grade Sheet</span>
+                <span class="cpgs-meta">{{ data.division_label or '—' }} Division</span>
+            </div>
+
+            <div class="cpgs-meta-row">
+                <span><strong>Class:</strong> {{ klass.name if klass else '—' }}</span>
+                <span><strong>Marking Period:</strong> {{ data.period_label }}</span>
+                <span><strong>Academic Year:</strong> {{ display_year.name if display_year else '—' }}</span>
+                <span><strong>Students:</strong> {{ data.rows|length }}</span>
+            </div>
+
+            <div class="cpgs-sheet-scroll">
+            <table class="cpgs-table">
+                <thead>
+                    <tr>
+                        <th style="text-align:left;">Student Name</th>
+                        {% for subject in data.subjects %}
+                        <th>{{ subject }}</th>
+                        {% endfor %}
+                        <th>Average</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in data.rows %}
+                    <tr>
+                        <td class="cpgs-name-cell">{{ row.student.full_name }}</td>
+                        {% for score in row.scores %}
+                        <td>{{ score if score != '' else '—' }}</td>
+                        {% endfor %}
+                        <td class="cpgs-avg">{{ row.average if row.average is not none else '—' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="{{ (data.subjects|length) + 2 }}">No students are enrolled in this class for this year.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            </div>
+
+            <p class="cpgs-legend">Grading method: {{ brand.grading_method }}</p>
+            {% if release %}
+            <p class="cpgs-legend">
+                {% if release.published_by %}Submitted by {{ release.published_by.full_name }}{% if release.published_at %} on {{ release.published_at.strftime('%b %d, %Y') }}{% endif %}.{% endif %}
+                {% if release.approved_by %} Approved by {{ release.approved_by.full_name }}{% if release.approved_at %} on {{ release.approved_at.strftime('%b %d, %Y') }}{% endif %}.{% endif %}
+                {% if release.review_comment %} Comment: {{ release.review_comment }}{% endif %}
+            </p>
+            {% endif %}
+
+            <div class="cpgs-footer">
+                <div class="cpgs-sig"><div class="line">Class Sponsor / Teacher</div></div>
+                <div class="cpgs-sig"><div class="line">{{ brand.vpi_title }} — Vice Principal Academics</div></div>
+                <div class="cpgs-sig"><div class="line">{{ brand.principal_title }}</div></div>
+            </div>
+        </div>
+    </div>
+    </div>
+</div>
+{% endblock %}

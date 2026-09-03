@@ -1,4 +1,5 @@
 """Development seed data aligned with current models. Run: python seed_data.py"""
+import os
 from datetime import date, datetime, timezone
 
 from werkzeug.security import generate_password_hash
@@ -18,6 +19,9 @@ from models import (
 
 
 def seed():
+    if os.environ.get('FLASK_ENV', '').strip().lower() == 'production':
+        print('ERROR: seed_data.py is disabled in production; existing data is protected.')
+        return 1
     with app.app_context():
         db.drop_all()
         db.create_all()

@@ -1,52 +1,362 @@
-{% extends 'base.html' %}
-{% block title %}Transcript - {{ student.full_name }}{% endblock %}
-{% block content %}
-<h2>Academic Transcript for {{ student.full_name }}</h2>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Official Transcript — {{ data.student_name }}</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --flpa-red: {{ (data.letterhead.brand_red if data.letterhead else school_print_brand.brand_red) or '#c82828' }};
+            --ink: #111111;
+            --mark-fail: #b42318;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 24px 16px 40px;
+            background: #e8edf3;
+            color: var(--ink);
+            font-family: 'Times New Roman', Times, Georgia, serif;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .action-bar {
+            max-width: 210mm;
+            margin: 0 auto 16px;
+            display: flex;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+            gap: 8px;
+            font-family: system-ui, sans-serif;
+        }
+        .btn-print, .btn-report {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 18px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .btn-print { background: #002d62; color: #fff; }
+        .btn-report { background: #fff; color: #002d62; border: 1px solid #002d62; }
+        .sheet-scroll { width: 100%; overflow-x: auto; }
+        .transcript-page {
+            width: 210mm;
+            min-width: 210mm;
+            max-width: 210mm;
+            min-height: 297mm;
+            margin: 0 auto;
+            background: #fff;
+            padding: 10mm 12mm 12mm;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+            position: relative;
+        }
+        .transcript-sheet {
+            position: relative;
+            border: 0;
+            min-height: 273mm;
+            z-index: 1;
+        }
+        .watermark {
+            position: absolute;
+            left: 50%;
+            top: 52%;
+            transform: translate(-50%, -50%);
+            width: min(58%, 150mm);
+            height: auto;
+            opacity: 0.09;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .header {
+            display: table;
+            width: 100%;
+            table-layout: fixed;
+            position: relative;
+            z-index: 1;
+        }
+        .header-center, .header-logo {
+            display: table-cell;
+            vertical-align: middle;
+        }
+        .header-center { text-align: center; padding-right: 8mm; }
+        .header-logo { width: 28mm; text-align: right; }
+        .school-name {
+            margin: 0 0 3px;
+            color: var(--flpa-red);
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            line-height: 1.15;
+        }
+        .header-line {
+            margin: 1px 0;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--ink);
+        }
+        .logo-wrap {
+            display: inline-flex;
+            width: 24mm;
+            height: 24mm;
+            border-radius: 50%;
+            border: 2px solid var(--flpa-red);
+            overflow: hidden;
+            background: #fff;
+            align-items: center;
+            justify-content: center;
+        }
+        .logo-wrap img {
+            width: 22mm;
+            height: 22mm;
+            object-fit: contain;
+        }
+        .header-rule {
+            border: 0;
+            border-top: 1.5px solid var(--flpa-red);
+            margin: 6px 0 8px;
+        }
+        .office-line {
+            margin: 0 0 2px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+        .doc-title {
+            margin: 0 0 8px;
+            text-align: center;
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            text-decoration: underline;
+        }
+        .meta-row {
+            display: table;
+            width: 100%;
+            margin: 0 0 10px;
+            font-size: 13px;
+            font-weight: 700;
+        }
+        .meta-row span { display: table-cell; }
+        .meta-row .grade { text-align: right; }
+        .narrative {
+            margin: 0 0 10px;
+            font-size: 12.5px;
+            line-height: 1.45;
+            text-align: justify;
+        }
+        .narrative strong, .narrative .fill {
+            font-weight: 700;
+            text-decoration: underline;
+        }
+        .record-heading {
+            margin: 0 0 6px;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .grade-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            position: relative;
+            z-index: 1;
+            font-size: 12px;
+        }
+        .grade-table col.subject { width: 40%; }
+        .grade-table col.score { width: 20%; }
+        .grade-table th,
+        .grade-table td {
+            border: 1px solid var(--ink);
+            padding: 3px 6px;
+            vertical-align: middle;
+        }
+        .grade-table th {
+            font-size: 11px;
+            font-weight: 700;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        .grade-table th.subject-head { text-align: left; }
+        .grade-table td.subject-cell { text-align: left; }
+        .grade-table td.score { text-align: center; font-weight: 600; }
+        .grade-table tr.category td {
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            background: #fff;
+        }
+        .grade-table tr.footer-row td {
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+        .mark-fail {
+            color: var(--mark-fail) !important;
+            font-weight: 700;
+        }
+        .signs {
+            display: table;
+            width: 100%;
+            margin-top: 16px;
+            font-size: 13px;
+            font-weight: 700;
+            position: relative;
+            z-index: 1;
+        }
+        .signs .left, .signs .right { display: table-cell; width: 50%; }
+        .signs .right { text-align: right; }
+        .sign-line {
+            display: inline-block;
+            min-width: 42mm;
+            border-bottom: 1px solid var(--ink);
+            margin: 0 6px 2px;
+        }
+        .motto {
+            margin: 18px 0 0;
+            text-align: center;
+            color: var(--flpa-red);
+            font-style: italic;
+            font-size: 13px;
+            font-weight: 700;
+            position: relative;
+            z-index: 1;
+        }
+        @page { size: A4 portrait; margin: 10mm; }
+        @media print {
+            body { background: #fff !important; padding: 0 !important; }
+            .action-bar { display: none !important; }
+            .sheet-scroll { overflow: visible !important; }
+            .transcript-page {
+                width: 100% !important;
+                min-width: 0 !important;
+                max-width: none !important;
+                min-height: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+            }
+            .watermark { opacity: 0.08; }
+        }
+    </style>
+</head>
+<body>
+    {% set brand = data.letterhead or school_print_brand %}
+    <div class="action-bar">
+        {% if student %}
+        <a class="btn-report" href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}">
+            <i class="fas fa-file-invoice"></i> Report Card
+        </a>
+        {% endif %}
+        <button class="btn-print" type="button" onclick="window.print()">
+            <i class="fas fa-print"></i> Print Official Transcript
+        </button>
+    </div>
 
-<p><strong>Student ID:</strong> {{ student.student_id }}</p>
-<p><strong>Overall GPA:</strong> {{ overall_gpa | round(2) }}</p>
-
-{% for year, grades in grades_by_year.items() %}
-<h3>{{ year }}</h3>
-<table class="table table-bordered">
-    <thead>
-        <tr>
-            <th>Period</th>
-            <th>Subject</th>
-            <th>Score</th>
-            <th>Grade</th>
-            <th>Remarks</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for grade in grades %}
-        <tr>
-            <td>{{ grade.period }}</td>
-            <td>{{ grade.subject or 'N/A' }}</td>
-            <td>{{ grade.score or '-' }}</td>
-            <td>{{ grade.score | default(0) | grade_letter }}</td>
-            <td>{{ grade.score | default(0) | remarks }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% endfor %}
-
-<h3>Grading Legend</h3>
-<ul>
-    <li>A: 90-100 (Excellent)</li>
-    <li>B: 80-89 (Very Good)</li>
-    <li>C: 70-79 (Good)</li>
-    <li>D: 60-69 (Satisfactory)</li>
-    <li>F: Below 60 (Failing)</li>
-</ul>
-
-<!-- QR Code for verification -->
-<div class="mt-4 p-3 border rounded bg-light d-inline-block text-center">
-    <img src="data:image/png;base64,{{ qr_code }}" alt="Verification QR Code" class="mb-2">
-    <p class="small text-muted mb-1">Scan to verify authenticity on the school website</p>
-    {% if verify_url %}
-    <p class="small mb-0"><a href="{{ verify_url }}" target="_blank" rel="noopener">{{ verify_url }}</a></p>
-    {% endif %}
-</div>
-{% endblock %}
+    <div class="sheet-scroll">
+    <div class="transcript-page">
+        <img class="watermark" src="{{ school_logo_url }}" alt="" onerror="this.style.display='none'">
+        <div class="transcript-sheet">
+            <div class="header">
+                <div class="header-center">
+                    <h1 class="school-name">{{ brand.name|upper }}</h1>
+                    <p class="header-line">{{ brand.transcript_address or 'CENTER STREET-SOUTH BEACH, MONROVIA, LIBERIA' }}</p>
+                    <p class="header-line">Cell #s: {{ brand.transcript_phones or brand.phones }}</p>
+                    <p class="header-line">E-mail: {{ brand.transcript_email or brand.email_address or brand.email }}</p>
+                </div>
+                <div class="header-logo">
+                    <div class="logo-wrap">
+                        <img src="{{ school_logo_url }}" alt="FLPA Cardinals logo" onerror="this.style.visibility='hidden'">
+                    </div>
+                </div>
+            </div>
+            <hr class="header-rule">
+            <p class="office-line">OFFICE OF THE VICE PRINCIPAL</p>
+            <h2 class="doc-title">OFFICIAL TRANSCRIPT</h2>
+            <div class="meta-row">
+                <span>Date: {{ data.print_date }}</span>
+                <span class="grade">GRADE: {{ data.grade_heading }}</span>
+            </div>
+            <p class="narrative">
+                This document, signed and sealed by the appropriate authorities below, constitutes the Certified Transcript of
+                <span class="fill">{{ data.student_name }}</span>, who has attended the institution for the academic year(s) from
+                <span class="fill">{{ data.first_year }} – {{ data.last_year }}</span>;
+                {% if data.promoted_to == 'Graduation' %}
+                promoted to <span class="fill">Graduation</span>,
+                {% else %}
+                promoted to the <span class="fill">{{ data.promoted_to }}</span> grade,
+                {% endif %}
+                conditioned in <span class="fill">{{ data.conditioned_in }}</span>;
+                retained in grade <span class="fill">{{ data.retained_in }}</span>.
+            </p>
+            <h3 class="record-heading">ACADEMIC RECORD</h3>
+            <table class="grade-table">
+                <colgroup>
+                    <col class="subject">
+                    <col class="score">
+                    <col class="score">
+                    <col class="score">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th class="subject-head">SUBJECT:</th>
+                        <th>1ST SEMESTER</th>
+                        <th>2ND SEMESTER</th>
+                        <th>YEARLY AVG:</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for group in data.groups %}
+                        {% if group.label %}
+                        <tr class="category">
+                            <td class="subject-cell">{{ group.label }}</td>
+                            <td></td><td></td><td></td>
+                        </tr>
+                        {% endif %}
+                        {% for row in group.rows %}
+                        <tr>
+                            <td class="subject-cell">{{ row.name }}</td>
+                            <td class="score">{{ row.sem1 }}</td>
+                            <td class="score">{{ row.sem2 }}</td>
+                            <td class="score {% if row.yearly|score_mark_class == 'mark-fail' %}mark-fail{% endif %}">{{ row.yearly }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="4">No subject grades published for this academic year.</td>
+                        </tr>
+                    {% endfor %}
+                    <tr class="footer-row">
+                        <td class="subject-cell">YEARLY AVERAGE</td>
+                        <td class="score"></td>
+                        <td class="score"></td>
+                        <td class="score {% if data.yearly_average|score_mark_class == 'mark-fail' %}mark-fail{% endif %}">{{ data.yearly_average }}</td>
+                    </tr>
+                    <tr class="footer-row">
+                        <td class="subject-cell">CONDUCT</td>
+                        <td class="score">{{ data.conduct.sem1 if data.conduct else '' }}</td>
+                        <td class="score">{{ data.conduct.sem2 if data.conduct else '' }}</td>
+                        <td class="score">{{ data.conduct.yearly if data.conduct else '' }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="signs">
+                <div class="left">Approved: <span class="sign-line"></span> PRINCIPAL</div>
+                <div class="right">Signed: <span class="sign-line"></span> V.P. INSTRUCTION</div>
+            </div>
+            <p class="motto">Motto: “{{ brand.motto }}”</p>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

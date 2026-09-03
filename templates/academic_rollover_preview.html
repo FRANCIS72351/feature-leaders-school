@@ -42,19 +42,23 @@
 <div class="container-fluid px-4 py-4 rollover-preview">
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-start gap-3 mb-4">
         <div>
-            <h2 class="fw-bold text-white mb-1">
+            <h2 class="fw-bold mb-1" style="color:#0f172a;">
                 <i class="fas fa-arrows-rotate text-cyan me-2"></i>Academic Year Rollover
             </h2>
             <p class="text-muted mb-0">
                 Review promotion outcomes before advancing the active academic year.
-                Promotion uses {{ preview.pass_score }}% average with at most {{ preview.max_failing }} failing subjects.
+                A subject yearly average below {{ preview.pass_score }}% is a red mark
+                (CONDUCT and the footer AVERAGE row are not counted).
+                0–1 red marks may promote if the overall yearly average is also at least {{ preview.pass_score }}%.
+                Exactly {{ preview.max_failing }} red marks → Summer School (stay in class).
+                {{ preview.repeat_failing or 3 }}+ red marks → Repeat class, regardless of overall average.
             </p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
-            <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary text-white">
+            <a href="{{ url_for('dashboard') }}" class="btn btn-dark fw-bold">
                 <i class="fas fa-arrow-left me-1"></i> Dashboard
             </a>
-            <a href="{{ wizard_url }}" class="btn btn-outline-info text-white">
+            <a href="{{ wizard_url }}" class="btn btn-primary fw-bold text-white">
                 <i class="fas fa-wand-magic-sparkles me-1"></i> Full Wizard
             </a>
         </div>
@@ -108,26 +112,33 @@
     </div>
 
     <div class="row g-3 mb-4">
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md">
             <div class="stat-pill text-center">
                 <div class="text-muted small text-uppercase">Enrolled</div>
                 <div class="h3 text-white mb-0">{{ preview.student_total }}</div>
             </div>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md">
             <div class="stat-pill text-center">
                 <div class="text-muted small text-uppercase">Promoted</div>
                 <div class="h3 text-emerald mb-0">{{ preview.promoted }}</div>
             </div>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md">
             <div class="stat-pill text-center">
-                <div class="text-muted small text-uppercase">Did Not Pass</div>
-                <div class="h3 text-rose mb-0">{{ preview.failed }}</div>
-                <div class="small text-muted mt-1">Repeat same grade</div>
+                <div class="text-muted small text-uppercase">Summer School</div>
+                <div class="h3 text-amber mb-0">{{ preview.summer_school }}</div>
+                <div class="small text-muted mt-1">Stay in current class</div>
             </div>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md">
+            <div class="stat-pill text-center">
+                <div class="text-muted small text-uppercase">Did Not Pass</div>
+                <div class="h3 text-rose mb-0">{{ preview.retained }}</div>
+                <div class="small text-muted mt-1">Repeat class</div>
+            </div>
+        </div>
+        <div class="col-6 col-md">
             <div class="stat-pill text-center">
                 <div class="text-muted small text-uppercase">Graduated</div>
                 <div class="h3 text-cyan mb-0">{{ preview.graduated }}</div>
@@ -135,12 +146,21 @@
         </div>
     </div>
 
-    {% if preview.failed %}
+    {% if preview.summer_school %}
+    <div class="warning-banner text-amber mb-3">
+        <i class="fas fa-sun me-2"></i>
+        <strong>{{ preview.summer_school }} student{{ 's' if preview.summer_school != 1 else '' }}</strong>
+        have exactly {{ preview.max_failing }} failing yearly subject averages and will be
+        assigned to <strong>Summer School</strong> (retained in the current class, not promoted).
+    </div>
+    {% endif %}
+
+    {% if preview.retained %}
     <div class="warning-banner text-rose mb-4">
         <i class="fas fa-circle-xmark me-2"></i>
-        <strong>{{ preview.failed }} student{{ 's' if preview.failed != 1 else '' }}</strong>
-        did not meet the {{ preview.pass_score }}% promotion standard and will be marked
-        <strong>FAILED</strong> (repeat grade) during rollover.
+        <strong>{{ preview.retained }} student{{ 's' if preview.retained != 1 else '' }}</strong>
+        must <strong>repeat class</strong>
+        ({{ preview.repeat_failing or 3 }}+ failing yearly averages, or overall average below {{ preview.pass_score }}%).
     </div>
     {% endif %}
 
@@ -174,7 +194,8 @@
             {% endif %}
             <button type="submit" class="btn btn-warning text-dark fw-semibold" id="rolloverExecuteBtn"
                 data-promoted="{{ preview.promoted }}"
-                data-failed="{{ preview.failed }}"
+                data-summer="{{ preview.summer_school }}"
+                data-failed="{{ preview.retained }}"
                 data-graduated="{{ preview.graduated }}"
                 data-next="{{ preview.next_year_name }}"
                 data-repeat="{{ '1' if preview.already_rolled_today else '0' }}">
@@ -194,7 +215,8 @@
             'Execute academic year rollover?',
             '',
             'Promoted: ' + btn.dataset.promoted,
-            'Did not pass: ' + btn.dataset.failed,
+            'Summer school: ' + btn.dataset.summer,
+            'Repeat class: ' + btn.dataset.failed,
             'Graduated: ' + btn.dataset.graduated,
             'New year: ' + btn.dataset.next,
             '',

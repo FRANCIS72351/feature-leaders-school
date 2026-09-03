@@ -1,17 +1,19 @@
 {% set portal_email = student.user.email if student.user else none %}
 {% set portal_phone = student.user.telephone_number if student.user else none %}
 {% set portal_address = student.user.home_address if student.user else none %}
-{% set parent_name = student.parent_user.full_name if student.parent_user else none %}
+{% set parent_name = student.parent_guardian_name or student.guardian_name or (student.parent_user.full_name if student.parent_user else none) %}
 {% set session_name = student.academic_year.name if student.academic_year else (display_year.name if display_year else none) %}
 {% set fee_amount = student.registration_fees %}
-{% set fee_status = student.registration_fee_status if student.registration_fee_status else (
-    'Unpaid' if (fee_amount is not none and fee_amount|float > 0) else none
-) %}
+{% set fee_status = student.registration_fee_status|default(none) %}
+{% if not fee_status and fee_amount is not none and fee_amount|float > 0 %}
+{% set fee_status = 'Unpaid' %}
+{% endif %}
 
 <article class="student-file-card">
+    {% include 'partials/retention_placement_banner.html' %}
     <div class="student-file-head">
         <div class="student-file-photo">
-            <img src="{{ student.photo_url }}" alt="{{ student.full_name }}" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
+            <img src="{{ student.photo_url }}" alt="{{ student.full_name }}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
         </div>
         <div class="student-file-identity">
             <h6 class="student-file-name">{{ student.full_name }}</h6>
@@ -42,7 +44,7 @@
         {% if student.status %}
         <div class="student-file-field">
             <span class="student-file-label">Status</span>
-            <span class="student-file-value">{{ student.status }}</span>
+            <span class="student-file-value">{% include 'partials/roster_status_pill.html' %}</span>
         </div>
         {% endif %}
         {% if student.level %}
@@ -118,9 +120,135 @@
         </div>
         {% endif %}
     </div>
+    {% set receipt_map = registration_receipt_payments|default({}) %}
+    {% set receipt_payment = receipt_map.get(student.id) %}
     <div class="student-file-actions">
+        <a href="{{ url_for('report_card', student_id=student.id) }}{% if display_year %}?academic_year_id={{ display_year.id }}{% endif %}" class="btn-folder-print" title="Grade sheet" aria-label="Grade sheet">
+            <i class="fas fa-file-alt" aria-hidden="true"></i> Grade sheet
+        </a>
+        <a href="{{ url_for('transcript', student_id=student.id) }}{% if display_year %}?academic_year_id={{ display_year.id }}{% endif %}" class="btn-folder-print" target="_blank" rel="noopener" title="Official Transcript">
+            <i class="fas fa-scroll" aria-hidden="true"></i> Official Transcript
+        </a>
+        <a href="{{ url_for('print_registrar_student', student_id=student.id) }}" class="btn-folder-print" target="_blank" rel="noopener">
+            <i class="fas fa-print"></i> Print file
+        </a>
+        {% if student.user %}
+        <a href="{{ url_for('print_registrar_credential_slip', student_id=student.id) }}" class="btn-folder-print" target="_blank" rel="noopener">
+            <i class="fas fa-key"></i> Print login slip
+        </a>
+        {% endif %}
+        {% if receipt_payment %}
+        <a href="{{ url_for('print_registrar_registration_receipt', payment_id=receipt_payment.id) }}" class="btn-folder-print" target="_blank" rel="noopener">
+            <i class="fas fa-file-invoice-dollar"></i> Print receipt
+        </a>
+        {% endif %}
         <a href="{{ url_for('edit_student', student_id=student.id, return_to='class_roster') }}" class="btn-folder-edit">
             <i class="fas fa-pen-to-square"></i> Edit
         </a>
+        {% if student.id_card_ready %}
+        <a href="{{ url_for('print_student_id_card', student_id=student.id) }}" class="btn-folder-print" target="_blank" rel="noopener">
+            <i class="fas fa-id-card"></i> Print ID card
+        </a>
+        {% endif %}
     </div>
+    <section class="student-id-setup" aria-label="Student ID card">
+        <div class="student-id-setup-head">
+            <h6 class="student-id-setup-title"><i class="fas fa-id-card me-1"></i> ID card</h6>
+            {% if student.id_card_ready %}
+            <span class="id-ready-chip ready">Ready to print</span>
+            {% elif student.official_signature_mark %}
+            <span class="id-ready-chip pending">Needs photo</span>
+            {% else %}
+            <span class="id-ready-chip pending">Needs photo &amp; name</span>
+            {% endif %}
+        </div>
+        <p class="student-id-setup-hint">Enter the parent/guardian name so it prints on the card. The system generates a signature from the last name and first-name initial (e.g. Reawes P.). A photo is still required; uploading a handwritten signature is optional. Cards print when the student also has a class and ID number.</p>
+        <div class="student-id-previews">
+            <div class="id-preview">
+                <img src="{{ student.photo_url }}" alt="ID photo" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
+                <span>Photo</span>
+            </div>
+            <div class="id-preview">
+                {% if student.signature_url %}
+                <img src="{{ student.signature_url }}" alt="Signature">
+                {% elif student.official_signature_mark %}
+                <div class="sig-mark">{{ student.official_signature_mark }}</div>
+                {% else %}
+                <i class="fas fa-signature"></i>
+                {% endif %}
+                <span>Signature</span>
+            </div>
+        </div>
+        <form method="POST" action="{{ url_for('setup_student_id_card', student_id=student.id) }}" enctype="multipart/form-data" class="student-id-setup-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label class="id-file-label id-guardian-label">Parent / Guardian (prints on ID)
+                <input type="text" name="guardian_name" maxlength="120" autocomplete="name" placeholder="Name as printed on the ID card" value="{{ student.guardian_name or student.parent_guardian_name or '' }}">
+            </label>
+            <label class="id-file-label">Photo
+                <input type="file" name="photo" accept="image/*">
+            </label>
+            <label class="id-file-label">Signature (optional)
+                <input type="file" name="signature" accept="image/*">
+            </label>
+            <label class="id-file-label">Expires
+                <input type="date" name="id_expiration_date" value="{{ student.id_expiration_date.isoformat() if student.id_expiration_date else '' }}">
+            </label>
+            <button type="submit" class="btn-folder-scan">Save ID files</button>
+        </form>
+    </section>
+    {% set filed_docs = student.registry_documents or [] %}
+    <section class="student-doc-vault" aria-label="Student documents">
+        <div class="student-doc-vault-head">
+            <h6 class="student-doc-vault-title"><i class="fas fa-file-invoice me-1"></i> Document vault</h6>
+            <span class="student-doc-vault-count">{{ filed_docs|length }} filed</span>
+        </div>
+        <p class="student-doc-vault-hint">Scan a paper with the phone camera or upload a photo/PDF. It is stored only in this student’s folder.</p>
+        <form method="POST" action="{{ url_for('upload_registrar_student_document', student_id=student.id) }}" enctype="multipart/form-data" class="student-doc-scan-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="scan-row">
+                <select name="doc_type" aria-label="Document type">
+                    <option value="birth_certificate">Birth certificate</option>
+                    <option value="national_id">National ID / passport</option>
+                    <option value="report_card">Report card</option>
+                    <option value="medical">Medical record</option>
+                    <option value="transfer">Transfer letter</option>
+                    <option value="photo_id">Student photo ID</option>
+                    <option value="other" selected>Other document</option>
+                </select>
+                <input type="text" name="title" maxlength="200" placeholder="Label (optional)" aria-label="Document label">
+            </div>
+            <div class="student-doc-scan-actions">
+                <input type="file" id="scan-cam-{{ student.id }}" name="scan_file" accept="image/*" capture="environment" onchange="this.form.submit()">
+                <label for="scan-cam-{{ student.id }}" class="btn-folder-scan"><i class="fas fa-camera"></i> Scan page</label>
+                <input type="file" id="scan-file-{{ student.id }}" name="upload_file" accept="image/*,application/pdf,.pdf" onchange="this.form.submit()">
+                <label for="scan-file-{{ student.id }}" class="btn-folder-upload"><i class="fas fa-cloud-arrow-up"></i> Upload file</label>
+            </div>
+        </form>
+        {% if filed_docs %}
+        <ul class="student-doc-list">
+            {% for doc in filed_docs %}
+            <li class="student-doc-item">
+                <div class="student-doc-thumb">
+                    {% if doc.is_image %}
+                    <img src="{{ url_for('view_registrar_student_document', student_id=student.id, document_id=doc.id) }}" alt="{{ doc.title }}" loading="lazy" decoding="async">
+                    {% else %}
+                    <i class="fas fa-file-pdf"></i>
+                    {% endif %}
+                </div>
+                <div class="student-doc-meta">
+                    <span class="doc-title">{{ doc.title }}</span>
+                    <span class="doc-sub">{{ doc.type_label }}{% if doc.created_at %} · {{ doc.created_at.strftime('%b %d, %Y') }}{% endif %}{% if doc.ocr_text %} · text indexed{% endif %}</span>
+                </div>
+                <div class="student-doc-item-actions">
+                    <a href="{{ url_for('view_registrar_student_document', student_id=student.id, document_id=doc.id) }}" target="_blank" rel="noopener">Open</a>
+                    <form method="POST" action="{{ url_for('delete_registrar_student_document', student_id=student.id, document_id=doc.id) }}" onsubmit="return confirm('Remove this document from the folder?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit">Remove</button>
+                    </form>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </section>
 </article>

@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% block title %}Student ID Cards{% endblock %}
+{% block content %}
+<style>
+    .id-hub { max-width: 1100px; margin: 0 auto; }
+    .id-hub-hero {
+        background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
+        color: #fff;
+        border-radius: 16px;
+        padding: 1.4rem 1.5rem;
+        margin-bottom: 1.25rem;
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+    .id-hub-hero h1 { font-size: 1.45rem; margin: 0 0 0.35rem; font-family: var(--font-display); }
+    .id-hub-hero p { margin: 0; color: #cbd5e1; font-size: 0.9rem; }
+    .id-stat { background: rgba(255,255,255,0.08); border-radius: 12px; padding: 0.7rem 1rem; min-width: 8rem; }
+    .id-stat strong { display: block; font-size: 1.35rem; color: #fbbf24; }
+    .id-stat span { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; }
+    .id-group { margin-bottom: 1.5rem; }
+    .id-group h2 { font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; color: #c82828; margin-bottom: 0.65rem; }
+    .id-class-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.85rem; }
+    .id-class-card {
+        background: #fff;
+        border: 1px solid #ead4d4;
+        border-left: 4px solid #c82828;
+        border-radius: 12px;
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+    }
+    .id-class-card h3 { margin: 0; font-size: 1rem; }
+    .id-class-meta { font-size: 0.82rem; color: #6b7280; }
+    .id-ready { font-weight: 800; color: #047857; font-size: 0.85rem; }
+    .id-ready.none { color: #b91c1c; }
+    .id-class-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: auto; }
+    .id-class-actions a {
+        flex: 1;
+        text-align: center;
+        text-decoration: none;
+        font-size: 0.78rem;
+        font-weight: 700;
+        border-radius: 8px;
+        padding: 0.4rem 0.5rem;
+    }
+    .btn-print-ids { background: #c82828; color: #fff; }
+    .btn-download-ids { background: #002d62; color: #c9a227; border: 1px solid #c9a227; }
+    .btn-open-roster { background: #fff; color: #c82828; border: 1px solid #c82828; }
+</style>
+
+<div class="container py-4 id-hub">
+    <div class="id-hub-hero">
+        <div>
+            <h1><i class="fas fa-id-card me-2"></i>Student ID Cards</h1>
+            <p>Upload a photo in each student folder. The signature is generated automatically (Lastname F.). Then print or download a class folder of CR80 cards. QR codes open the public student verification page.</p>
+            <p class="mt-2 mb-0">Session: <strong>{{ display_year.name if display_year else 'No academic year selected' }}</strong></p>
+            <p class="mt-2 mb-0" style="color:#cbd5e1;font-size:0.82rem;">On iPhone, tap Share → Save to Files.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <div class="id-stat"><strong>{{ ready_total }}</strong><span>Ready to print</span></div>
+            <div class="id-stat"><strong>{{ roster_total }}</strong><span>On roster</span></div>
+        </div>
+    </div>
+
+    <p class="mb-3">
+        <a href="{{ url_for('dashboard') }}#student-roster" class="btn btn-sm btn-outline-secondary">
+            <i class="fas fa-folder-open me-1"></i> Open class folders
+        </a>
+        <a href="{{ url_for('staff_id_cards_folder') }}" class="btn btn-sm btn-outline-danger ms-2">
+            <i class="fas fa-user-tie me-1"></i> Staff &amp; Teacher IDs
+        </a>
+    </p>
+
+    {% if groups %}
+        {% for group in groups %}
+        <section class="id-group">
+            <h2>{{ group.label }}</h2>
+            <div class="id-class-grid">
+                {% for klass in group.classes %}
+                {% set stats = class_stats.get(klass.id, {'total': 0, 'ready': 0}) %}
+                <article class="id-class-card">
+                    <h3>{{ klass.name }}</h3>
+                    <div class="id-class-meta">{{ stats.total }} {{ 'student' if stats.total == 1 else 'students' }}</div>
+                    <div class="id-ready{% if not stats.ready %} none{% endif %}">{{ stats.ready }} ready</div>
+                    <div class="id-class-actions">
+                        <a class="btn-open-roster" href="{{ url_for('dashboard') }}#folder-{{ klass.id }}">Folder</a>
+                        {% if stats.ready %}
+                        <a class="btn-print-ids" href="{{ url_for('print_class_id_cards', class_id=klass.id) }}" target="_blank" rel="noopener">Print IDs</a>
+                        <form method="post" action="{{ url_for('refresh_class_id_photos', class_id=klass.id) }}" style="flex:1;margin:0;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button class="btn-open-roster" type="submit" style="width:100%;cursor:pointer;">Refresh ID photos</button>
+                        </form>
+                        <a class="btn-download-ids" href="{{ url_for('download_class_id_cards', class_id=klass.id) }}" download="{{ stats.download_filename or 'FLPA_ID_Cards.pdf' }}">Download IDs</a>
+                        {% else %}
+                        <a class="btn-print-ids" href="{{ url_for('dashboard') }}#folder-{{ klass.id }}" style="opacity:.55;">Need photos</a>
+                        {% endif %}
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+        {% endfor %}
+    {% else %}
+        <p class="text-muted">No class folders are mapped yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

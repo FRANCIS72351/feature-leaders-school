@@ -11,7 +11,9 @@ from models import AcademicYear, Class, ClassSubjectTeacher, SecurityLog, Studen
 
 INACTIVE_STATUSES = frozenset({'inactive', 'terminated', 'disabled', 'suspended'})
 ALUMNI_STATUSES = frozenset({'ALUMNI', 'GRADUATED'})
-ACTIVE_ENROLLMENT_STATUSES = frozenset({'ACTIVE', 'REPEAT', 'FAILED', 'SUSPENDED'})
+ACTIVE_ENROLLMENT_STATUSES = frozenset({
+    'ACTIVE', 'REPEAT', 'FAILED', 'SUSPENDED', 'SUMMER_SCHOOL',
+})
 
 
 def user_account_is_active(user) -> bool:

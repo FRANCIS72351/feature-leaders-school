@@ -90,11 +90,15 @@
         </p>
     </div>
 
-    {% if active_year %}
+    {% if display_year %}
     <div class="alert bg-dark border border-cyan border-opacity-25 text-white mb-3 py-2 px-3 rounded-3 d-flex align-items-center" role="status">
         <i class="fas fa-calendar-check text-cyan me-2"></i>
-        <span>Academic Year: <strong class="text-cyan">{{ active_year.name }}</strong></span>
+        <span>Academic Year: <strong class="text-cyan">{{ display_year.name }}</strong></span>
+        {% if active_year and display_year.id == active_year.id %}
         <span class="badge bg-success bg-opacity-10 text-emerald border border-success border-opacity-25 ms-2 small">Active</span>
+        {% else %}
+        <span class="badge bg-secondary bg-opacity-10 text-white border border-secondary border-opacity-25 ms-2 small">Archive</span>
+        {% endif %}
     </div>
     {% endif %}
 
@@ -123,12 +127,18 @@
         {% endif %}
     </form>
 
+    {% set ns = namespace(review_groups=class_cards_by_division or []) %}
+    {% if not ns.review_groups and class_cards %}
+        {% set ns.review_groups = [{'label': 'Classes', 'classes': class_cards}] %}
+    {% endif %}
+
     <div class="row g-3">
-        {% for group in class_cards_by_division %}
+        {% if ns.review_groups %}
+        {% for group in ns.review_groups %}
         <div class="col-12 pt-2">
             <div class="text-cyan small fw-semibold text-uppercase" style="font-size:0.72rem; letter-spacing:0.08em;">{{ group.label }}</div>
         </div>
-        {% for card in group.classes %}
+        {% for card in group['classes'] %}
         <div class="col-md-6 col-lg-4">
             <a href="{{ url_for('principal_class_grading', class_id=card.klass.id) }}" class="pge-class-card">
                 <div class="mb-2">
@@ -161,12 +171,13 @@
             </a>
         </div>
         {% endfor %}
+        {% endfor %}
         {% else %}
         <div class="col-12 text-center py-5 text-cyan small">
             <i class="fas fa-folder-open opacity-25 me-1.5"></i>
             {% if search_class %}No classes match your filter.{% else %}No classes are configured yet.{% endif %}
         </div>
-        {% endfor %}
+        {% endif %}
     </div>
 </div>
 {% endblock %}

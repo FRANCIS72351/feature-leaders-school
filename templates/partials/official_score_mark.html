@@ -1,0 +1,3 @@
+{% macro score_td(value, blank_empty=False) -%}
+<td class="score-mark {{ value|score_mark_class }}">{% if value not in [None, ''] %}{{ value }}{% elif not blank_empty %}—{% endif %}</td>
+{%- endmacro %}

@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}{{ hold_page_title or 'Report Under Review' }}{% endblock %}
+
+{% block content %}
+<style>
+    .report-hold-shell {
+        min-height: calc(100vh - 120px);
+        padding: 2.25rem 1rem 3rem;
+        background: linear-gradient(165deg, #002d62 0%, #0b1f3a 48%, #f8fafc 48%);
+    }
+    .report-hold-card {
+        max-width: 640px;
+        margin: 0 auto;
+        background: #fff;
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 18px 46px rgba(15, 23, 42, 0.16);
+        border: 1px solid #dbe7f3;
+    }
+    .report-hold-banner {
+        background: #002d62;
+        color: #fff;
+        padding: 1.6rem 1.75rem 1.4rem;
+        text-align: center;
+    }
+    .report-hold-banner .eyebrow {
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-size: 0.72rem;
+        color: #f8d4d4;
+        font-weight: 700;
+    }
+    .report-hold-banner h1 {
+        margin: 0.4rem 0 0;
+        font-size: 1.35rem;
+        font-weight: 800;
+    }
+    .report-hold-body { padding: 1.6rem 1.75rem 1.85rem; color: #334155; }
+    .report-hold-icon {
+        width: 58px;
+        height: 58px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1rem;
+        background: rgba(200, 40, 40, 0.1);
+        color: #c82828;
+        font-size: 1.35rem;
+    }
+    .report-hold-message {
+        font-size: 1.05rem;
+        font-weight: 600;
+        color: #0f172a;
+        text-align: center;
+        line-height: 1.5;
+    }
+    .report-hold-meta {
+        margin-top: 1.25rem;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 0.9rem 1rem;
+        font-size: 0.9rem;
+    }
+    .report-hold-actions { margin-top: 1.35rem; text-align: center; }
+    .btn-hold-home {
+        background: #002d62;
+        color: #fff !important;
+        border: none;
+        border-radius: 10px;
+        padding: 0.65rem 1.15rem;
+        font-weight: 700;
+        text-decoration: none !important;
+        display: inline-block;
+    }
+    .btn-hold-home:hover { background: #c82828; color: #fff !important; }
+</style>
+
+<div class="report-hold-shell">
+    <div class="report-hold-card">
+        <div class="report-hold-banner">
+            <div class="eyebrow">{{ school_print_brand.name if school_print_brand else 'Feature Leaders Preparatory Academy' }}</div>
+            <h1>{{ hold_title or 'Official report under review' }}</h1>
+        </div>
+        <div class="report-hold-body">
+            <div class="report-hold-icon"><i class="fas fa-hourglass-half"></i></div>
+            <p class="report-hold-message mb-0">{{ hold_message }}</p>
+            <div class="report-hold-meta">
+                {% if student %}
+                <div><strong>Student:</strong> {{ student.full_name }}</div>
+                {% endif %}
+                {% if display_year %}
+                <div class="mt-1"><strong>Academic year:</strong> {{ display_year.name }}</div>
+                {% endif %}
+                <div class="mt-1 text-muted">{{ hold_meta or 'Draft standing on My Grades is unchanged. The official grade sheet and report card unlock after VPA approval.' }}</div>
+            </div>
+            <div class="report-hold-actions">
+                {% if parent_qr_view and parent_report_token %}
+                <a class="btn-hold-home" href="{{ url_for('parent_report_gate', token=parent_report_token, academic_year_id=display_year.id if display_year else none) }}">Return</a>
+                {% elif current_user.is_authenticated and (current_user.role or '')|lower == 'student' %}
+                <a class="btn-hold-home" href="{{ url_for('student_dashboard', tab='grades', academic_year_id=display_year.id if display_year else none) }}">Back to My Grades</a>
+                {% else %}
+                <a class="btn-hold-home" href="{{ url_for('dashboard') }}">Return to dashboard</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

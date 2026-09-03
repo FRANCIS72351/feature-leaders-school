@@ -1,0 +1,25 @@
+{# GET year picker for registrar (and similar) dashboards. Uses academic_year_id. #}
+{% set switch_endpoint = switch_endpoint|default('registrar_dashboard') %}
+<form method="get" action="{{ url_for(switch_endpoint) }}" class="d-flex flex-wrap align-items-center gap-2 academic-year-switcher" id="{{ switcher_id|default('academicYearSwitcher') }}">
+    {% if roster_view == 'alumni' %}<input type="hidden" name="view" value="alumni">{% endif %}
+    {% if search_class %}<input type="hidden" name="search_class" value="{{ search_class }}">{% endif %}
+    {% if search_student %}<input type="hidden" name="search_student" value="{{ search_student }}">{% endif %}
+    {% if prev_year_url %}
+    <a href="{{ prev_year_url }}" class="btn btn-sm btn-outline-light" title="Previous academic session" aria-label="Previous academic session">&lsaquo;</a>
+    {% else %}
+    <button type="button" class="btn btn-sm btn-outline-secondary" disabled aria-label="No previous academic session">&lsaquo;</button>
+    {% endif %}
+    <label for="{{ switcher_id|default('academicYearSwitcher') }}Select" class="visually-hidden">Academic session</label>
+    <select name="academic_year_id" id="{{ switcher_id|default('academicYearSwitcher') }}Select" class="form-select form-cyber form-select-sm" style="min-width: 160px;" onchange="this.form.submit()">
+        {% for y in years %}
+        <option value="{{ y.id }}" {% if display_year and y.id == display_year.id %}selected{% endif %}>
+            {{ y.name }}{% if y.is_active %} (Active){% endif %}
+        </option>
+        {% endfor %}
+    </select>
+    {% if next_year_url %}
+    <a href="{{ next_year_url }}" class="btn btn-sm btn-outline-light" title="Next academic session" aria-label="Next academic session">&rsaquo;</a>
+    {% else %}
+    <button type="button" class="btn btn-sm btn-outline-secondary" disabled aria-label="No next academic session">&rsaquo;</button>
+    {% endif %}
+</form>

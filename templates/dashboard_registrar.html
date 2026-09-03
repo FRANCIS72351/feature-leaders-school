@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Registrar Executive Management Dashboard{% endblock %}
 {% block content %}
+{% include 'partials/roster_status_styles.html' %}
 
 <style>
     /* System Global Workspace Theme Variables */
@@ -98,7 +99,8 @@
     @keyframes dashboardFadeGlide { to { opacity: 1; transform: translateY(0); } }
 
     .form-cyber:read-only,
-    .form-cyber.field-locked {
+    .form-cyber.field-locked,
+    .form-cyber:disabled {
         background: rgba(30, 41, 59, 0.6) !important;
         color: #94a3b8 !important;
         cursor: not-allowed;
@@ -118,6 +120,22 @@
         background: rgba(16, 185, 129, 0.1);
         border-color: rgba(16, 185, 129, 0.3);
         color: #6ee7b7;
+    }
+    .lookup-banner.repeat-class {
+        background: #c82828;
+        border-color: #9f1f1f;
+        color: #ffffff;
+        font-size: 1.05rem;
+        font-weight: 700;
+        padding: 1rem 1.15rem;
+    }
+    .lookup-banner.summer-school {
+        background: #002d62;
+        border-color: #1e3a5f;
+        color: #f8fafc;
+        font-size: 1.05rem;
+        font-weight: 700;
+        padding: 1rem 1.15rem;
     }
     .lookup-banner.new-student {
         background: rgba(56, 189, 248, 0.08);
@@ -197,6 +215,26 @@
         background: rgba(16, 185, 129, 0.12);
         border: 1px solid rgba(16, 185, 129, 0.35);
         color: #6ee7b7;
+    }
+    .enroll-type-badge.repeat-class {
+        background: #c82828;
+        border: 1px solid #9f1f1f;
+        color: #ffffff;
+        font-size: 1rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        padding: 0.85rem 1.1rem;
+    }
+    .enroll-type-badge.summer-school {
+        background: #002d62;
+        border: 1px solid #1e3a5f;
+        color: #f8fafc;
+        font-size: 1rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        padding: 0.85rem 1.1rem;
     }
     .enroll-type-badge.new-student {
         background: rgba(56, 189, 248, 0.1);
@@ -452,6 +490,10 @@
     .registrar-terminal #student-enrollment .registrar-enroll-desc {
         color: var(--primary-brand, #c82828) !important;
     }
+    .registrar-terminal .academic-session-heading {
+        color: var(--primary-brand, #c82828) !important;
+        -webkit-text-fill-color: var(--primary-brand, #c82828) !important;
+    }
     .reg-fee-card .form-label,
     .reg-fee-card label,
     #registrationFeeSection label[for="academic_year"] {
@@ -459,6 +501,158 @@
     }
     .receipt-field-wrap.is-inactive {
         display: none;
+    }
+
+    .enroll-help-label {
+        color: #e8eef7 !important;
+        font-weight: 600;
+    }
+    .enroll-help-text {
+        color: #d5deea !important;
+        font-size: 0.78rem;
+        margin-top: 0.35rem;
+    }
+    #student-enrollment .form-label.small.text-muted {
+        color: #e8eef7 !important;
+        font-weight: 600;
+    }
+    .id-photo-well {
+        width: 132px;
+        height: 132px;
+        max-width: 42vw;
+        aspect-ratio: 1 / 1;
+        border-radius: 10px;
+        overflow: hidden;
+        background: #0B192C;
+        border: 3px solid #c9a227;
+        box-shadow: 0 0 0 3px #002d62, 0 8px 18px rgba(0, 0, 0, 0.35);
+        margin-bottom: 0.65rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+    }
+    .id-photo-well img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+    .id-photo-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.35rem;
+        color: #d5deea;
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-align: center;
+        padding: 0.5rem;
+        line-height: 1.25;
+    }
+    .id-photo-empty i {
+        font-size: 1.45rem;
+        color: #c9a227;
+    }
+    .academic-division-readout {
+        margin-top: 0.45rem;
+    }
+    .division-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        background: rgba(201, 162, 39, 0.14);
+        border: 1px solid #c9a227;
+        color: #f3e3a6;
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        padding: 0.28rem 0.65rem;
+        border-radius: 999px;
+    }
+
+    /* Class Folders sidebar — keep logo, gold/navy actions, and cardinal search inside the card */
+    .class-folders-panel {
+        overflow-x: hidden;
+        min-width: 0;
+        max-width: 100%;
+    }
+    .class-folders-panel-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem 0.65rem;
+        min-width: 0;
+        max-width: 100%;
+        overflow-x: hidden;
+        margin-bottom: 0.75rem;
+    }
+    .class-folders-panel-title {
+        flex: 0 1 auto;
+        min-width: 0;
+        margin: 0;
+        color: #ffffff;
+        font-weight: 700;
+    }
+    .class-folders-panel-title i {
+        color: #d4af37;
+    }
+    .class-folders-panel-tools {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.45rem;
+        flex: 1 1 auto;
+        min-width: 0;
+        max-width: 100%;
+    }
+    .class-folders-panel-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.4rem;
+        flex: 0 1 auto;
+    }
+    .class-folders-panel-buttons .btn {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+    .class-folders-search-group {
+        display: flex;
+        align-items: stretch;
+        gap: 0.3rem;
+        flex: 1 1 auto;
+        min-width: min(100%, 12rem);
+        max-width: 100%;
+        overflow: hidden;
+    }
+    .class-folders-search-fields {
+        display: flex;
+        align-items: stretch;
+        gap: 0.3rem;
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+    }
+    .class-folders-search-fields input {
+        flex: 1 1 auto;
+        min-width: 0;
+        max-width: 100%;
+        width: auto;
+        font-size: 0.75rem;
+    }
+    .class-folders-search-group .btn {
+        flex: 0 0 auto;
+        flex-shrink: 0;
+        background-color: #c82828;
+        border-color: #c82828;
+        color: #fff;
+    }
+    .class-folders-search-group .btn:hover {
+        background-color: #a32020;
+        border-color: #a32020;
+        color: #fff;
     }
 </style>
 
@@ -473,11 +667,20 @@
                 <a href="{{ url_for('register_student', academic_year_id=display_year.id if display_year else None) }}" class="btn btn-sm btn-emerald py-1 px-3">Register Student</a>
                 <a href="#student-enrollment" class="btn btn-sm btn-outline-light py-1 px-3">Enrollment Form</a>
                 <a href="#student-roster" class="btn btn-sm btn-outline-secondary py-1 px-3">View Class Folders</a>
+                <a href="{{ url_for('id_cards_folder_hub') }}" class="btn btn-sm btn-outline-warning py-1 px-3"><i class="fas fa-id-card me-1"></i>ID Cards</a>
             </div>
         </div>
-        <span class="badge bg-dark border border-secondary border-opacity-20 registrar-ledger-sync px-3 py-2 mt-3 mt-md-0 rounded-3">
-            <i class="fas fa-server me-2"></i>Ledger Sync: Active
-        </span>
+        <div class="d-flex flex-column align-items-stretch align-items-md-end gap-2 mt-3 mt-md-0">
+            {% if years %}
+            <div class="d-flex flex-column align-items-stretch align-items-md-end gap-1">
+                <span class="academic-session-heading small text-uppercase" style="font-size:0.7rem;letter-spacing:0.04em;">Academic Session</span>
+                {% include 'partials/academic_year_switcher.html' %}
+            </div>
+            {% endif %}
+            <span class="badge bg-dark border border-secondary border-opacity-20 registrar-ledger-sync px-3 py-2 rounded-3">
+                <i class="fas fa-server me-2"></i>Ledger Sync: Active
+            </span>
+        </div>
     </div>
 
     <div class="row g-3 mb-4 fade-glide-in delay-1">
@@ -546,7 +749,7 @@
                     {% if roster_view == 'alumni' %}
                     Alumni records grouped by class folder for {{ display_year.name if display_year else 'the selected year' }}.
                     {% else %}
-                    Open a class folder to review every registered student for {{ display_year.name if display_year else 'the selected year' }}.
+                    Open a class folder, then a student folder, to view that student's registry file for {{ display_year.name if display_year else 'the selected year' }}.
                     {% endif %}
                 </p>
             </div>
@@ -554,10 +757,28 @@
                 <a href="{{ url_for('registrar_dashboard', view='active', **year_param) }}#student-roster" class="btn btn-sm {% if roster_view != 'alumni' %}btn-emerald{% else %}btn-outline-light{% endif %} py-1 px-3">Active</a>
                 <a href="{{ url_for('registrar_dashboard', view='alumni', **year_param) }}#student-roster" class="btn btn-sm {% if roster_view == 'alumni' %}btn-emerald{% else %}btn-outline-light{% endif %} py-1 px-3">Alumni</a>
                 <span class="badge bg-dark border border-secondary border-opacity-20 text-white-50 px-3 py-2 rounded-3">
-                    {{ students|length }} records · {{ roster_folders|length if roster_folders else 0 }} folders
+                    {{ roster_record_count if roster_record_count is defined else students|length }} records · {{ roster_folders|length if roster_folders else 0 }} folders
                 </span>
             </div>
         </div>
+        <form method="get" action="{{ url_for('dashboard') }}" class="row g-2 align-items-end mb-3" id="rosterFolderSearch">
+            {% if display_year %}<input type="hidden" name="academic_year_id" value="{{ display_year.id }}">{% endif %}
+            {% if roster_view == 'alumni' %}<input type="hidden" name="view" value="alumni">{% endif %}
+            <div class="col-md-4">
+                <label class="form-label small text-muted mb-1" for="roster_search_class">Class folder</label>
+                <input type="text" id="roster_search_class" name="search_class" class="form-control form-cyber form-control-sm" placeholder="e.g. 11th, Grade 8, K-1" value="{{ search_class or '' }}">
+            </div>
+            <div class="col-md-5">
+                <label class="form-label small text-muted mb-1" for="roster_search_student">Student in that folder</label>
+                <input type="text" id="roster_search_student" name="search_student" class="form-control form-cyber form-control-sm" placeholder="Name or student ID" value="{{ search_student or '' }}">
+            </div>
+            <div class="col-md-3 d-flex gap-1">
+                <button type="submit" class="btn btn-sm btn-primary flex-grow-1"><i class="fas fa-magnifying-glass me-1"></i>Find</button>
+                {% if search_class or search_student %}
+                <a href="{{ url_for('dashboard', **year_param) }}{% if roster_view == 'alumni' %}{% if year_param %}&{% else %}?{% endif %}view=alumni{% endif %}#student-roster" class="btn btn-sm btn-secondary">Clear</a>
+                {% endif %}
+            </div>
+        </form>
         {% include 'partials/registrar_roster_folders.html' %}
     </div>
 
@@ -568,36 +789,46 @@
                 <i class="fas fa-archive fa-fw fa-lg"></i>
             </div>
             <div>
-                <span class="text-white-50 small d-block uppercase tracking-wider" style="font-size:0.7rem;">Historical Academic Session</span>
-                <strong class="text-amber">Viewing: {{ display_year.name }} (Archived)</strong>
+                <span class="academic-session-heading small d-block uppercase tracking-wider" style="font-size:0.7rem;">Historical Academic Session</span>
+                <strong class="academic-session-heading">Viewing: {{ display_year.name }} (Archived)</strong>
                 <span class="text-muted small ms-2">Records scoped to this year only</span>
             </div>
         </div>
-        {% if active_year %}
-        <a href="{{ url_for('dashboard', academic_year_id=active_year.id) }}" class="btn btn-sm btn-outline-success">
-            <i class="fas fa-arrow-left me-1"></i> Return to Active Year ({{ active_year.name }})
-        </a>
-        {% endif %}
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            {% with switcher_id='archivedYearSwitcher' %}
+            {% include 'partials/academic_year_switcher.html' %}
+            {% endwith %}
+            {% if active_year %}
+            <a href="{{ url_for('registrar_dashboard', academic_year_id=active_year.id) }}" class="btn btn-sm btn-outline-success">
+                <i class="fas fa-arrow-left me-1"></i> Return to Active Year ({{ active_year.name }})
+            </a>
+            {% endif %}
+        </div>
     </div>
     {% elif display_year and display_year.is_active %}
-    <div class="alert bg-dark border border-cyan border-opacity-25 text-white mb-4 shadow-sm rounded-3 fade-glide-in delay-1 d-flex align-items-center">
-        <div class="p-2 bg-cyan bg-opacity-10 rounded-3 me-3 text-cyan border border-cyan border-opacity-10">
-            <i class="fas fa-calendar-check fa-fw fa-lg"></i>
+    <div class="alert bg-dark border border-cyan border-opacity-25 text-white mb-4 shadow-sm rounded-3 fade-glide-in delay-1 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div class="d-flex align-items-center">
+            <div class="p-2 bg-cyan bg-opacity-10 rounded-3 me-3 text-cyan border border-cyan border-opacity-10">
+                <i class="fas fa-calendar-check fa-fw fa-lg"></i>
+            </div>
+            <div>
+                <span class="academic-session-heading small d-block uppercase tracking-wider" style="font-size:0.7rem;">Active System Academic Term Session</span>
+                <strong class="academic-session-heading">Viewing: {{ display_year.name }} (Active)</strong>
+                <span class="badge bg-cyan bg-opacity-10 text-cyan small border border-cyan border-opacity-10 ms-2">Active</span>
+                {% if counts and counts.students is defined %}
+                <span class="text-emerald small ms-2"><i class="fas fa-user-check me-1"></i>{{ counts.students }} student{{ 's' if counts.students != 1 else '' }} enrolled this year</span>
+                {% if counts.pending_registration %}
+                <span class="text-amber small ms-2"><i class="fas fa-hourglass-half me-1"></i>{{ counts.pending_registration }} awaiting re-registration</span>
+                {% endif %}
+                {% endif %}
+                {% if display_year.start_date %}
+                <span class="text-muted ms-2">({{ display_year.start_date }}{% if display_year.end_date %} to {{ display_year.end_date }}{% endif %})</span>
+                {% endif %}
+            </div>
         </div>
-        <div>
-            <span class="text-white-50 small d-block uppercase tracking-wider" style="font-size:0.7rem;">Active System Academic Term Session</span>
-            <strong class="text-cyan">Viewing: {{ display_year.name }} (Active)</strong>
-            <span class="badge bg-cyan bg-opacity-10 text-cyan small border border-cyan border-opacity-10 ms-2">Active</span>
-            {% if counts and counts.students is defined %}
-            <span class="text-emerald small ms-2"><i class="fas fa-user-check me-1"></i>{{ counts.students }} student{{ 's' if counts.students != 1 else '' }} enrolled this year</span>
-            {% if counts.pending_registration %}
-            <span class="text-amber small ms-2"><i class="fas fa-hourglass-half me-1"></i>{{ counts.pending_registration }} awaiting re-registration</span>
-            {% endif %}
-            {% endif %}
-            {% if display_year.start_date %}
-            <span class="text-muted ms-2">({{ display_year.start_date }}{% if display_year.end_date %} to {{ display_year.end_date }}{% endif %})</span>
-            {% endif %}
-        </div>
+        {% with switcher_id='activeYearSwitcher' %}
+        {% include 'partials/academic_year_switcher.html' %}
+        {% endwith %}
     </div>
 
     {% if year_lifecycle_status %}
@@ -623,21 +854,26 @@
     </div>
     {% endif %}
     {% elif display_year %}
-    <div class="alert bg-dark border border-secondary border-opacity-25 text-white mb-4 shadow-sm rounded-3 fade-glide-in delay-1 d-flex align-items-center">
-        <div class="p-2 bg-secondary bg-opacity-10 rounded-3 me-3 text-white-50 border border-secondary border-opacity-10">
-            <i class="fas fa-calendar fa-fw fa-lg"></i>
+    <div class="alert bg-dark border border-secondary border-opacity-25 text-white mb-4 shadow-sm rounded-3 fade-glide-in delay-1 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div class="d-flex align-items-center">
+            <div class="p-2 bg-secondary bg-opacity-10 rounded-3 me-3 text-white-50 border border-secondary border-opacity-10">
+                <i class="fas fa-calendar fa-fw fa-lg"></i>
+            </div>
+            <div>
+                <span class="academic-session-heading small d-block uppercase tracking-wider" style="font-size:0.7rem;">Academic Session</span>
+                <strong class="academic-session-heading">Viewing: {{ display_year.name }}</strong>
+            </div>
         </div>
-        <div>
-            <span class="text-white-50 small d-block uppercase tracking-wider" style="font-size:0.7rem;">Academic Session</span>
-            <strong class="text-cyan">Viewing: {{ display_year.name }}</strong>
-        </div>
+        {% with switcher_id='sessionYearSwitcher' %}
+        {% include 'partials/academic_year_switcher.html' %}
+        {% endwith %}
     </div>
     {% endif %}
 
     <div class="row g-4">
         
         <!-- Left Sidebar Column -->
-        <div class="col-xl-4 d-flex flex-column gap-4 fade-glide-in delay-1">
+        <div class="col-xl-4 d-flex flex-column gap-4 fade-glide-in delay-1" style="min-width:0;">
             
             <div class="card sec-card p-4">
                 <div class="d-flex align-items-center gap-3">
@@ -700,27 +936,36 @@
                 </div>
             </div>
 
-            <div class="card sec-card p-4">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h6 class="text-white font-weight-bold mb-0"><i class="fas fa-folder-tree text-cyan me-2"></i>Class Folders</h6>
-                    <div class="d-flex gap-2 align-items-center">
-                        <a href="{{ url_for('registrar_attendance', academic_year_id=display_year.id if display_year else None) }}" class="btn btn-sm btn-outline-info text-cyan py-1 px-2" style="font-size:0.72rem;">
-                            <i class="fas fa-calendar-check me-1"></i>Attendance Lookup
-                        </a>
-                        <form method="get" class="d-flex gap-1">
+            <div class="card sec-card p-4 class-folders-panel">
+                <div class="class-folders-panel-header">
+                    <h6 class="class-folders-panel-title"><i class="fas fa-folder-tree me-2"></i>Class Folders</h6>
+                    <div class="class-folders-panel-tools">
+                        <div class="class-folders-panel-buttons">
+                            <a href="{{ url_for('id_cards_folder_hub') }}" class="btn btn-sm btn-outline-warning py-1 px-2" style="font-size:0.72rem;">
+                                <i class="fas fa-id-card me-1"></i>ID Cards
+                            </a>
+                            <a href="{{ url_for('registrar_attendance', academic_year_id=display_year.id if display_year else None) }}" class="btn btn-sm btn-outline-info text-cyan py-1 px-2" style="font-size:0.72rem;">
+                                <i class="fas fa-calendar-check me-1"></i>Attendance Lookup
+                            </a>
+                        </div>
+                        <form method="get" class="class-folders-search-group" action="{{ url_for('dashboard') }}#student-roster">
                             {% if display_year %}<input type="hidden" name="academic_year_id" value="{{ display_year.id }}">{% endif %}
-                            <input type="text" name="search_class" class="form-control form-cyber form-control-sm py-1" style="font-size:0.75rem;" placeholder="Search..." value="{{ search_class or '' }}" />
-                            <button type="submit" class="btn btn-sm btn-primary px-2"><i class="fas fa-magnifying-glass"></i></button>
-                            {% if search_class %}
-                                <a href="{{ url_for('dashboard', **year_param) }}" class="btn btn-sm btn-secondary px-2"><i class="fas fa-times"></i></a>
+                            {% if roster_view == 'alumni' %}<input type="hidden" name="view" value="alumni">{% endif %}
+                            <div class="class-folders-search-fields">
+                                <input type="text" name="search_class" class="form-control form-cyber form-control-sm py-1" placeholder="Class..." value="{{ search_class or '' }}" aria-label="Class folder" />
+                                <input type="text" name="search_student" class="form-control form-cyber form-control-sm py-1" placeholder="Student..." value="{{ search_student or '' }}" aria-label="Student" />
+                            </div>
+                            <button type="submit" class="btn btn-sm btn-primary px-2" title="Search" aria-label="Search"><i class="fas fa-magnifying-glass"></i></button>
+                            {% if search_class or search_student %}
+                                <a href="{{ url_for('dashboard', **year_param) }}#student-roster" class="btn btn-sm btn-secondary px-2" title="Clear search" aria-label="Clear search"><i class="fas fa-times"></i></a>
                             {% endif %}
                         </form>
                     </div>
                 </div>
                 
                 <div class="d-flex flex-column gap-2" style="max-height: 380px; overflow-y: auto; padding-right:4px;">
-                    {% if classes_by_division %}
-                        {% for group in classes_by_division %}
+                    {% if roster_folders_by_division %}
+                        {% for group in roster_folders_by_division %}
                         <div class="text-cyan small fw-semibold text-uppercase pt-1" style="font-size:0.68rem; letter-spacing:0.06em;">{{ group.label }}</div>
                         {% for klass in group.classes %}
                         <div class="p-3 border border-secondary border-opacity-10 rounded-3" style="background: rgba(255,255,255,0.015);">
@@ -728,7 +973,7 @@
                                 <div class="fw-bold text-white small">{{ klass.name }}</div>
                                 <span class="badge bg-emerald bg-opacity-10 text-emerald small border border-emerald border-opacity-10" style="font-size:0.7rem;">{{ klass.student_count if klass.student_count else 0 }} Students</span>
                             </div>
-                            <div class="text-muted small mb-3" style="font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ klass.division_label }} · {{ klass.description or 'No description available' }}</div>
+                            <div class="text-muted small mb-3" style="font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ klass.division_label }} · {{ klass.klass.description or klass.stream or 'No description available' }}</div>
                             <a href="#folder-{{ klass.id }}" class="btn btn-sm btn-outline-light w-100 py-2" style="font-size:0.75rem;"><i class="fas fa-folder-open me-1"></i>Open Class Folder</a>
                         </div>
                         {% endfor %}
@@ -765,7 +1010,7 @@
                     <ol class="mb-0">
                         <li>Enter a Student ID or Email below and click <strong>Lookup</strong>.</li>
                         <li>If returning, existing student information will auto-populate to prevent duplicates.</li>
-                        <li>Assign class, enter the registration fee amount, set payment status, and click <strong>Submit Registration</strong>. If Paid or Partial, enter the receipt number issued after payment.</li>
+                        <li>Set an optional portal password (leave blank to auto-generate a secure password printed once on the credential slip), assign class, enter the registration fee, and click <strong>Complete Registration &amp; Generate Slip</strong>. If Paid or Partial, enter the receipt number issued after payment.</li>
                     </ol>
                 </div>
 
@@ -785,7 +1030,7 @@
                             <div class="col-md-6">
                                 <label class="form-label small text-muted">Student ID (Optional)</label>
                                 <div class="input-group">
-                                    <input type="text" class="form-control form-cyber" id="lookup_student_id" name="student_id" placeholder="e.g. STU-2026-001">
+                                    <input type="text" class="form-control form-cyber" id="lookup_student_id" name="student_id" placeholder="{{ suggested_student_id or 'e.g. 2526-00001' }} — leave blank to auto-assign">
                                 </div>
                             </div>
                             <div class="col-md-6">
@@ -810,6 +1055,7 @@
                         <div class="enroll-type-badge" id="enrollTypeBadge">
                             <i class="fas fa-user-check"></i> <span id="enrollTypeBadgeText">Student Selected</span>
                         </div>
+                        <div class="retention-placement-banner" id="placementBanner" hidden role="status"></div>
 
                         <!-- Personal Data Section -->
                         <div class="enroll-section">
@@ -847,18 +1093,29 @@
                                     <input type="date" class="form-control form-cyber" id="dob" name="dob" data-step-required>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label small text-muted">Student Photo</label>
+                                    <label class="form-label small enroll-help-label" for="photo">Student Photo</label>
+                                    <div class="id-photo-well" id="photoWell" aria-live="polite">
+                                        <img id="photoPreview" alt="Current student ID photo" hidden>
+                                        <div class="id-photo-empty" id="photoEmpty">
+                                            <i class="fas fa-id-badge" aria-hidden="true"></i>
+                                            <span>No photo on file</span>
+                                        </div>
+                                    </div>
                                     <input type="file" class="form-control form-cyber" id="photo" name="photo" accept="image/jpeg,image/png,image/gif,image/webp">
-                                    <div class="form-text text-muted" style="font-size:0.72rem;">JPG, PNG, GIF, or WEBP. Automatically cropped to a square ID-card photo for the circular avatar.</div>
+                                    <div class="form-text enroll-help-text">Keep the current ID photo, or choose a file to replace it. JPG, PNG, GIF, or WEBP.</div>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label small text-muted">Academic Level <span class="text-rose">*</span></label>
+                                    <label class="form-label small enroll-help-label" for="level">Academic Level <span class="text-rose">*</span></label>
                                     <select class="form-select form-cyber" id="level" name="level" data-step-required>
                                         <option value="">Select Level...</option>
                                         {% for value, label in form.level.choices %}
                                         <option value="{{ value }}">{{ label }}</option>
                                         {% endfor %}
                                     </select>
+                                    <div class="academic-division-readout" id="divisionReadout" hidden>
+                                        <span class="division-chip"><i class="fas fa-layer-group" aria-hidden="true"></i> <span id="divisionChipLabel"></span></span>
+                                    </div>
+                                    <div class="form-text enroll-help-text">Filled from the assigned class (Elementary, Junior High, or Senior High).</div>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small text-muted">Telephone Number</label>
@@ -881,16 +1138,19 @@
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <label class="form-label small text-muted">Target Class / Grade Level <span class="text-rose">*</span></label>
-                                    <select class="form-select form-cyber" id="class_id" name="klass" data-step-required>
-                                        <option value="">Choose Class Folder...</option>
-                                        {% for group in classes_by_division %}
-                                        <optgroup label="{{ group.label }}">
-                                            {% for klass in group.classes %}
-                                            <option value="{{ klass.id }}">{{ klass.name }} — {{ group.label }}</option>
+                                    <div class="field-locked-wrap" id="wrap_class_id">
+                                        <select class="form-select form-cyber" id="class_id" name="klass" data-step-required>
+                                            <option value="">Choose Class Folder...</option>
+                                            {% for group in classes_by_division %}
+                                                {% for klass in group.classes %}
+                                                <option value="{{ klass.id }}" data-division="{{ group.label }}">{{ klass.name }} — {{ group.label }}</option>
+                                                {% endfor %}
                                             {% endfor %}
-                                        </optgroup>
-                                        {% endfor %}
-                                    </select>
+                                        </select>
+                                        <i class="fas fa-lock lock-indicator" title="Locked to the repeat class"></i>
+                                    </div>
+                                    <input type="hidden" id="klass_locked_value" value="">
+                                    <div class="form-text enroll-help-text" id="classLockHint" hidden>This student stays in this class — they were not promoted.</div>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small text-muted">Registration Status <span class="text-rose">*</span></label>
@@ -909,13 +1169,38 @@
                                 <h6><i class="fas fa-users text-amber me-2"></i>Parent / Guardian Contacts</h6>
                             </div>
                             <div class="row g-3">
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <label class="form-label small text-muted">Parent / Guardian Full Name</label>
-                                    <input type="text" class="form-control form-cyber" id="guardian_name" name="guardian_name">
+                                    <input type="text" class="form-control form-cyber" id="guardian_name" name="guardian_name" maxlength="120" placeholder="Name as printed on the ID card" autocomplete="name">
                                 </div>
-                                <div class="col-md-6">
+                                <div class="col-md-4">
+                                    <label class="form-label small text-muted">Parent / Guardian Email</label>
+                                    <input type="email" class="form-control form-cyber" id="parent_email" name="parent_email" placeholder="parent@example.com" autocomplete="email">
+                                </div>
+                                <div class="col-md-4">
                                     <label class="form-label small text-muted">Parent Contact Telephone</label>
                                     <input type="tel" class="form-control form-cyber" id="guardian_phone" name="parent_phone">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Student portal login -->
+                        <div class="enroll-section">
+                            <div class="enroll-section-header">
+                                <h6><i class="fas fa-key text-cyan me-2"></i>Student Portal Password</h6>
+                                <span class="section-hint">Set at registration</span>
+                            </div>
+                            <p class="small mb-3" style="font-size:0.78rem; color:#c82828;">
+                                The student signs in with the Student ID or the email from Step 1. Set a custom initial password, or leave both fields blank to auto-generate a secure 8-character password printed once on the credential slip.
+                            </p>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label small text-muted" for="password">Portal Password (optional)</label>
+                                    <input type="password" class="form-control form-cyber" id="password" name="password" autocomplete="new-password" minlength="6" placeholder="Leave blank to auto-generate">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small text-muted" for="confirm_password">Confirm Password</label>
+                                    <input type="password" class="form-control form-cyber" id="confirm_password" name="confirm_password" autocomplete="new-password" minlength="6" placeholder="Re-enter if setting a password">
                                 </div>
                             </div>
                         </div>
@@ -983,7 +1268,7 @@
                                 <i class="fas fa-undo me-1"></i> Reset / New Search
                             </button>
                             <button type="submit" class="btn btn-emerald py-2 px-4">
-                                <i class="fas fa-check-circle me-1"></i> Submit Registration
+                                <i class="fas fa-check-circle me-1"></i> Complete Registration &amp; Generate Slip
                             </button>
                         </div>
 
@@ -1018,8 +1303,19 @@ document.addEventListener('DOMContentLoaded', function () {
     const inputLevel = document.getElementById('level');
     const inputKlass = document.getElementById('class_id');
     const inputPhone = document.getElementById('telephone_number');
+    const inputGuardianName = document.getElementById('guardian_name');
+    const inputGuardianPhone = document.getElementById('guardian_phone');
+    const inputParentEmail = document.getElementById('parent_email');
     const inputAddress = document.getElementById('home_address');
+    const inputPhoto = document.getElementById('photo');
+    const photoPreview = document.getElementById('photoPreview');
+    const photoEmpty = document.getElementById('photoEmpty');
+    const photoWell = document.getElementById('photoWell');
+    const divisionReadout = document.getElementById('divisionReadout');
+    const divisionChipLabel = document.getElementById('divisionChipLabel');
     const isReturningInput = document.getElementById('is_returning_student');
+    const classDivisionLabels = {{ class_division_labels|default({})|tojson }};
+    let storedPhotoUrl = '';
     const inputRegFee = document.getElementById('registration_fees');
     const inputReceiptRef = document.getElementById('receipt_reference');
     const inputPayStatus = document.getElementById('registration_payment_status');
@@ -1035,6 +1331,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const badgeType = document.getElementById('enrollTypeBadge');
     const badgeTypeText = document.getElementById('enrollTypeBadgeText');
+    const placementBanner = document.getElementById('placementBanner');
+    const classLockHint = document.getElementById('classLockHint');
+    const klassLockedValue = document.getElementById('klass_locked_value');
 
     // Smooth Scroll to Queue
     const jumpQueueBtn = document.getElementById('jumpReRegistrationQueue');
@@ -1081,11 +1380,17 @@ document.addEventListener('DOMContentLoaded', function () {
                     inputLastName.value = student.last_name || '';
                     if (student.gender) inputGender.value = student.gender;
                     if (student.dob && inputDob) inputDob.value = student.dob;
-                    if (student.level && inputLevel) inputLevel.value = student.level;
                     if (student.klass_id && inputKlass) inputKlass.value = String(student.klass_id);
-                    if (student.telephone_number) inputPhone.value = student.telephone_number;
-                    if (student.home_address) inputAddress.value = student.home_address;
+                    applyLevelFromClass(student.level);
+                    if (student.telephone_number && inputPhone) inputPhone.value = student.telephone_number;
+                    if (inputGuardianName) inputGuardianName.value = student.guardian_name || '';
+                    if (inputParentEmail) inputParentEmail.value = student.parent_email || '';
+                    if (inputGuardianPhone) inputGuardianPhone.value = student.parent_phone || '';
+                    if (student.home_address && inputAddress) inputAddress.value = student.home_address;
                     if (student.student_id) inputStudentId.value = student.student_id;
+                    storedPhotoUrl = student.has_id_photo ? (student.photo_url || '') : '';
+                    showPhotoPreview(storedPhotoUrl);
+                    if (inputPhoto) inputPhoto.value = '';
                     if (inputRegFee && student.registration_fees) {
                         inputRegFee.value = student.registration_fees;
                         inputRegFee.dataset.userEdited = student.registration_fees !== '0.00' ? '1' : '';
@@ -1095,19 +1400,24 @@ document.addEventListener('DOMContentLoaded', function () {
                     lockField('first_name');
                     lockField('last_name');
                     lockField('dob');
-                    lockField('level');
 
                     isReturningInput.value = "y";
-
-                    showBanner(`<strong>Returning Student Found:</strong> ${student.first_name || ''} ${student.last_name || ''} (${student.student_id || ''})`, 'returning');
-                    setBadge('returning', `Returning Student: ${student.first_name || ''} ${student.last_name || ''}`.trim());
+                    applyRetentionPlacement(student);
                 } else {
                     // Reset lock states for new student
                     unlockField('first_name');
                     unlockField('last_name');
                     unlockField('dob');
-                    unlockField('level');
+                    unlockClassAssignment();
+                    clearRetentionPlacement();
                     isReturningInput.value = "";
+                    storedPhotoUrl = '';
+                    showPhotoPreview('');
+                    if (inputPhoto) inputPhoto.value = '';
+                    if (inputGuardianName) inputGuardianName.value = '';
+                    if (inputParentEmail) inputParentEmail.value = '';
+                    if (inputGuardianPhone) inputGuardianPhone.value = '';
+                    updateDivisionReadout(inputLevel ? inputLevel.value : '');
 
                     showBanner('<strong>New Student Intake:</strong> No existing record found. Please complete personal information.', 'new-student');
                     setBadge('new-student', 'New Student Intake');
@@ -1130,8 +1440,15 @@ document.addEventListener('DOMContentLoaded', function () {
                 unlockField('first_name');
                 unlockField('last_name');
                 unlockField('dob');
-                unlockField('level');
+                unlockClassAssignment();
+                clearRetentionPlacement();
                 isReturningInput.value = "";
+                storedPhotoUrl = '';
+                showPhotoPreview('');
+                if (inputPhoto) inputPhoto.value = '';
+                if (inputGuardianName) inputGuardianName.value = '';
+                if (inputParentEmail) inputParentEmail.value = '';
+                if (inputGuardianPhone) inputGuardianPhone.value = '';
 
                 showBanner('Ready to register. Complete details below.', 'new-student');
                 setBadge('new-student', 'New Student Registration');
@@ -1152,14 +1469,19 @@ document.addEventListener('DOMContentLoaded', function () {
             unlockField('first_name');
             unlockField('last_name');
             unlockField('dob');
-            unlockField('level');
+            unlockClassAssignment();
+            clearRetentionPlacement();
             isReturningInput.value = "";
+            storedPhotoUrl = '';
+            showPhotoPreview('');
+            if (inputPhoto) inputPhoto.value = '';
+            updateDivisionReadout('');
             if (inputRegFee) inputRegFee.dataset.userEdited = '';
             if (regFeeHint) regFeeHint.textContent = 'Enter 0 if the fee is waived.';
 
             step2Panel.classList.remove('visible');
-            lookupBanner.classList.remove('show', 'returning', 'new-student', 'error');
-            badgeType.classList.remove('show', 'returning', 'new-student');
+            lookupBanner.classList.remove('show', 'returning', 'new-student', 'error', 'repeat-class', 'summer-school');
+            badgeType.classList.remove('show', 'returning', 'new-student', 'repeat-class', 'summer-school');
 
             wizardStep2.classList.remove('active');
             wizardStep1.classList.remove('done');
@@ -1206,6 +1528,54 @@ document.addEventListener('DOMContentLoaded', function () {
         const parts = num.toFixed(2).split('.');
         parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
         return parts.join('.');
+    }
+
+    function showPhotoPreview(url) {
+        if (photoPreview && url) {
+            photoPreview.src = url;
+            photoPreview.hidden = false;
+            if (photoEmpty) photoEmpty.hidden = true;
+            if (photoWell) photoWell.classList.add('has-photo');
+            return;
+        }
+        if (photoPreview) {
+            photoPreview.removeAttribute('src');
+            photoPreview.hidden = true;
+        }
+        if (photoEmpty) photoEmpty.hidden = false;
+        if (photoWell) photoWell.classList.remove('has-photo');
+    }
+
+    function updateDivisionReadout(value) {
+        const label = (value || (inputLevel && inputLevel.value) || '').trim();
+        if (divisionChipLabel) divisionChipLabel.textContent = label;
+        if (divisionReadout) divisionReadout.hidden = !label;
+    }
+
+    function setAcademicLevel(value) {
+        if (!inputLevel || !value) {
+            updateDivisionReadout(value || '');
+            return;
+        }
+        const match = Array.prototype.some.call(inputLevel.options, function (opt) {
+            return opt.value === value;
+        });
+        if (match) inputLevel.value = value;
+        updateDivisionReadout(value);
+    }
+
+    function applyLevelFromClass(fallbackLevel) {
+        const klassId = inputKlass ? String(inputKlass.value || '') : '';
+        const selected = inputKlass && inputKlass.options[inputKlass.selectedIndex];
+        const fromOption = selected ? (selected.getAttribute('data-division') || '') : '';
+        const fromMap = classDivisionLabels[klassId] || '';
+        const label = fromOption || fromMap;
+        if (label && label !== 'Other') {
+            setAcademicLevel(label);
+            return;
+        }
+        if (fallbackLevel) setAcademicLevel(fallbackLevel);
+        else updateDivisionReadout(inputLevel ? inputLevel.value : '');
     }
 
     function applyScheduledRegistrationFee() {
@@ -1264,7 +1634,29 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
     if (inputKlass) {
-        inputKlass.addEventListener('change', applyScheduledRegistrationFee);
+        inputKlass.addEventListener('change', function () {
+            applyScheduledRegistrationFee();
+            applyLevelFromClass();
+        });
+    }
+    if (inputLevel) {
+        inputLevel.addEventListener('change', function () {
+            updateDivisionReadout(inputLevel.value);
+        });
+    }
+    if (inputPhoto) {
+        inputPhoto.addEventListener('change', function () {
+            const file = this.files && this.files[0];
+            if (!file) {
+                showPhotoPreview(storedPhotoUrl);
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function (event) {
+                showPhotoPreview(event.target.result);
+            };
+            reader.readAsDataURL(file);
+        });
     }
     if (inputPayStatus) {
         inputPayStatus.addEventListener('change', syncReceiptField);
@@ -1329,6 +1721,100 @@ document.addEventListener('DOMContentLoaded', function () {
         const wrap = document.getElementById(`wrap_${fieldId}`);
         if (field) field.readOnly = false;
         if (wrap) wrap.classList.remove('is-locked');
+    }
+
+    function escapeHtml(value) {
+        return String(value || '').replace(/[&<>"']/g, function (ch) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
+        });
+    }
+
+    function lockClassAssignment() {
+        if (!inputKlass) return;
+        inputKlass.disabled = true;
+        inputKlass.classList.add('field-locked');
+        const wrap = document.getElementById('wrap_class_id');
+        if (wrap) wrap.classList.add('is-locked');
+        if (klassLockedValue) {
+            klassLockedValue.name = 'klass';
+            klassLockedValue.value = inputKlass.value || '';
+        }
+        inputKlass.removeAttribute('name');
+        if (classLockHint) classLockHint.hidden = false;
+    }
+
+    function unlockClassAssignment() {
+        if (!inputKlass) return;
+        inputKlass.disabled = false;
+        inputKlass.classList.remove('field-locked');
+        const wrap = document.getElementById('wrap_class_id');
+        if (wrap) wrap.classList.remove('is-locked');
+        if (klassLockedValue) {
+            klassLockedValue.removeAttribute('name');
+            klassLockedValue.value = '';
+        }
+        inputKlass.setAttribute('name', 'klass');
+        if (classLockHint) classLockHint.hidden = true;
+    }
+
+    function clearRetentionPlacement() {
+        if (placementBanner) {
+            placementBanner.hidden = true;
+            placementBanner.innerHTML = '';
+            placementBanner.className = 'retention-placement-banner';
+        }
+    }
+
+    function applyRetentionPlacement(student) {
+        const retention = (student && student.retention) || null;
+        const code = ((retention && retention.code) || '').toUpperCase();
+        if (code !== 'REPEAT' && code !== 'SUMMER_SCHOOL') {
+            unlockClassAssignment();
+            clearRetentionPlacement();
+            const name = `${student.first_name || ''} ${student.last_name || ''}`.trim();
+            showBanner(`<strong>Returning Student Found:</strong> ${escapeHtml(name)} (${escapeHtml(student.student_id || '')})`, 'returning');
+            setBadge('returning', `Returning Student: ${name}`.trim());
+            return;
+        }
+
+        const isRepeat = code === 'REPEAT';
+        const typeClass = isRepeat ? 'repeat-class' : 'summer-school';
+        const bannerClass = isRepeat ? 'is-repeat' : 'is-summer';
+        const label = retention.label || (isRepeat ? 'Repeat class' : 'Summer School');
+        const detail = retention.detail || 'They stay in the same grade, not promoted.';
+        const klassName = retention.klass_name || '';
+        if (retention.klass_id && inputKlass) {
+            inputKlass.value = String(retention.klass_id);
+            applyLevelFromClass(student.level);
+            applyScheduledRegistrationFee();
+        }
+        if (retention.lock_class && retention.klass_id) {
+            lockClassAssignment();
+        } else {
+            unlockClassAssignment();
+        }
+
+        const classLine = klassName
+            ? `<div class="retention-class">Class: ${escapeHtml(klassName)}${retention.lock_class ? ' (locked)' : ''}</div>`
+            : '';
+        if (placementBanner) {
+            placementBanner.innerHTML = (
+                `<div class="retention-title">${escapeHtml(label)}</div>` +
+                `<div class="retention-detail">${escapeHtml(detail)}</div>` +
+                classLine
+            );
+            placementBanner.className = `retention-placement-banner ${bannerClass}`;
+            placementBanner.hidden = false;
+        }
+
+        const name = `${student.first_name || ''} ${student.last_name || ''}`.trim();
+        showBanner(
+            `<strong>${escapeHtml(label)}</strong> — they stay in the same grade, not promoted.` +
+            (klassName ? ` Class: ${escapeHtml(klassName)}.` : '') +
+            ` ${escapeHtml(name)} (${escapeHtml(student.student_id || '')})`,
+            typeClass
+        );
+        setBadge(typeClass, label);
     }
 
     function showBanner(message, type) {

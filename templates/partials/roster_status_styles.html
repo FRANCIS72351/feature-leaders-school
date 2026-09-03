@@ -1,0 +1,176 @@
+{# Shared STATUS-column + grade-sheet icon styles for roster tables. #}
+<style>
+    .roster-status-cell {
+        min-width: 9.25rem;
+        overflow: visible !important;
+        vertical-align: middle;
+    }
+    .roster-status-cluster {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.35rem 0.55rem;
+        overflow: visible;
+    }
+    .roster-status-pill,
+    .roster-status-cell .badge,
+    .roster-status-cell .status-badge,
+    .roster-status-cell .id-ready-chip {
+        display: inline-flex;
+        align-items: center;
+        white-space: nowrap !important;
+        overflow: visible !important;
+        text-overflow: unset;
+        max-width: none;
+        width: auto;
+        padding: 0.3rem 0.7rem;
+        line-height: 1.25;
+        font-weight: 700;
+        box-sizing: border-box;
+    }
+    /* Enrollment pills: beat terminal span { color: #1f2937 !important } dark-on-dark. */
+    .roster-status-pill.status-active,
+    .roster-status-cell .status-active,
+    .badge.status-active,
+    .badge-active {
+        background: #d1fae5 !important;
+        color: #065f46 !important;
+        -webkit-text-fill-color: #065f46 !important;
+        border: 1px solid #6ee7b7 !important;
+    }
+    .roster-status-pill.status-repeat,
+    .roster-status-cell .status-repeat,
+    .badge.status-repeat,
+    .badge-repeat {
+        background: #c82828 !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        border: 1px solid #9f1f1f !important;
+    }
+    .roster-status-pill.status-summer,
+    .roster-status-cell .status-summer,
+    .badge.status-summer {
+        background: #002d62 !important;
+        color: #f8fafc !important;
+        -webkit-text-fill-color: #f8fafc !important;
+        border: 1px solid #1e3a5f !important;
+    }
+    .retention-placement-banner {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+        padding: 0.95rem 1.15rem;
+        border-radius: 10px;
+        margin: 0 0 0.85rem 0;
+        line-height: 1.35;
+    }
+    .retention-placement-banner[hidden] { display: none !important; }
+    .retention-placement-banner .retention-title {
+        font-size: 1.15rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+    .retention-placement-banner .retention-detail {
+        font-size: 0.92rem;
+        font-weight: 600;
+    }
+    .retention-placement-banner .retention-class {
+        font-size: 0.82rem;
+        font-weight: 700;
+        opacity: 0.95;
+        margin-top: 0.15rem;
+    }
+    .retention-placement-banner.is-repeat {
+        background: #c82828;
+        color: #ffffff;
+        border: 1px solid #9f1f1f;
+    }
+    .retention-placement-banner.is-summer {
+        background: #002d62;
+        color: #f8fafc;
+        border: 1px solid #1e3a5f;
+    }
+    .roster-status-pill.status-failed,
+    .roster-status-cell .status-failed,
+    .badge.status-failed,
+    .badge-failed,
+    .roster-status-pill.status-suspended,
+    .roster-status-cell .status-suspended,
+    .badge.status-suspended,
+    .badge-suspended,
+    .roster-status-pill.status-withdrawn,
+    .roster-status-cell .status-withdrawn,
+    .badge.status-withdrawn,
+    .badge-withdrawn {
+        background: #c82828 !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        border: 1px solid #9f1f1f !important;
+    }
+    .roster-status-pill.status-alumni,
+    .roster-status-cell .status-alumni,
+    .badge.status-alumni,
+    .badge-alumni,
+    .roster-status-pill.status-graduated,
+    .roster-status-cell .status-graduated,
+    .badge.status-graduated {
+        background: #334155 !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        border: 1px solid #1e293b !important;
+    }
+    .roster-status-pill.status-neutral,
+    .roster-status-cell .status-neutral,
+    .badge.status-neutral,
+    .roster-status-cell .badge.bg-secondary.roster-status-pill,
+    .roster-status-pill.bg-secondary {
+        background: #475569 !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        border: 1px solid #334155 !important;
+    }
+    .student-file-value .roster-status-pill {
+        display: inline-flex;
+        margin-top: 0.1rem;
+    }
+    a.roster-grade-sheet-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #002d62 !important;
+        -webkit-text-fill-color: #002d62 !important;
+        font-size: 1.15rem;
+        line-height: 1;
+        text-decoration: none !important;
+        opacity: 1 !important;
+        border: 0;
+        background: transparent;
+        padding: 0.12rem;
+        min-width: 1.4rem;
+        min-height: 1.4rem;
+        box-shadow: none;
+    }
+    a.roster-grade-sheet-link i,
+    a.roster-grade-sheet-link .fa,
+    a.roster-grade-sheet-link .fas {
+        color: #002d62 !important;
+        -webkit-text-fill-color: #002d62 !important;
+        font-size: 1.15rem;
+        opacity: 1 !important;
+    }
+    a.roster-grade-sheet-link:hover,
+    a.roster-grade-sheet-link:focus,
+    a.roster-grade-sheet-link:hover i,
+    a.roster-grade-sheet-link:focus i {
+        color: #c82828 !important;
+        -webkit-text-fill-color: #c82828 !important;
+    }
+    @media (max-width: 767.98px) {
+        .roster-status-cell { min-width: 7.5rem; }
+        .roster-status-cluster {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+    }
+</style>

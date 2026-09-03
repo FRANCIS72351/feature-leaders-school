@@ -8,8 +8,10 @@ from school_divisions import (
     DIVISION_JUNIOR_HIGH,
     DIVISION_KINDERGARTEN,
     DIVISION_SENIOR_HIGH,
+    academic_level_for_student,
     REPORT_CARD_SUBJECTS,
     canonical_grade_value,
+    canonical_subject_name,
     class_sort_key,
     coerce_grade_level_choice,
     division_document_titles,
@@ -17,13 +19,28 @@ from school_divisions import (
     division_legend_rows,
     division_score_remark,
     division_subject_heading,
+    format_academic_year_label,
+    next_academic_year_label,
     next_canonical_grade,
+    normalize_academic_year_name,
+    parse_academic_year_span,
     parse_grade_number,
+    official_subject_score_row,
+    official_average_row,
+    official_conduct_row,
+    report_card_footer_rows,
+    report_card_subject_names,
+    numeric_report_score,
     resolve_from_class,
     resolve_school_division,
     sort_classes,
+    subject_match_key,
     subject_slug,
     subjects_for_class,
+    build_transcript_grade_groups,
+    transcript_conduct_label,
+    transcript_grade_heading,
+    transcript_promotion_fields,
 )
 
 
@@ -106,6 +123,31 @@ class SchoolDivisionTests(unittest.TestCase):
             DIVISION_SENIOR_HIGH,
         )
 
+    def test_academic_level_comes_from_assigned_class(self):
+        class _Student:
+            assigned_class = _FakeClass('8th', 'Grade 8', 'Grade 8')
+            klass = assigned_class
+            level = ''
+            grade_level = None
+
+        self.assertEqual(academic_level_for_student(_Student()), 'Junior High')
+
+        class _StaleLevel:
+            assigned_class = _FakeClass('4th', 'Grade 4th', 'Grade 4th')
+            klass = assigned_class
+            level = 'Senior High'
+            grade_level = 'Grade 4th'
+
+        self.assertEqual(academic_level_for_student(_StaleLevel()), 'Elementary')
+
+        class _NoClass:
+            assigned_class = None
+            klass = None
+            level = 'Junior High'
+            grade_level = None
+
+        self.assertEqual(academic_level_for_student(_NoClass()), 'Junior High')
+
     def test_keyword_only_labels(self):
         self.assertEqual(resolve_school_division('Senior High'), DIVISION_SENIOR_HIGH)
         self.assertEqual(resolve_school_division('Junior High'), DIVISION_JUNIOR_HIGH)
@@ -176,6 +218,25 @@ class SchoolDivisionTests(unittest.TestCase):
         self.assertEqual(next_canonical_grade('6th', 'Grade 6'), '7th')
         self.assertEqual(next_canonical_grade('9th', 'Grade 9'), '10th')
         self.assertEqual(next_canonical_grade('12', 'Grade 12'), 'Graduation')
+        self.assertEqual(next_canonical_grade('12th', 'Grade 12th'), 'Graduation')
+        self.assertEqual(parse_grade_number('12th', 'Grade 12'), 12)
+        self.assertEqual(parse_grade_number('10th Grade 2040'), 10)
+        self.assertIsNone(parse_grade_number('13th'))
+        self.assertIsNone(parse_grade_number('Class of 2036'))
+
+    def test_academic_year_span_survives_decade_and_century_edges(self):
+        self.assertEqual(parse_academic_year_span('2035-2036'), (2035, 2036))
+        self.assertEqual(parse_academic_year_span('2035–36'), (2035, 2036))
+        self.assertEqual(parse_academic_year_span('2040/2041 Academic Year'), (2040, 2041))
+        self.assertEqual(parse_academic_year_span('35-36'), (2035, 2036))
+        self.assertEqual(parse_academic_year_span('2099-00'), (2099, 2100))
+        self.assertEqual(parse_academic_year_span('2099—2100'), (2099, 2100))
+        self.assertEqual(next_academic_year_label('2035–2036'), '2036-2037')
+        self.assertEqual(next_academic_year_label('2099/00'), '2100-2101')
+        self.assertEqual(format_academic_year_label('2035–36'), '2035/2036')
+        self.assertEqual(format_academic_year_label('2099-00'), '2099/2100')
+        self.assertEqual(normalize_academic_year_name('2040 – 2041'), '2040-2041')
+        self.assertIsNone(parse_academic_year_span('Fall Session'))
 
     def test_live_classes_get_their_division_subject_catalog(self):
         expected_catalog = {
@@ -207,6 +268,97 @@ class SchoolDivisionTests(unittest.TestCase):
         self.assertEqual(subject_slug('Comp. Science'), subject_slug('ICT'))
         self.assertEqual(subject_slug('Gen. Science'), subject_slug('General Science'))
         self.assertEqual(subject_slug('RE/ Education'), subject_slug('Religious Education'))
+        self.assertEqual(subject_slug('RE/ Education'), subject_slug('RE/Education'))
+        self.assertEqual(subject_slug('RE/ Education'), subject_slug('R.E. Education'))
+
+    def test_subject_canonicalization_accepts_unambiguous_typo(self):
+        self.assertEqual(
+            canonical_subject_name('RE Educaton', DIVISION_JUNIOR_HIGH),
+            'RE/ Education',
+        )
+        self.assertIsNone(
+            canonical_subject_name('Science', DIVISION_JUNIOR_HIGH),
+        )
+
+    def test_comp_science_punctuation_variants_merge(self):
+        self.assertEqual(
+            subject_match_key('Comp. Science'),
+            subject_match_key('Comp.Science'),
+        )
+        self.assertEqual(
+            canonical_subject_name('Comp.Science', DIVISION_JUNIOR_HIGH),
+            'Comp. Science',
+        )
+        self.assertEqual(division_score_remark(88, DIVISION_JUNIOR_HIGH), 'Good')
+        self.assertEqual(division_score_remark(72, DIVISION_JUNIOR_HIGH), 'Fair')
+        self.assertEqual(division_score_remark(69, DIVISION_JUNIOR_HIGH), 'Failure')
+
+    def test_report_card_names_end_with_average_and_conduct(self):
+        names = report_card_subject_names(DIVISION_SENIOR_HIGH)
+        self.assertEqual(names[-2], AVERAGE_ROW_NAME)
+        self.assertEqual(names[-1], CONDUCT_ROW_NAME)
+        self.assertNotIn(AVERAGE_ROW_NAME, names[:-2])
+        self.assertNotIn(CONDUCT_ROW_NAME, names[:-2])
+
+    def test_average_row_means_each_column_and_yearly_percent(self):
+        math = official_subject_score_row('Mathematics', {1: 80, 2: 90, 7: 70})
+        english = official_subject_score_row('English', {1: 70, 2: 80, 7: 60})
+        conduct = official_conduct_row({1: 100, 2: 100})
+        average = official_average_row([math, english, conduct])
+        self.assertEqual(average['name'], AVERAGE_ROW_NAME)
+        self.assertTrue(average['is_summary'])
+        self.assertEqual(average['p1'], 75)
+        self.assertEqual(average['p2'], 85)
+        self.assertEqual(average['exam'], 65)
+        self.assertEqual(average['final_avg'], '75.00%')
+        self.assertEqual(average['remark'], '')
+
+    def test_conduct_row_exists_blank_without_scores(self):
+        blank = official_conduct_row()
+        self.assertEqual(blank['name'], CONDUCT_ROW_NAME)
+        self.assertTrue(blank['is_summary'])
+        self.assertEqual(blank['p1'], '')
+        self.assertEqual(blank['final_avg'], '')
+        filled = official_conduct_row({1: 88, 2: 92})
+        self.assertEqual(filled['p1'], 88)
+        self.assertEqual(filled['p2'], 92)
+        self.assertEqual(filled['remark'], '')
+
+    def test_footer_rows_are_always_average_then_conduct(self):
+        footers = report_card_footer_rows([])
+        self.assertEqual(len(footers), 2)
+        self.assertEqual(footers[0]['name'], AVERAGE_ROW_NAME)
+        self.assertEqual(footers[1]['name'], CONDUCT_ROW_NAME)
+        self.assertEqual(numeric_report_score('76.71%'), 76.71)
+
+    def test_transcript_groups_senior_paper_slots_and_blank_science(self):
+        english = official_subject_score_row('English', {1: 80, 4: 90})
+        biology = official_subject_score_row('Biology', {1: 70, 4: 72})
+        groups, _average, _conduct = build_transcript_grade_groups(
+            [english, biology],
+            DIVISION_SENIOR_HIGH,
+        )
+        labels = [group.get('label') for group in groups]
+        self.assertIn('LANGUAGE ARTS', labels)
+        self.assertIn('GENERAL SCIENCE', labels)
+        science = next(group for group in groups if group['label'] == 'GENERAL SCIENCE')
+        names = [row['name'] for row in science['rows']]
+        self.assertEqual(names[:3], ['Biology', 'Chemistry', 'Physics'])
+        self.assertIn('Health Science', names)
+        self.assertIn('Agri. Science', names)
+        health = next(row for row in science['rows'] if row['name'] == 'Health Science')
+        self.assertEqual(health['yearly'], '')
+
+    def test_transcript_heading_and_summer_school_narrative(self):
+        self.assertEqual(transcript_grade_heading('10th'), '(10) Ten')
+        self.assertEqual(transcript_conduct_label(80), 'VERY GOOD')
+        promoted, conditioned, retained = transcript_promotion_fields(
+            {'decision': 'summer_school'},
+            '10th',
+        )
+        self.assertEqual(promoted, 'N/A')
+        self.assertEqual(conditioned, '10th')
+        self.assertEqual(retained, 'N/A')
 
 
 if __name__ == '__main__':

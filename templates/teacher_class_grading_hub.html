@@ -84,10 +84,12 @@
 
   .status-pill {
     border-radius: 999px;
-    padding: 0.18rem 0.6rem;
+    padding: 0.3rem 0.7rem;
     font-size: 0.72rem;
     font-weight: 700;
     border: 1px solid transparent;
+    white-space: nowrap;
+    overflow: visible;
   }
 
   .status-pill.subject {
@@ -267,6 +269,7 @@
     }
 
     .navbar,
+    .site-footer,
     .dashboard-welcome-banner,
     .grade-sheet-header,
     .grade-sheet-toolbar,
@@ -362,6 +365,7 @@
     }
   }
 </style>
+{% include 'partials/roster_status_styles.html' %}
 
 <div class="teacher-grade-sheet">
   <a href="{{ url_for('teacher_class_folder', class_id=klass.id) }}" class="small text-decoration-none text-muted d-inline-block mb-2">
@@ -387,6 +391,9 @@
       <div class="d-flex flex-wrap gap-2">
         <a href="{{ url_for('grade_entry_class', class_id=klass.id, subject=selected_subject, period=selected_period) }}" class="btn btn-outline-secondary btn-sm">
           <i class="bi bi-printer me-1"></i>Printable MoE Sheet
+        </a>
+        <a href="{{ url_for('class_period_grade_sheet', class_id=klass.id, period=selected_period) }}" class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener">
+          <i class="bi bi-people me-1"></i>Period Grade Sheet (Whole Class)
         </a>
         <a href="{{ url_for('download_grades', class_id=klass.id, subject=selected_subject, period=selected_period) }}" class="btn btn-outline-primary btn-sm">
           <i class="bi bi-download me-1"></i>Export CSV
@@ -431,7 +438,7 @@
     <ul class="step-list">
       <li><span class="step-dot">1</span>Enter scores directly in this sheet</li>
       <li><span class="step-dot">2</span>Save Draft to keep work in progress</li>
-      <li><span class="step-dot">3</span>Publish to send grades to student grade sheet</li>
+      <li><span class="step-dot">3</span>Publish to submit this period to the VPA for student release</li>
     </ul>
   </div>
 
@@ -449,7 +456,7 @@
 
   {% if publish_stats.draft > 0 %}
   <form method="POST" action="{{ url_for('publish_period_grades', class_id=klass.id) }}" class="mb-2"
-        onsubmit="return confirm('Publish {{ publish_stats.draft }} draft grade(s) for {{ selected_subject }} · {{ period_label }}? Students will see them on their grade sheet.');">
+        onsubmit="return confirm('Publish {{ publish_stats.draft }} draft grade(s) for {{ selected_subject }} · {{ period_label }}? This submits the period to the VPA. Students cannot view until approved.');">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="subject" value="{{ selected_subject }}">
     <input type="hidden" name="period" value="{{ selected_period }}">
@@ -550,14 +557,19 @@
                   --
                 {% endif %}
               </td>
-              <td class="pe-3 small">
+              <td class="pe-3 small roster-status-cell">
+                <div class="roster-status-cluster">
                 {% if existing and existing.submitted %}
-                <span class="badge bg-success">Published</span>
+                <span class="badge bg-success roster-status-pill">Published</span>
                 {% elif existing %}
-                <span class="badge bg-warning text-dark">Draft</span>
+                <span class="badge bg-warning text-dark roster-status-pill">Draft</span>
                 {% else %}
-                <span class="badge bg-secondary">Not saved</span>
+                <span class="badge bg-secondary roster-status-pill">Not saved</span>
                 {% endif %}
+                <a href="{{ url_for('report_card', student_id=student.id) }}" class="roster-grade-sheet-link" title="Grade sheet" aria-label="Grade sheet">
+                  <i class="fas fa-file-alt" aria-hidden="true"></i>
+                </a>
+                </div>
               </td>
             </tr>
             {% endfor %}

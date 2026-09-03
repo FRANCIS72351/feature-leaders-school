@@ -267,19 +267,110 @@
         border-color: #e5edf6 !important;
         color: #1f2937 !important;
     }
+
+    .rollover-terminal h2,
+    .rollover-terminal h5,
+    .rollover-terminal h6,
+    .rollover-terminal label.text-white,
+    .rollover-terminal .form-check-label.text-white,
+    .rollover-terminal h5.text-white,
+    .rollover-terminal h6.text-white {
+        color: #0f172a !important;
+    }
+    .rollover-terminal .btn-warning,
+    .rollover-terminal .btn-warning:hover {
+        color: #1f2937 !important;
+        background: #f59e0b !important;
+        border-color: #d97706 !important;
+        font-weight: 700;
+    }
+    .rollover-terminal .btn-dark,
+    .rollover-terminal .btn-dark:hover,
+    .rollover-terminal .btn-dark:focus {
+        color: #ffffff !important;
+        background: #0f172a !important;
+        border-color: #020617 !important;
+        font-weight: 700;
+    }
+    .rollover-terminal .wizard-step-btn {
+        color: #0f172a !important;
+        background: #ffffff !important;
+        border: 2px solid #94a3b8 !important;
+        font-weight: 700;
+    }
+    .rollover-terminal .wizard-step-btn:hover {
+        background: #e2e8f0 !important;
+        color: #0f172a !important;
+        border-color: #64748b !important;
+    }
+    .rollover-terminal .wizard-step-btn.active {
+        color: #0369a1 !important;
+        background: #e0f2fe !important;
+        border-color: #0284c7 !important;
+    }
+    .rollover-terminal .wizard-step-btn.done {
+        color: #047857 !important;
+        background: #ecfdf5 !important;
+        border-color: #059669 !important;
+    }
+    .rollover-terminal a.btn-outline-warning,
+    .rollover-terminal .btn-outline-warning {
+        color: #ffffff !important;
+        background: #d97706 !important;
+        border-color: #b45309 !important;
+        font-weight: 700;
+    }
+    .rollover-terminal a.btn-outline-warning:hover,
+    .rollover-terminal .btn-outline-warning:hover {
+        color: #ffffff !important;
+        background: #b45309 !important;
+        border-color: #92400e !important;
+    }
+    .rollover-terminal a.btn-outline-secondary,
+    .rollover-terminal .btn-outline-secondary,
+    .rollover-terminal a.btn-outline-info,
+    .rollover-terminal .btn-outline-info {
+        color: #ffffff !important;
+        background: #334155 !important;
+        border-color: #1e293b !important;
+        font-weight: 700;
+    }
+    .rollover-terminal a.btn-outline-secondary:hover,
+    .rollover-terminal .btn-outline-secondary:hover,
+    .rollover-terminal a.btn-outline-info:hover,
+    .rollover-terminal .btn-outline-info:hover {
+        color: #ffffff !important;
+        background: #0f172a !important;
+        border-color: #020617 !important;
+    }
+    .rollover-terminal .btn-primary,
+    .rollover-terminal .btn-primary:hover,
+    .rollover-terminal .btn-primary:focus {
+        color: #ffffff !important;
+        background: #0369a1 !important;
+        border-color: #075985 !important;
+        font-weight: 700;
+    }
+    .rollover-terminal .btn-danger,
+    .rollover-terminal .btn-danger:hover {
+        color: #ffffff !important;
+        background: #b91c1c !important;
+        border-color: #991b1b !important;
+        font-weight: 700;
+    }
 </style>
 
 <div class="container-fluid px-4 py-4 rollover-terminal">
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-start gap-3 mb-4">
         <div>
-            <h2 class="fw-bold text-white mb-1"><i class="fas fa-arrows-rotate text-cyan me-2"></i>Academic Year Rollover Wizard</h2>
+            <h2 class="fw-bold mb-1" style="color:#0f172a;"><i class="fas fa-arrows-rotate text-cyan me-2"></i>Academic Year Rollover Wizard</h2>
             <p class="text-muted mb-0">Configure the new academic year, class promotions, per-class registration fees, and re-enroll students in one guided flow.</p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
-            <a href="{{ url_for('academic_rollover') }}" class="btn btn-outline-warning text-white btn-wizard btn-sm">
+            <a href="{{ url_for('academic_rollover') }}" class="btn btn-warning btn-wizard btn-sm text-dark fw-bold">
                 <i class="fas fa-bolt me-1"></i> Quick Rollover
             </a>
-            <a href="{{ url_for('academic_years') }}" class="btn btn-outline-secondary text-white btn-wizard btn-sm">
+            <a href="{{ url_for('academic_years') }}" class="btn btn-dark btn-wizard btn-sm text-white fw-bold">
                 <i class="fas fa-arrow-left me-1"></i> Academic Years
             </a>
         </div>
@@ -329,11 +420,22 @@
 
                 {% if preview.counts %}
                 <div class="mb-4">
-                    <h6 class="text-white fw-semibold mb-2">Estimated impact (default promotion rules)</h6>
+                    <h6 class="text-white fw-semibold mb-2">Estimated impact</h6>
+                    <p class="text-muted small mb-2">
+                        Red marks are subject <strong>YRLY AVE</strong> cells below {{ preview.pass_score or 70 }}%
+                        (CONDUCT and the footer AVERAGE row are not counted).
+                        0–1 red marks may promote if the overall yearly average is also at least {{ preview.pass_score or 70 }}%.
+                        Exactly {{ preview.max_failing or 2 }} red marks → <strong>Summer School</strong> (retained in the current class, not promoted).
+                        {{ preview.repeat_failing or 3 }}+ red marks → <strong>Repeat class</strong>, regardless of overall average.
+                    </p>
                     <div class="d-flex flex-wrap gap-2">
                         <span class="badge bg-emerald bg-opacity-10 text-emerald border border-emerald border-opacity-25 px-3 py-2">{{ preview.counts.promote }} promote</span>
-                        <span class="badge bg-amber bg-opacity-10 text-amber border border-amber border-opacity-25 px-3 py-2">{{ preview.counts.repeat }} repeat</span>
+                        <span class="badge bg-amber bg-opacity-10 text-amber border border-amber border-opacity-25 px-3 py-2">{{ preview.counts.summer_school or 0 }} summer school</span>
+                        <span class="badge bg-amber bg-opacity-10 text-amber border border-amber border-opacity-25 px-3 py-2">{{ preview.counts.repeat }} repeat class</span>
                         <span class="badge bg-rose bg-opacity-10 text-rose border border-rose border-opacity-25 px-3 py-2">{{ preview.counts.graduate }} graduate</span>
+                        {% if preview.counts.incomplete %}
+                        <span class="badge bg-secondary bg-opacity-10 text-white border border-secondary px-3 py-2">{{ preview.counts.incomplete }} incomplete records</span>
+                        {% endif %}
                         {% if preview.counts.unassigned %}
                         <span class="badge bg-secondary bg-opacity-10 text-white border border-secondary px-3 py-2">{{ preview.counts.unassigned }} unassigned</span>
                         {% endif %}
@@ -386,7 +488,7 @@
                 <div class="d-flex flex-column flex-md-row justify-content-between align-items-start gap-2 mb-3">
                     <div>
                         <h5 class="text-white fw-bold mb-1"><i class="fas fa-stairs text-amber me-2"></i>Class Promotion Map</h5>
-                        <p class="text-blue small mb-0">Assign where each class moves for the new year. Final-year classes default to Graduate.</p>
+                        <p class="text-blue small mb-0">Assign where each class moves for the new year. Final-year classes default to Graduate. This map applies only to students who meet the 70% promotion standard; others remain in the same class as Repeat.</p>
                     </div>
                     <div class="form-check form-switch">
                         {{ form.apply_promotions(class_='form-check-input', id='apply_promotions') }}

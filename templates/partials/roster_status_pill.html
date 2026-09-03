@@ -1,0 +1,26 @@
+{# Enrollment status pill. Uses student.status, or status_code / status_pill_label if set. #}
+{% set _raw = status_code if status_code is defined else (student.status if student is defined else 'ACTIVE') %}
+{% set _st = (_raw or 'ACTIVE')|upper %}
+{% set _labels = {
+    'ACTIVE': 'Active',
+    'REPEAT': 'Repeat class',
+    'SUMMER_SCHOOL': 'Summer School',
+    'FAILED': 'Failed',
+    'SUSPENDED': 'Suspended',
+    'WITHDRAWN': 'Withdrawn',
+    'ALUMNI': 'Alumni',
+    'GRADUATED': 'Graduated',
+} %}
+{% set _default_label = _labels.get(_st, (_raw or 'Active')|replace('_', ' ')|title) %}
+{% set _label = status_pill_label if (status_pill_label is defined and status_pill_label) else _default_label %}
+{% set _class = {
+    'ACTIVE': 'status-active',
+    'REPEAT': 'status-repeat badge-repeat',
+    'SUMMER_SCHOOL': 'status-summer',
+    'FAILED': 'status-failed',
+    'SUSPENDED': 'status-suspended',
+    'WITHDRAWN': 'status-withdrawn',
+    'ALUMNI': 'status-alumni',
+    'GRADUATED': 'status-graduated',
+}.get(_st, 'status-neutral') %}
+<span class="badge roster-status-pill {{ _class }}">{{ _label }}</span>

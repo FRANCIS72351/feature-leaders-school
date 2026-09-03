@@ -1,0 +1,38 @@
+<footer class="site-footer" role="contentinfo">
+  <div class="container">
+    <div class="row g-4 align-items-start text-center text-md-start mb-3">
+      <div class="col-md-5">
+        <h2 class="site-footer-name mb-1">Future Leaders Preparatory Academy</h2>
+        <p class="site-footer-meta mb-2">Established March 9, 2015 · South Beach PHP Community, Monrovia</p>
+        <p class="site-footer-motto mb-0"><em>Honor, Excellence, Academics, Discipline, Success</em></p>
+      </div>
+      <div class="col-md-4">
+        <p class="site-footer-heading mb-2">Explore</p>
+        <nav class="site-footer-links" aria-label="Footer">
+          <a href="{{ url_for('index') }}">Home</a>
+          <a href="{{ url_for('about') }}">About</a>
+          <a href="{{ url_for('school_media_gallery') }}">School Media</a>
+          <a href="{{ url_for('contact') }}">Contact</a>
+          {% if current_user.is_authenticated %}
+            <a href="{{ url_for('account_settings') }}">Settings</a>
+          {% else %}
+            <a href="{{ url_for('login') }}">Portal Login</a>
+          {% endif %}
+        </nav>
+      </div>
+      <div class="col-md-3 text-center text-md-end">
+        {% if current_user.is_authenticated %}
+          <a href="{{ url_for('dashboard') }}" class="site-footer-btn">Open Workspace</a>
+        {% else %}
+          <a href="{{ url_for('login') }}" class="site-footer-btn">Portal Access</a>
+        {% endif %}
+        <a href="{{ url_for('about') }}" class="site-footer-btn-outline">About Academy</a>
+      </div>
+    </div>
+    <hr class="site-footer-rule">
+    <div class="text-center">
+      <p class="site-footer-copy mb-1">&copy; {{ current_year }} Future Leaders Preparatory Academy. Powered by <a href="https://francistechschoolmanagement.pythonanywhere.com" target="_blank" rel="noopener noreferrer">https://francistechschoolmanagement.pythonanywhere.com</a></p>
+      <p class="site-footer-tagline mb-0">Empowering the Next Generation of Systems.</p>
+    </div>
+  </div>
+</footer>

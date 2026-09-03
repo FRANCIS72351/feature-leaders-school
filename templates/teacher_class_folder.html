@@ -65,7 +65,7 @@
                         <tr>
                             <th class="ps-4">Student</th>
                             <th>Student ID</th>
-                            <th class="pe-4 text-end">Report Card</th>
+                            <th class="pe-4 text-end">Grade sheet</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -73,8 +73,13 @@
                         <tr>
                             <td class="ps-4 fw-semibold text-white">{{ s.full_name }}</td>
                             <td class="text-blue">{{ s.student_id }}</td>
-                            <td class="pe-4 text-end">
-                                <a href="{{ url_for('report_card', student_id=s.id) }}" class="btn btn-sm btn-outline-light">View</a>
+                            <td class="pe-4 roster-status-cell">
+                                <div class="roster-status-cluster justify-content-end">
+                                    {% with status_code=s.status %}{% include 'partials/roster_status_pill.html' %}{% endwith %}
+                                    <a href="{{ url_for('report_card', student_id=s.id) }}" class="roster-grade-sheet-link" title="Grade sheet" aria-label="Grade sheet">
+                                        <i class="fas fa-file-alt" aria-hidden="true"></i>
+                                    </a>
+                                </div>
                             </td>
                         </tr>
                         {% else %}
@@ -113,6 +118,19 @@
         font-size: 0.78rem;
         font-weight: 600;
         padding: 0.4rem 0.75rem;
+    }
+</style>
+{% include 'partials/roster_status_styles.html' %}
+<style>
+    .teacher-terminal a.roster-grade-sheet-link,
+    .teacher-terminal a.roster-grade-sheet-link i {
+        color: #c82828 !important;
+        -webkit-text-fill-color: #c82828 !important;
+    }
+    .teacher-terminal a.roster-grade-sheet-link:hover,
+    .teacher-terminal a.roster-grade-sheet-link:hover i {
+        color: #fca5a5 !important;
+        -webkit-text-fill-color: #fca5a5 !important;
     }
 </style>
 {% endblock %}

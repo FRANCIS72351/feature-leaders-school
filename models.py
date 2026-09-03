@@ -20,6 +20,8 @@ SCHOOL_LOGO_FILENAME = "images/LOGO.png"
 _PHOTO_SEARCH_DIRS = (
     "uploads/photos",
     "uploads/students",
+    "uploads/id_photos",
+    "uploads/signatures",
     "uploads",
     "images",
     "img",
@@ -111,13 +113,22 @@ def _build_default_avatar_png_bytes(size=128):
     )
 
 
+_IMAGE_UPLOAD_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
+
+
+def _is_placeholder_photo_name(photo_path):
+    name = os.path.basename(str(photo_path or "").replace("\\", "/")).strip().lower()
+    return name in ("default_student.png", "default-avatar.png", "default_avatar.png")
+
+
 def _looks_like_raster_image(full_path):
-    """True when path is an actual PNG/JPEG/GIF/WebP, not a text placeholder."""
+    """True when path is an actual PNG/JPEG/GIF/WebP/BMP, not a text placeholder."""
     try:
-        if not os.path.isfile(full_path) or os.path.getsize(full_path) < 32:
+        if not os.path.isfile(full_path) or os.path.getsize(full_path) < 24:
             return False
         with open(full_path, "rb") as fh:
             head = fh.read(16)
+        ext = os.path.splitext(full_path)[1].lower()
     except OSError:
         return False
     if head.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -128,7 +139,10 @@ def _looks_like_raster_image(full_path):
         return True
     if head.startswith(b"RIFF") and b"WEBP" in head:
         return True
-    return False
+    if head.startswith(b"BM"):
+        return True
+    # Uploaded ID files that browsers still render (CMYK JPEG, odd headers).
+    return ext in _IMAGE_UPLOAD_EXT and os.path.getsize(full_path) >= 24
 
 
 def _ensure_default_avatar_files(static_root):
@@ -259,6 +273,24 @@ def school_logo_static_url():
             return _static_url(name)
     return _static_url(SCHOOL_LOGO_FILENAME)
 
+
+LIBERIA_SEAL_FILENAMES = (
+    "images/liberia_seal.png",
+    "images/liberia-seal.png",
+    "images/liberia_coat_of_arms.png",
+    "images/coat_of_arms.png",
+    "images/liberia.png",
+    "images/seal.png",
+)
+
+
+def liberia_seal_static_url():
+    """Liberia coat-of-arms URL when a seal image is present under static/images/."""
+    for name in LIBERIA_SEAL_FILENAMES:
+        if _static_file_on_disk(name):
+            return _static_url(name)
+    return None
+
 # =====================================================================
 # 1. AUTHENTICATION & CORE USER MODEL
 # =====================================================================
@@ -282,8 +314,15 @@ class User(db.Model, UserMixin):
     telephone_number = db.Column(db.String(20))
     status = db.Column(db.String(20), default='Active', server_default='Active', nullable=False)
     is_active = db.Column(db.Boolean, default=True, server_default='1', nullable=False)
+    must_change_password = db.Column(
+        db.Boolean, default=False, server_default='0', nullable=False,
+    )
     deactivated_at = db.Column(db.DateTime, nullable=True)
     deactivation_reason = db.Column(db.String(255), nullable=True)
+    id_card_photo_path = db.Column(db.String(200), nullable=True)
+    id_card_signature_path = db.Column(db.String(200), nullable=True)
+    id_expiration_date = db.Column(db.Date, nullable=True)
+    staff_id_card_ready = db.Column(db.Boolean, default=False, server_default='0', nullable=False)
 
     def is_account_active(self):
         """Return True when the account may authenticate."""
@@ -572,6 +611,21 @@ class ClassSubject(db.Model):
         return f"<ClassSubject {self.class_id}: {self.subject_name}>"
 
 
+def resolve_parent_guardian_name(student):
+    """Parent / Guardian display name from registrar field or linked parent account."""
+    if not student:
+        return None
+    for candidate in (
+        getattr(student, 'guardian_name', None),
+        getattr(student, 'parent_name', None),
+        getattr(getattr(student, 'parent_user', None), 'full_name', None),
+    ):
+        text = str(candidate).strip() if candidate else ''
+        if text:
+            return text
+    return None
+
+
 # =====================================================================
 # 4. STUDENT RECORD LEDGER NODES
 # =====================================================================
@@ -593,6 +647,7 @@ class Student(db.Model):
     gender = db.Column(db.String(10), nullable=False)
     parent_email = db.Column(db.String(120), nullable=True)
     parent_phone = db.Column(db.String(20), nullable=True)
+    guardian_name = db.Column(db.String(120), nullable=True)
     parent_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
     secure_qr_token = db.Column(db.String(128), unique=True, nullable=True, index=True)
     parent_report_token = db.Column(db.String(128), unique=True, nullable=True, index=True)
@@ -600,16 +655,24 @@ class Student(db.Model):
 
     photo = db.Column(db.String(200), nullable=True)
     photo_filename = db.Column(db.String(200), default='default_student.png')
+    signature_filename = db.Column(db.String(200), nullable=True)
+    id_card_ready = db.Column(db.Boolean, default=False, server_default='0', nullable=False)
+    id_expiration_date = db.Column(db.Date, nullable=True)
 
-    status = db.Column(db.String(20), default='ACTIVE', nullable=False)  # ACTIVE, REPEAT, FAILED, SUSPENDED, ALUMNI, GRADUATED
+    status = db.Column(db.String(20), default='ACTIVE', nullable=False)  # ACTIVE, REPEAT, SUMMER_SCHOOL, FAILED, SUSPENDED, ALUMNI, GRADUATED
     grade_level = db.Column(db.String(50), nullable=True)
     level = db.Column(db.String(50), nullable=True)                      # Elementary, Junior High, Senior High
     registration_type = db.Column(db.String(20), default='New', nullable=False)
     registrar = db.Column(db.String(100), nullable=True)
 
     # Core relationship foreign keys
-    klass_id = db.Column(db.Integer, db.ForeignKey("classes.id", ondelete="SET NULL"), nullable=True)
-    academic_year_id = db.Column(db.Integer, db.ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True)
+    klass_id = db.Column(db.Integer, db.ForeignKey("classes.id", ondelete="SET NULL"), nullable=True, index=True)
+    academic_year_id = db.Column(db.Integer, db.ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    __table_args__ = (
+        db.Index("ix_students_year_class", "academic_year_id", "klass_id"),
+        db.Index("ix_students_year_status", "academic_year_id", "status"),
+    )
 
     tuition_cleared = db.Column(db.Boolean, default=False, nullable=False)
     registration_fees = db.Column(db.Numeric(10, 2), default=0.00, nullable=False)
@@ -663,6 +726,12 @@ class Student(db.Model):
             return self.assigned_class.grade_level
         return None
 
+    @property
+    def academic_division_label(self):
+        """Elementary / Junior High / Senior High from assigned class."""
+        from school_divisions import academic_level_for_student
+        return academic_level_for_student(self)
+
     @current_grade.setter
     def current_grade(self, value):
         self.grade_level = value
@@ -684,22 +753,87 @@ class Student(db.Model):
         return f"{self.first_name} {self.last_name}".strip()
 
     @property
-    def photo_url(self):
-        """Always return a working avatar URL (student, user, or default)."""
+    def parent_guardian_name(self):
+        """Name printed on ID cards and registrar files (typed guardian or linked parent)."""
+        return resolve_parent_guardian_name(self)
+
+    def _id_photo_sources(self):
+        """Candidate paths for a real (non-placeholder) student photograph.
+
+        Processed ID JPEGs (uploads/id_photos/) come first so print never serves
+        an uncropped uploads/students/ original when both exist.
+        """
         sources = []
-        if self.photo:
+        if self.photo and not _is_placeholder_photo_name(self.photo):
             sources.append(self.photo)
         filename = (self.photo_filename or "").strip()
-        if filename and filename.lower() not in ("default_student.png", "default-avatar.png"):
-            sources.append(f"uploads/photos/{filename}")
-            sources.append(f"uploads/students/{filename}")
-            sources.append(filename)
-        if self.user and getattr(self.user, "photo", None):
+        if filename and not _is_placeholder_photo_name(filename):
+            if "/" in filename.replace("\\", "/"):
+                sources.append(filename.replace("\\", "/"))
+            else:
+                sources.append(f"uploads/id_photos/{filename}")
+                sources.append(f"uploads/photos/{filename}")
+                sources.append(f"uploads/students/{filename}")
+                sources.append(filename)
+        if self.user and getattr(self.user, "photo", None) and not _is_placeholder_photo_name(self.user.photo):
             sources.append(self.user.photo)
+        preferred = []
+        rest = []
+        seen = set()
         for source in sources:
+            key = source.replace("\\", "/").lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            basename = source.replace("\\", "/").rsplit("/", 1)[-1].lower()
+            if "/id_photos/" in source.replace("\\", "/") and not basename.startswith("original_"):
+                preferred.append(source)
+            else:
+                rest.append(source)
+        return preferred + rest
+
+    @property
+    def photo_url(self):
+        """Always return a working avatar URL (student, user, or default)."""
+        for source in self._id_photo_sources():
             if static_photo_file_exists(source):
                 return resolve_static_photo_url(source, default_filename=DEFAULT_STUDENT_PHOTO)
         return resolve_static_photo_url(None, default_filename=DEFAULT_STUDENT_PHOTO)
+
+    @property
+    def has_id_photo(self):
+        """True when a real student photograph exists (not the default avatar)."""
+        return any(static_photo_file_exists(source) for source in self._id_photo_sources())
+
+    @property
+    def official_signature_mark(self):
+        """Professional ID signature: last name plus first-name initial (e.g. Reawes P.)."""
+        last = " ".join((self.last_name or "").split()).title()
+        first = " ".join((self.first_name or "").split())
+        if not last and not first:
+            parts = (self.full_name or "").split()
+            first = parts[0] if parts else ""
+            last = " ".join(parts[1:]).title() if len(parts) > 1 else ""
+        initial = f"{first[0].upper()}." if first else ""
+        if last and initial:
+            return f"{last} {initial}"
+        return last or (first.title() if first else "")
+
+    @property
+    def signature_url(self):
+        """Static URL for an uploaded handwritten signature, or None if missing."""
+        filename = (self.signature_filename or "").strip().replace("\\", "/")
+        if not filename:
+            return None
+        sources = [filename] if "/" in filename else [f"uploads/signatures/{filename}", filename]
+        for source in sources:
+            if static_photo_file_exists(source):
+                return resolve_static_photo_url(source, default_filename=DEFAULT_STUDENT_PHOTO)
+        return None
+
+    @property
+    def has_signature(self):
+        return bool(self.signature_url or self.official_signature_mark)
 
     def __repr__(self):
         return f"<StudentNode ID: {self.student_id} | Name: {self.full_name}>"
@@ -708,6 +842,64 @@ class Student(db.Model):
     def student_code(self):
         """Permanent public student code (alias for student_id)."""
         return self.student_id
+
+
+class StudentRegistryDocument(db.Model):
+    """Scanned or uploaded papers kept in a student's registrar folder."""
+    __tablename__ = "student_registry_documents"
+
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    uploaded_by_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    academic_year_id = db.Column(db.Integer, db.ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True)
+    title = db.Column(db.String(200), nullable=False)
+    doc_type = db.Column(db.String(40), nullable=False, default="other")
+    original_filename = db.Column(db.String(255), nullable=True)
+    file_path = db.Column(db.String(500), nullable=False)
+    mime_type = db.Column(db.String(120), nullable=True)
+    ocr_text = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    student = db.relationship(
+        "Student",
+        backref=db.backref(
+            "registry_documents",
+            lazy="select",
+            cascade="all, delete-orphan",
+            order_by="StudentRegistryDocument.created_at.desc()",
+        ),
+    )
+    uploaded_by = db.relationship("User")
+    academic_year = db.relationship("AcademicYear")
+
+    DOC_TYPE_LABELS = {
+        "birth_certificate": "Birth certificate",
+        "national_id": "National ID / passport",
+        "report_card": "Report card",
+        "medical": "Medical record",
+        "transfer": "Transfer letter",
+        "photo_id": "Student photo ID",
+        "other": "Other document",
+    }
+
+    @property
+    def type_label(self):
+        return self.DOC_TYPE_LABELS.get(self.doc_type, "Document")
+
+    @property
+    def is_image(self):
+        name = (self.original_filename or self.file_path or "").lower()
+        mime = (self.mime_type or "").lower()
+        return mime.startswith("image/") or name.endswith((".jpg", ".jpeg", ".png", ".gif", ".webp"))
+
+    @property
+    def is_pdf(self):
+        name = (self.original_filename or self.file_path or "").lower()
+        mime = (self.mime_type or "").lower()
+        return mime == "application/pdf" or name.endswith(".pdf")
+
+    def __repr__(self):
+        return f"<StudentRegistryDocument {self.id} student={self.student_id}>"
 
 
 class Suspension(db.Model):
@@ -727,9 +919,14 @@ class Enrollment(db.Model):
     __tablename__ = "enrollments"
 
     id = db.Column(db.Integer, primary_key=True)
-    student_id = db.Column(db.Integer, db.ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
-    class_id = db.Column(db.Integer, db.ForeignKey("classes.id", ondelete="CASCADE"), nullable=False)
-    academic_year_id = db.Column(db.Integer, db.ForeignKey("academic_years.id"), nullable=True)
+    student_id = db.Column(db.Integer, db.ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    class_id = db.Column(db.Integer, db.ForeignKey("classes.id", ondelete="CASCADE"), nullable=False, index=True)
+    academic_year_id = db.Column(db.Integer, db.ForeignKey("academic_years.id"), nullable=True, index=True)
+
+    __table_args__ = (
+        db.Index("ix_enrollments_year_student", "academic_year_id", "student_id"),
+        db.Index("ix_enrollments_year_class", "academic_year_id", "class_id"),
+    )
 
     student = db.relationship("Student", backref=db.backref("class_enrollments", cascade="all, delete-orphan"))
     klass = db.relationship("Class", backref=db.backref("class_enrollments", cascade="all, delete-orphan"))
@@ -874,8 +1071,8 @@ class Submission(db.Model):
     __tablename__ = "submissions"
 
     id = db.Column(db.Integer, primary_key=True)
-    activity_id = db.Column(db.Integer, db.ForeignKey('assessments.id', ondelete='CASCADE'), nullable=False)
-    student_id = db.Column(db.Integer, db.ForeignKey('students.id', ondelete='CASCADE'), nullable=False)
+    activity_id = db.Column(db.Integer, db.ForeignKey('assessments.id', ondelete='CASCADE'), nullable=False, index=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id', ondelete='CASCADE'), nullable=False, index=True)
 
     text_response = db.Column(db.Text, nullable=True)
     file_path = db.Column(db.String(255), nullable=True)
@@ -965,6 +1162,8 @@ class Grade(db.Model):
     ca_score = db.Column(db.Float, default=0.0)    # 60% Continuous Assessment Weight
     exam_score = db.Column(db.Float, default=0.0)  # 40% Examination Weight
     score = db.Column(db.Float, default=0.0)       # Calculated individual total
+    # JSON: {attendance, participation, quiz, assignment, classwork, other, test, direct_total}
+    component_scores = db.Column(db.Text, nullable=True)
     
     # 6-Period System Columns for historical summary within the session
     p1 = db.Column(db.Integer, default=0)
@@ -985,6 +1184,12 @@ class Grade(db.Model):
     )
     entered_by_role = db.Column(db.String(30), nullable=True)
 
+    __table_args__ = (
+        db.Index("ix_grades_year_student", "academic_year_id", "student_id"),
+        db.Index("ix_grades_year_class", "academic_year_id", "class_id"),
+        db.Index("ix_grades_student", "student_id"),
+    )
+
     # ORM Relationships mapping
     student = db.relationship("Student", backref=db.backref("grades_ledger", lazy="dynamic", cascade="all, delete-orphan"))
     teacher = db.relationship("Teacher", backref=db.backref("grades_ledger", lazy="dynamic"))
@@ -1000,7 +1205,123 @@ class Grade(db.Model):
 
     def __repr__(self):
         return f"<Grade ID {self.id}: Student {self.student_id} - Year ID: {self.academic_year_id} - Subj: {self.subject_name}>"
-    
+
+
+class GradeRelease(db.Model):
+    """VPA approval package for one class marking period (report card / grade sheet)."""
+    __tablename__ = "grade_releases"
+
+    STATUS_DRAFT = "draft"
+    STATUS_PENDING_VPA = "pending_vpa"
+    STATUS_APPROVED = "approved"
+    STATUS_RETURNED = "returned"
+
+    id = db.Column(db.Integer, primary_key=True)
+    academic_year_id = db.Column(
+        db.Integer, db.ForeignKey("academic_years.id", ondelete="CASCADE"), nullable=False
+    )
+    class_id = db.Column(
+        db.Integer, db.ForeignKey("classes.id", ondelete="CASCADE"), nullable=False
+    )
+    period = db.Column(db.Integer, nullable=False)
+
+    status = db.Column(db.String(20), nullable=False, default=STATUS_DRAFT, server_default="draft")
+
+    published_by_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    published_at = db.Column(db.DateTime, nullable=True)
+
+    approved_by_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approved_at = db.Column(db.DateTime, nullable=True)
+
+    returned_by_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    returned_at = db.Column(db.DateTime, nullable=True)
+    review_comment = db.Column(db.Text, nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "academic_year_id", "class_id", "period",
+            name="uq_grade_release_year_class_period",
+        ),
+        db.Index("ix_grade_releases_status", "status"),
+        db.Index("ix_grade_releases_year_class", "academic_year_id", "class_id"),
+    )
+
+    academic_year = db.relationship("AcademicYear")
+    klass = db.relationship("Class")
+    published_by = db.relationship("User", foreign_keys=[published_by_id])
+    approved_by = db.relationship("User", foreign_keys=[approved_by_id])
+    returned_by = db.relationship("User", foreign_keys=[returned_by_id])
+
+    @property
+    def is_approved(self):
+        return self.status == self.STATUS_APPROVED
+
+    @property
+    def is_pending(self):
+        return self.status == self.STATUS_PENDING_VPA
+
+    def __repr__(self):
+        return (
+            f"<GradeRelease year={self.academic_year_id} class={self.class_id} "
+            f"period={self.period} status={self.status}>"
+        )
+
+
+class TranscriptRelease(db.Model):
+    """VPA / Principal approval to release Official Transcript to students and parents."""
+    __tablename__ = "transcript_releases"
+
+    STATUS_APPROVED = "approved"
+
+    id = db.Column(db.Integer, primary_key=True)
+    academic_year_id = db.Column(
+        db.Integer, db.ForeignKey("academic_years.id", ondelete="CASCADE"), nullable=False
+    )
+    # NULL student_id = school-wide release for the academic year.
+    student_id = db.Column(
+        db.Integer, db.ForeignKey("students.id", ondelete="CASCADE"), nullable=True
+    )
+
+    status = db.Column(
+        db.String(20), nullable=False, default=STATUS_APPROVED, server_default="approved"
+    )
+
+    approved_by_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approved_at = db.Column(db.DateTime, nullable=True)
+    review_comment = db.Column(db.Text, nullable=True)
+
+    __table_args__ = (
+        db.Index("ix_transcript_releases_status", "status"),
+        db.Index("ix_transcript_releases_year_student", "academic_year_id", "student_id"),
+    )
+
+    academic_year = db.relationship("AcademicYear")
+    student = db.relationship("Student")
+    approved_by = db.relationship("User", foreign_keys=[approved_by_id])
+
+    @property
+    def is_year_wide(self):
+        return self.student_id is None
+
+    @property
+    def is_approved(self):
+        return self.status == self.STATUS_APPROVED
+
+    def __repr__(self):
+        return (
+            f"<TranscriptRelease year={self.academic_year_id} student={self.student_id} "
+            f"status={self.status}>"
+        )
+
+
 class Assessment(db.Model):
     __tablename__ = "assessments"
 
@@ -1014,13 +1335,17 @@ class Assessment(db.Model):
     activity_type = db.Column(db.String(50), default="Assignment")  # Assignment, Class Work, Quiz, Test, Exam
     submission_mode = db.Column(db.String(30), default="file_upload")  # file_upload, text_entry, in_class
     marking_period = db.Column(db.Integer, default=1)
-    academic_year_id = db.Column(db.Integer, db.ForeignKey("academic_years.id"), nullable=True)
+    academic_year_id = db.Column(db.Integer, db.ForeignKey("academic_years.id"), nullable=True, index=True)
     teacher_id = db.Column(db.Integer, db.ForeignKey("teachers.id"), nullable=True)
     file_name = db.Column(db.String(255), nullable=True)
     due_date = db.Column(db.String(20), nullable=True)
     scan_keywords = db.Column(db.String(500), nullable=True)
     external_url = db.Column(db.String(500), nullable=True)
     classroom_notes = db.Column(db.Text, nullable=True)
+
+    __table_args__ = (
+        db.Index("ix_assessments_year_class", "academic_year_id", "klass_id"),
+    )
 
     klass = db.relationship("Class", backref=db.backref("assessments", lazy="dynamic", cascade="all, delete-orphan"))
     teacher = db.relationship("Teacher", backref=db.backref("assessments", lazy="dynamic"))
@@ -1059,11 +1384,17 @@ class Attendance(db.Model):
     student_id = db.Column(db.Integer, db.ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
     class_id = db.Column(db.Integer, db.ForeignKey("classes.id", ondelete="SET NULL"), nullable=True)
     teacher_id = db.Column(db.Integer, db.ForeignKey("teachers.id", ondelete="SET NULL"), nullable=True)
-    academic_year_id = db.Column(db.Integer, db.ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True)
+    academic_year_id = db.Column(db.Integer, db.ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True, index=True)
     date = db.Column(db.String(20), nullable=False)
     status = db.Column(db.String(20), nullable=False)  # present, absent, late, excused
     notes = db.Column(db.String(200))
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=True)
+
+    __table_args__ = (
+        db.Index("ix_attendance_year_date", "academic_year_id", "date"),
+        db.Index("ix_attendance_student_date", "student_id", "date"),
+        db.Index("ix_attendance_class_date", "class_id", "date"),
+    )
 
     student = db.relationship("Student", backref=db.backref("attendance_ledger", lazy="dynamic", cascade="all, delete-orphan"))
     klass = db.relationship("Class", backref=db.backref("attendance_records", lazy="dynamic"))
@@ -1166,8 +1497,8 @@ class StudentPayment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     
     # Core multi-tenancy foreign keys with explicit ondelete behavior
-    student_id = db.Column(db.Integer, db.ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
-    academic_year_id = db.Column(db.Integer, db.ForeignKey("academic_years.id", ondelete="CASCADE"), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    academic_year_id = db.Column(db.Integer, db.ForeignKey("academic_years.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Breakdown filters for tracking payment intervals
     term = db.Column(db.Integer, nullable=False)           # e.g., Term 1, Term 2
@@ -1179,6 +1510,10 @@ class StudentPayment(db.Model):
     
     # Modernized timezone-aware payment timestamp
     paid_on = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    __table_args__ = (
+        db.Index("ix_payments_year_student", "academic_year_id", "student_id"),
+    )
 
     # =========================================================================
     # PLACE THE RELATIONSHIPS HERE (AT THE BOTTOM OF THE MODEL FIELDS)
@@ -1204,6 +1539,10 @@ class BusinessTransaction(db.Model):
     is_deleted = db.Column(db.Boolean, default=False, nullable=False)
     deleted_at = db.Column(db.DateTime, nullable=True)
     deleted_by_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+
+    __table_args__ = (
+        db.Index("ix_biz_year_type_deleted", "academic_year", "type", "is_deleted"),
+    )
 
     deleted_by = db.relationship("User", foreign_keys=[deleted_by_id], backref="deleted_transactions")
 

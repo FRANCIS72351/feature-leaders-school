@@ -2,6 +2,7 @@
 {% block title %}VPI Financial Command Center{% endblock %}
 
 {% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
     #vpi-cmd-title,
     #vpi-cmd-title *,
@@ -178,11 +179,11 @@
                 <i class="fas fa-coins me-2" style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important"></i><span style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important">VPI Financial Command Center</span>
             </h2>
             <p id="vpi-cmd-sub" class="small mb-0 mt-1" style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important;background:none !important;text-shadow:none !important">
-                <span style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important">Tuition collections, school ledger, class fees, and fiscal oversight</span>{% if display_year %} · <b style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important">{{ display_year.name }}</b>{% if viewing_archived %} <span class="badge bg-warning text-dark">Archived</span>{% endif %}{% endif %}
+                <span style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important">Vice Principal for Instruction — tuition, ledger, class fees, and fiscal oversight. Curriculum and teacher assignment belong to the VPA office.</span>{% if display_year %} · <b style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important">{{ display_year.name }}</b>{% if viewing_archived %} <span class="badge bg-warning text-dark">Archived</span>{% endif %}{% endif %}
             </p>
         </div>
         <form method="get" class="d-flex gap-2 mt-2 mt-md-0 align-items-center">
-            <a href="{{ url_for('attendance_overview', **year_param) }}" id="vpi-attendance-summary" class="btn btn-sm btn-outline-info" style="color:#ffffff !important;-webkit-text-fill-color:#ffffff !important;">Attendance Summary</a>
+            <a href="{{ url_for('attendance_overview', **year_param) }}" id="vpi-attendance-summary" class="btn btn-sm btn-outline-info" style="color:#ffffff !important;-webkit-text-fill-color:#ffffff !important;">Attendance (for collections)</a>
             <select name="academic_year_id" class="form-select form-cyber form-select-sm" onchange="this.form.submit()">
                 {% for y in years %}
                 <option value="{{ y.id }}" {% if display_year and y.id == display_year.id %}selected{% endif %}>{{ y.name }}{% if y.is_active %} (Active){% endif %}</option>
@@ -230,7 +231,7 @@
                     <img src="{{ current_user.photo_url }}" class="rounded-circle border border-secondary border-opacity-25" style="width:64px;height:64px;aspect-ratio:1/1;object-fit:cover;overflow:hidden;" alt="VPI" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
                     <div>
                         <h5 class="mb-0">{{ current_user.full_name }}</h5>
-                        <span class="badge bg-emerald bg-opacity-10 text-emerald border border-emerald border-opacity-10 small">{{ current_user.role }}</span>
+                        <span class="badge bg-emerald bg-opacity-10 text-emerald border border-emerald border-opacity-10 small">Vice Principal for Instruction (VPI)</span>
                     </div>
                 </div>
                 {% if active_year %}
@@ -242,14 +243,15 @@
             </div>
 
             <div class="card sec-card p-4">
-                <h6 class="fw-bold mb-3"><i class="fas fa-bolt text-amber me-2"></i>VPI Responsibilities</h6>
+                <h6 class="fw-bold mb-3"><i class="fas fa-bolt text-amber me-2"></i>VPI Responsibilities (Finance only)</h6>
                 <div class="d-flex flex-column gap-2 small">
                     <div><i class="fas fa-hand-holding-usd text-emerald me-2"></i>Tuition &amp; fee collection</div>
                     <div><i class="fas fa-receipt text-cyan me-2"></i>School income &amp; expense ledger</div>
                     <div><i class="fas fa-school text-amber me-2"></i>Class-by-class payment tracking</div>
                     <div><i class="fas fa-file-invoice-dollar text-rose me-2"></i>Outstanding balance follow-up</div>
                     <div><i class="fas fa-chart-pie text-cyan me-2"></i>Financial reports &amp; audits</div>
-                    <div><i class="fas fa-shield-alt text-emerald me-2"></i>Transaction audit trail</div>
+                    <div><i class="fas fa-door-open text-amber me-2"></i>Campus rooms &amp; physical space inventory</div>
+                    <div class="text-muted pt-1">Not this office: subjects, teacher assignment, or grades (that is VPA).</div>
                 </div>
             </div>
 
@@ -267,6 +269,10 @@
                     <a href="{{ url_for('daily_expense_report') }}" class="vpi-quick-link" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;margin-bottom:10px;background:#fff;border:1px solid #d1d5db;border-radius:10px;text-decoration:none;">
                         <i class="fas fa-calendar-day" style="font-size:20px;color:#d97706;"></i>
                         <span style="display:inline;font-size:16px !important;font-weight:700;color:#1f2937 !important;line-height:1.3;">Daily Expense Report</span>
+                    </a>
+                    <a href="{{ url_for('class_create') }}" class="vpi-quick-link" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;margin-bottom:10px;background:#fff;border:1px solid #d1d5db;border-radius:10px;text-decoration:none;">
+                        <i class="fas fa-door-open" style="font-size:20px;color:#0d9488;"></i>
+                        <span style="display:inline;font-size:16px !important;font-weight:700;color:#1f2937 !important;line-height:1.3;">Class Fees &amp; Campus Rooms</span>
                     </a>
                     <a href="{{ url_for('business_overview') }}" class="vpi-quick-link" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;margin-bottom:10px;background:#fff;border:1px solid #d1d5db;border-radius:10px;text-decoration:none;">
                         <i class="fas fa-landmark" style="font-size:20px;color:#0ea5e9;"></i>

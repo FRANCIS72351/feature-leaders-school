@@ -24,6 +24,49 @@
         color: #1f2937;
     }
     .receipt-field-wrap.is-inactive { display: none; }
+    .enroll-help-text { color: #d5deea !important; font-size: 0.78rem; margin-top: 0.35rem; }
+    .id-photo-well {
+        width: 132px;
+        height: 132px;
+        max-width: 42vw;
+        aspect-ratio: 1 / 1;
+        border-radius: 10px;
+        overflow: hidden;
+        background: #0B192C;
+        border: 3px solid #c9a227;
+        box-shadow: 0 0 0 3px #002d62, 0 8px 18px rgba(0, 0, 0, 0.35);
+        margin-bottom: 0.65rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .id-photo-well img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .id-photo-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.35rem;
+        color: #d5deea;
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-align: center;
+        padding: 0.5rem;
+    }
+    .id-photo-empty i { font-size: 1.45rem; color: #c9a227; }
+    .division-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        background: rgba(201, 162, 39, 0.14);
+        border: 1px solid #c9a227;
+        color: #f3e3a6;
+        font-size: 0.75rem;
+        font-weight: 700;
+        padding: 0.28rem 0.65rem;
+        border-radius: 999px;
+        margin-top: 0.4rem;
+    }
 </style>
 <div class="container-fluid py-4">
     <div class="row mb-4">
@@ -45,7 +88,7 @@
                 <div class="row g-3 mb-3">
                     <div class="col-md-4">
                         {{ form.student_id.label(class="form-label text-white-50 small") }}
-                        {{ form.student_id(class="form-control bg-dark border-secondary text-white font-monospace") }}
+                        {{ form.student_id(class="form-control bg-dark border-secondary text-white font-monospace", placeholder=suggested_student_id or "Leave blank to auto-assign") }}
                         {% if form.student_id.errors %}
                             <div class="text-danger small mt-1">{% for error in form.student_id.errors %}{{ error }}{% endfor %}</div>
                         {% endif %}
@@ -79,12 +122,16 @@
                         {{ form.gender(class="form-select bg-dark border-secondary text-white") }}
                     </div>
                     <div class="col-md-3">
-                        {{ form.level.label(class="form-label text-white-50 small") }}
-                        {{ form.level(class="form-select bg-dark border-secondary text-white") }}
+                        {{ form.level.label(class="form-label text-white small") }}
+                        {{ form.level(class="form-select bg-dark border-secondary text-white", id="level") }}
+                        <div class="division-chip" id="divisionReadout" hidden>
+                            <i class="fas fa-layer-group" aria-hidden="true"></i>
+                            <span id="divisionChipLabel"></span>
+                        </div>
                     </div>
                     <div class="col-md-3">
-                        {{ form.klass.label(class="form-label text-white-50 small") }}
-                        {{ form.klass(class="form-select bg-dark border-secondary text-white") }}
+                        {{ form.klass.label(class="form-label text-white small") }}
+                        {{ form.klass(class="form-select bg-dark border-secondary text-white", id="klass") }}
                     </div>
                 </div>
 
@@ -101,14 +148,25 @@
                     </div>
                     <div class="col-md-6">
                         {{ form.password.label(class="form-label text-white-50 small") }}
-                        {{ form.password(class="form-control bg-dark border-secondary text-white", placeholder="Assign initial login credential") }}
+                        {{ form.password(class="form-control bg-dark border-secondary text-white", placeholder="Leave blank to auto-generate") }}
                         {% if form.password.errors %}
                             <div class="text-danger small mt-1">{% for error in form.password.errors %}{{ error }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-6">
+                        {{ form.confirm_password.label(class="form-label text-white-50 small") }}
+                        {{ form.confirm_password(class="form-control bg-dark border-secondary text-white", placeholder="Re-enter password") }}
+                        {% if form.confirm_password.errors %}
+                            <div class="text-danger small mt-1">{% for error in form.confirm_password.errors %}{{ error }}{% endfor %}</div>
                         {% endif %}
                     </div>
                 </div>
 
                 <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        {{ form.guardian_name.label(class="form-label text-white-50 small") }}
+                        {{ form.guardian_name(class="form-control bg-dark border-secondary text-white") }}
+                    </div>
                     <div class="col-md-4">
                         {{ form.parent_email.label(class="form-label text-white-50 small") }}
                         {{ form.parent_email(class="form-control bg-dark border-secondary text-white") }}
@@ -118,8 +176,16 @@
                         {{ form.academic_year(class="form-select bg-dark border-secondary text-white") }}
                     </div>
                     <div class="col-md-4">
-                        {{ form.photo.label(class="form-label text-white-50 small") }}
-                        {{ form.photo(class="form-control bg-dark border-secondary text-white") }}
+                        {{ form.photo.label(class="form-label text-white small") }}
+                        <div class="id-photo-well" id="photoWell" aria-live="polite">
+                            <img id="photoPreview" alt="Student ID photo" hidden>
+                            <div class="id-photo-empty" id="photoEmpty">
+                                <i class="fas fa-id-badge" aria-hidden="true"></i>
+                                <span>No photo on file</span>
+                            </div>
+                        </div>
+                        {{ form.photo(class="form-control bg-dark border-secondary text-white", id="photo", accept="image/jpeg,image/png,image/gif,image/webp") }}
+                        <div class="form-text enroll-help-text">Choose a file to add or replace the ID photo.</div>
                     </div>
                 </div>
 
@@ -182,7 +248,7 @@
                                 <div style="width: 44px; height: 44px;">
                                     {% if s.photo_url %}
                                         <img src="{{ s.photo_url }}" 
-                                             alt="Student Array Photo" class="w-100 h-100 object-fit-cover rounded border border-secondary border-opacity-20" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
+                                             alt="Student Array Photo" class="w-100 h-100 object-fit-cover rounded border border-secondary border-opacity-20" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
                                     {% else %}
                                         <div class="bg-secondary text-white rounded d-flex align-items-center justify-content-center w-100 h-100 border border-secondary border-opacity-20 small fw-bold">
                                             {{ s.first_name[0] | upper }}{{ s.last_name[0] | upper }}
@@ -220,6 +286,11 @@
                                     <a href="{{ url_for('edit_student', student_id=s.id) }}" class="btn btn-sm btn-warning rounded-start px-2.5 py-1" style="font-size:0.75rem;">
                                         <i class="fas fa-user-gear me-1"></i>Edit
                                     </a>
+                                    {% if s.user %}
+                                    <a href="{{ url_for('print_registrar_credential_slip', student_id=s.id) }}" class="btn btn-sm btn-outline-light px-2.5 py-1" style="font-size:0.75rem;" target="_blank" rel="noopener">
+                                        <i class="fas fa-key me-1"></i>Slip
+                                    </a>
+                                    {% endif %}
                                     <a href="#" class="btn btn-sm btn-outline-info px-2.5 py-1" style="font-size:0.75rem;" title="View Ledger Account">
                                         <i class="fas fa-receipt"></i> Finances
                                     </a>
@@ -255,6 +326,48 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     if (status) status.addEventListener('change', syncReceipt);
     syncReceipt();
+
+    const inputLevel = document.getElementById('level');
+    const inputKlass = document.getElementById('klass');
+    const inputPhoto = document.getElementById('photo');
+    const photoPreview = document.getElementById('photoPreview');
+    const photoEmpty = document.getElementById('photoEmpty');
+    const divisionReadout = document.getElementById('divisionReadout');
+    const divisionChipLabel = document.getElementById('divisionChipLabel');
+    const classDivisionLabels = {{ class_division_labels|default({})|tojson }};
+
+    function showPhotoPreview(url) {
+        if (photoPreview && url) {
+            photoPreview.src = url;
+            photoPreview.hidden = false;
+            if (photoEmpty) photoEmpty.hidden = true;
+            return;
+        }
+        if (photoPreview) {
+            photoPreview.removeAttribute('src');
+            photoPreview.hidden = true;
+        }
+        if (photoEmpty) photoEmpty.hidden = false;
+    }
+
+    function applyLevelFromClass() {
+        if (!inputKlass || !inputLevel) return;
+        const label = classDivisionLabels[String(inputKlass.value)] || '';
+        if (label && label !== 'Other') {
+            inputLevel.value = label;
+            if (divisionChipLabel) divisionChipLabel.textContent = label;
+            if (divisionReadout) divisionReadout.hidden = false;
+        }
+    }
+
+    if (inputKlass) inputKlass.addEventListener('change', applyLevelFromClass);
+    if (inputPhoto) {
+        inputPhoto.addEventListener('change', function () {
+            const file = this.files && this.files[0];
+            showPhotoPreview(file ? URL.createObjectURL(file) : '');
+        });
+    }
+    applyLevelFromClass();
 });
 </script>
 {% endblock %}

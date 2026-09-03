@@ -147,23 +147,32 @@
     
     <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center mb-4 pb-3 border-bottom border-secondary border-opacity-10 fade-glide-in">
         <div>
-            <h3 class="glow-title mb-0"><i class="fas fa-layer-group text-cyan me-2"></i>Institutional Space & Load Allocation Matrix</h3>
-            <p class="text-blue small mb-0">Provision structural class rooms, track load matrices, configure base tuition parameters, and map cross-functional faculty rosters.</p>
+            {% if is_vpa_office %}
+            <h3 class="glow-title mb-0"><i class="fas fa-chalkboard-teacher text-cyan me-2"></i>VPA Faculty &amp; Class Assignment</h3>
+            <p class="text-blue small mb-0">Assign teachers to subjects and class sponsors. Tuition rates and campus rooms are set by the VPI office.</p>
+            {% elif is_vpi_office %}
+            <h3 class="glow-title mb-0"><i class="fas fa-coins text-cyan me-2"></i>VPI Class Fees &amp; Campus Rooms</h3>
+            <p class="text-blue small mb-0">Set yearly tuition and physical rooms. Teacher and subject assignment belongs to the VPA office.</p>
+            {% else %}
+            <h3 class="glow-title mb-0"><i class="fas fa-layer-group text-cyan me-2"></i>Institutional Space &amp; Load Allocation Matrix</h3>
+            <p class="text-blue small mb-0">Provision classes, tuition, rooms, and faculty rosters. VPA owns academics; VPI owns fees.</p>
+            {% endif %}
         </div>
         <div class="d-flex gap-2 mt-2 mt-sm-0">
+            {% if not is_vpi_office %}
             <a href="{{ url_for('subject_setup') }}" class="btn btn-sm btn-primary rounded-3 px-3">
                 <i class="fas fa-book-open me-2"></i>Subject Setup
             </a>
-            <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline-secondary text-dark rounded-3 px-3">
-                <i class="fas fa-th-large me-2"></i>Return to Hub Terminal
+            {% endif %}
+            <a href="{{ url_for('vpa_dashboard') if is_vpa_office else (url_for('vpi_dashboard') if is_vpi_office else url_for('dashboard')) }}" class="btn btn-sm btn-outline-secondary text-dark rounded-3 px-3">
+                <i class="fas fa-th-large me-2"></i>Return to Command Center
             </a>
         </div>
     </div>
 
     <div class="row g-4">
-        
         <div class="col-xl-4 col-lg-5 d-flex flex-column gap-4 fade-glide-in">
-            
+            {% if not is_vpa_office %}
             <div class="card sec-card p-4 shadow-lg border border-info border-opacity-25">
                 <div class="d-flex align-items-center mb-1">
                     <div class="p-2 bg-info bg-opacity-10 border border-info border-opacity-25 rounded-3 me-3">
@@ -200,7 +209,9 @@
                     </button>
                 </form>
             </div>
+            {% endif %}
 
+            {% if not is_vpi_office %}
             <div class="card sec-card p-4 shadow-lg">
                 <div class="d-flex align-items-center mb-1">
                     <div class="p-2 bg-primary bg-opacity-10 border border-primary border-opacity-25 rounded-3 me-3">
@@ -208,7 +219,7 @@
                     </div>
                     <div>
                         <h5 class="text-white font-weight-bold mb-0">Provision New Class</h5>
-                        <p class="text-blue small mb-0">Establish class parameters and structural fee rates.</p>
+                        <p class="text-blue small mb-0">{% if is_vpa_office %}Create the academic class. Tuition is set by VPI.{% else %}Establish class parameters and structural fee rates.{% endif %}</p>
                     </div>
                 </div>
                 <hr class="border-secondary opacity-10 my-3">
@@ -252,10 +263,15 @@
                     </div>
 
                     <div class="mb-3">
+                        {% if is_vpa_office %}
+                        <input type="hidden" name="yearly_fees" value="0">
+                        {% else %}
                         <label for="yearly_fees" class="form-label text-blue small font-weight-bold">Yearly Tuition Fees Rate ($)</label>
-                        <input type="text" class="form-control form-cyber" id="yearly_fees" name="yearly_fees" placeholder="60,000.00" required>
+                        <input type="text" class="form-control form-cyber" id="yearly_fees" name="yearly_fees" placeholder="60,000.00">
+                        {% endif %}
                     </div>
 
+                    {% if not is_vpa_office %}
                     <div class="mb-4">
                         <label for="room_id" class="form-label text-blue small font-weight-bold">Assigned Physical Classroom Room</label>
                         <select class="form-select form-cyber" id="room_id" name="room_id">
@@ -266,13 +282,16 @@
                         </select>
                         <small class="text-blue d-block mt-1" style="font-size: 0.75rem;">Don't see your room? Create it in the panel above first.</small>
                     </div>
+                    {% endif %}
 
                     <button type="submit" class="btn btn-primary w-100 py-2.5 font-weight-bold shadow-sm rounded-3">
                         <i class="fas fa-plus-circle me-2"></i>Commit Class to System
                     </button>
                 </form>
             </div>
+            {% endif %}
 
+            {% if not is_vpi_office %}
             <div class="card sec-card p-4 shadow-lg border border-warning border-opacity-25">
                 <div class="d-flex align-items-center mb-1">
                     <div class="p-2 bg-warning bg-opacity-10 border border-warning border-opacity-25 rounded-3 me-3">
@@ -313,7 +332,7 @@
                         <i class="fas fa-user-shield me-2"></i>Assign Class Sponsor
                     </button>
                 </form>
-                {% if current_user.role and current_user.role|lower == 'principal' %}
+                {% if current_user.role and current_user.role|lower in ['principal', 'vpa', 'admin'] %}
                 <a href="{{ url_for('principal_class_sponsors') }}" class="btn btn-outline-info w-100 mt-2 py-2 rounded-3 small">
                     <i class="fas fa-table me-1"></i>Open Full Sponsor Command Center
                 </a>
@@ -369,6 +388,7 @@
                     </button>
                 </form>
             </div>
+            {% endif %}
 
         </div>
 

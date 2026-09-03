@@ -110,6 +110,25 @@ def main():
                 print("OK: session key persists selected year")
 
         active = get_active_academic_year()
+        archived_id = next((yid for yid in years if not active or yid != active.id), None)
+        if archived_id:
+            with app.test_request_context("/registrar/dashboard"):
+                from flask import session
+                session.clear()
+                session[REGISTRAR_YEAR_SESSION_KEY] = archived_id
+                display, _active, _all_y, archived_flag = resolve_dashboard_academic_year(
+                    session_key=REGISTRAR_YEAR_SESSION_KEY
+                )
+                if display is None or display.id != archived_id:
+                    failures.append(
+                        "resolve_dashboard_academic_year snapped registrar "
+                        "off archived session year"
+                    )
+                elif not archived_flag and active and archived_id != active.id:
+                    failures.append("archived year was not marked viewing_archived")
+                else:
+                    print("OK: registrar session keeps archived year without query param")
+
         if active:
             enrolled = students_for_academic_year(
                 active.id, registered_only=True,

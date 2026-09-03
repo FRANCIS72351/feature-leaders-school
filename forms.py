@@ -4,7 +4,7 @@ from wtforms import (
     FloatField, TextAreaField, DateField, IntegerField,
     BooleanField, FileField
 )
-from wtforms.validators import DataRequired, Email, Optional, ValidationError, Length
+from wtforms.validators import DataRequired, Email, Optional, ValidationError, Length, EqualTo
 from flask_wtf.file import FileAllowed, FileRequired
 from constants import GRADING_PERIODS
 from school_divisions import ACADEMIC_LEVEL_CHOICES, GRADE_LEVEL_SELECT_CHOICES
@@ -145,7 +145,15 @@ class RegisterStudentForm(FlaskForm):
     first_name = StringField("First Name", validators=[DataRequired()])
     last_name = StringField("Last Name", validators=[DataRequired()])
     email = StringField("Email", validators=[Optional(), Email()])
-    password = PasswordField("Password (Optional)", validators=[Optional()])
+    password = PasswordField(
+        "Portal Password",
+        validators=[Optional(), Length(min=6, max=128)],
+        description="Optional initial password. Leave blank to auto-generate a secure 8-character password printed once on the credential slip.",
+    )
+    confirm_password = PasswordField(
+        "Confirm Portal Password",
+        validators=[Optional()],
+    )
     dob = DateField("Date of Birth", validators=[DataRequired()])
     gender = SelectField(
         "Gender",
@@ -163,6 +171,10 @@ class RegisterStudentForm(FlaskForm):
         description="Leave blank to auto-generate for new students.",
     )
     parent_email = StringField("Parent Email", validators=[Optional(), Email()])
+    guardian_name = StringField(
+        "Parent / Guardian Full Name",
+        validators=[Optional(), Length(max=120)],
+    )
     parent_phone = StringField(
         "Parent/Guardian Phone",
         validators=[Optional(), Length(max=20)],
@@ -198,7 +210,14 @@ class RegisterStudentForm(FlaskForm):
         description="Official receipt number issued to the student after payment.",
     )
     is_returning = BooleanField("Returning Student", default=False)
-    submit = SubmitField("Register")
+    submit = SubmitField("Complete Registration & Generate Slip")
+
+    def validate_confirm_password(self, field):
+        password = (self.password.data or "").strip()
+        confirm = (field.data or "").strip()
+        field.data = confirm
+        if password and password != confirm:
+            raise ValidationError("Passwords must match.")
 
     def validate_receipt_reference(self, field):
         status = (self.registration_payment_status.data or "").strip().lower()

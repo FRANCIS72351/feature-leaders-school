@@ -125,7 +125,7 @@
                             <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}">
                                 <i class="fas fa-file-invoice me-2"></i>Report Card
                             </a>
-                            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('transcript', student_id=student.id) }}">
+                            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('transcript', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}" {% if not transcript_released %}title="Official Transcript is not released yet."{% endif %}>
                                 <i class="fas fa-graduation-cap me-2"></i>Transcript
                             </a>
                         </div>
@@ -175,13 +175,36 @@
                 <div class="card border-0 shadow-sm mb-3">
                     <div class="card-body py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
                         <div>
-                            <span class="badge bg-success me-1">Published</span>
+                            {% if official_documents and official_documents.unlocked %}
+                            <span class="badge bg-success me-1">Approved</span>
+                            {% if official_documents.awaiting_note %}
+                            <span class="small text-muted">{{ official_documents.awaiting_note }}</span>
+                            {% else %}
                             <span class="small text-muted">Official grade sheet &amp; report card</span>
+                            {% endif %}
+                            {% elif official_documents and official_documents.hold %}
+                            <span class="badge bg-warning text-dark me-1">Pending VPA</span>
+                            <span class="small text-muted">Official documents are under academic review</span>
+                            {% else %}
+                            <span class="badge bg-secondary me-1">Not released</span>
+                            <span class="small text-muted">Official grade sheet &amp; report card</span>
+                            {% endif %}
                         </div>
                         <a href="{{ url_for('student_grade_sheet') }}?academic_year_id={{ display_year.id if display_year else '' }}" class="btn btn-sm btn-primary fw-semibold">
                             <i class="fas fa-table me-1"></i>View Grade Sheet
                         </a>
                     </div>
+                    {% if official_documents and official_documents.unlocked %}
+                    <div class="small mt-2 text-muted">
+                        <strong>Approved periods:</strong>
+                        {% for period_num, period_name in grading_periods if period_num in approved_periods %}
+                        <span class="badge bg-success-subtle text-success-emphasis ms-1">{{ period_name }}</span>
+                        {% endfor %}
+                        {% for period_num, period_name in grading_periods if period_num in pending_periods %}
+                        <span class="badge bg-light text-secondary border ms-1">{{ period_name }} pending VPA</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
                 </div>
                 <div class="card border-0 shadow-sm mb-4">
                     <div class="card-header bg-white border-bottom py-3">
@@ -190,7 +213,7 @@
                         <div class="student-subject-pills d-flex flex-wrap gap-2 mb-2">
                             {% for subject in subjects %}
                             <a href="{{ url_for('student_dashboard', tab='grades', academic_year_id=display_year.id if display_year else None, subject=subject.name, period=selected_period) }}"
-                               class="subject-pill {% if selected_subject == subject.name %}active{% endif %}">{{ subject.name }}</a>
+                               class="subject-pill {% if selected_subject | subjects_match(subject.name) %}active{% endif %}">{{ subject.name }}</a>
                             {% endfor %}
                         </div>
                         {% endif %}
@@ -202,44 +225,64 @@
                         </div>
                     </div>
                     <div class="card-body">
-                        <div class="row g-3 mb-4 align-items-center">
-                            <div class="col-sm-6">
-                                <div class="standing-box standing-draft h-100 d-flex gap-3 align-items-center">
-                                    <div class="grade-progress-ring {% if draft_standing %}draft{% else %}empty{% endif %}">
-                                        {% if draft_standing %}{{ draft_standing.grade_letter or '—' }}{% else %}—{% endif %}
-                                    </div>
-                                    <div>
-                                        <div class="standing-label">Draft Standing</div>
-                                        <div class="standing-sub">{{ selected_subject or 'Subject' }} · {{ selected_period | marking_period_label }}</div>
-                                        {% if draft_standing %}
-                                        <div class="standing-score">{{ '%.1f'|format(draft_standing.total or 0) }}<span>/100</span></div>
-                                        <div class="small text-muted">Draft from period activities (ATT · PART · QUIZ · ASSG · CW · HW · TEST). Not yet on the report card.</div>
-                                        {% else %}
-                                        <div class="text-muted small mt-1">Appears when your teacher saves a draft of this period’s activity scores</div>
-                                        {% endif %}
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <div class="standing-ledger standing-draft h-100">
+                                    <div class="standing-ledger-mark">Draft</div>
+                                    <div class="d-flex gap-3 align-items-center">
+                                        <div class="grade-progress-ring {% if draft_standing %}draft{% else %}empty{% endif %}">
+                                            {% if draft_standing %}{{ draft_standing.grade_letter or '—' }}{% else %}—{% endif %}
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <div class="standing-label">Draft Standing</div>
+                                            <div class="standing-sub">{{ selected_subject or 'Subject' }} · {{ selected_period | marking_period_label }}</div>
+                                            {% if draft_standing %}
+                                            <div class="standing-score">{{ '%.1f'|format(draft_standing.total or 0) }}<span>/100</span></div>
+                                            <div class="score-meter mt-2" aria-hidden="true">
+                                                <span style="width: {{ [100, (draft_standing.total or 0)]|min }}%;"></span>
+                                            </div>
+                                            {% if draft_standing.remarks %}
+                                            <div class="small text-muted mt-2">{{ draft_standing.remarks }}</div>
+                                            {% endif %}
+                                            <div class="small text-muted mt-1">Live total from this period’s activity marks. Not yet on the report card.</div>
+                                            {% elif published_standing %}
+                                            <div class="text-muted small mt-1">This period is closed. The official result is on the right.</div>
+                                            {% else %}
+                                            <div class="text-muted small mt-1">Waiting for your teacher to post this period’s activity marks.</div>
+                                            {% endif %}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-sm-6">
-                                <div class="standing-box standing-published h-100 d-flex gap-3 align-items-center">
-                                    <div class="grade-progress-ring {% if published_standing %}published{% else %}empty{% endif %}">
-                                        {% if published_standing %}{{ published_standing.grade_letter or '—' }}{% else %}—{% endif %}
-                                    </div>
-                                    <div>
-                                        <div class="standing-label">Official Grade</div>
-                                        <div class="standing-sub">Published final result for this period</div>
-                                        {% if published_standing %}
-                                        <div class="standing-score text-success">{{ '%.1f'|format(published_standing.total or 0) }}<span>/100</span></div>
-                                        <div class="small fw-semibold text-success">Published</div>
-                                        {% else %}
-                                        <div class="text-muted small mt-1">Not published yet by teacher</div>
-                                        {% endif %}
+                            <div class="col-md-6">
+                                <div class="standing-ledger standing-published h-100">
+                                    <div class="standing-ledger-mark official">Official</div>
+                                    <div class="d-flex gap-3 align-items-center">
+                                        <div class="grade-progress-ring {% if published_standing %}published{% else %}empty{% endif %}">
+                                            {% if published_standing %}{{ published_standing.grade_letter or '—' }}{% else %}—{% endif %}
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <div class="standing-label">Official Grade</div>
+                                            <div class="standing-sub">Final published result for this period</div>
+                                            {% if published_standing %}
+                                            <div class="standing-score text-success">{{ '%.1f'|format(published_standing.total or 0) }}<span>/100</span></div>
+                                            <div class="score-meter published mt-2" aria-hidden="true">
+                                                <span style="width: {{ [100, (published_standing.total or 0)]|min }}%;"></span>
+                                            </div>
+                                            <div class="small fw-semibold text-success mt-2">On your grade sheet &amp; report card</div>
+                                            {% if published_standing.remarks %}
+                                            <div class="small text-muted">{{ published_standing.remarks }}</div>
+                                            {% endif %}
+                                            {% else %}
+                                            <div class="text-muted small mt-1">Your teacher has not published this period yet.</div>
+                                            {% endif %}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <h4 class="h6 fw-bold mb-3">Period Activity Scores <span class="text-muted fw-normal small">— {{ period_scheme_note if period_scheme_note is defined else 'ATT 10 + PART 10 + QUIZ 15 + ASSG 20 + CW 15 + HW 10 + TEST 20 = 100' }}</span></h4>
+                        <h4 class="h6 fw-bold mb-3">Period Activity Scores <span class="text-muted fw-normal small">— {{ period_scheme_note }}</span></h4>
                         <div class="table-responsive mb-4">
                             <table class="table table-sm table-hover align-middle mb-0">
                                 <thead class="table-light">
@@ -256,8 +299,13 @@
                                     <tr {% if item.key == 'total' %}class="table-light fw-semibold"{% endif %}>
                                         <td>{{ item.name }}</td>
                                         <td class="text-center font-monospace">{{ item.code }}</td>
-                                        <td class="text-center font-monospace fw-bold">
-                                            {% if item.score is not none %}{{ item.score }}/{{ item.max_score|int }}{% else %}—{% endif %}
+                                        <td class="score-cell">
+                                            {% if item.score is not none %}
+                                            <div class="score-value">{{ item.score }}/{{ item.max_score|int }}</div>
+                                            <div class="score-meter"><span style="width: {{ ([item.score, item.max_score]|min / (item.max_score or 1) * 100) }}%;"></span></div>
+                                            {% else %}
+                                            <span class="text-muted">Awaiting mark</span>
+                                            {% endif %}
                                         </td>
                                         <td class="text-center">
                                             {% if item.key == 'total' %}
@@ -267,13 +315,13 @@
                                             {% elif item.score is not none %}
                                                 <span class="badge bg-info text-dark">{{ 'Draft' if not published_standing else 'Recorded' }}</span>
                                             {% else %}
-                                                <span class="badge bg-secondary">Open</span>
+                                                <span class="badge bg-light text-muted border">Awaiting mark</span>
                                             {% endif %}
                                         </td>
                                     </tr>
                                     {% endfor %}
                                     {% else %}
-                                    <tr><td colspan="4" class="text-center text-muted py-3">No period activity scores yet. They appear as soon as your teacher saves a draft.</td></tr>
+                                    <tr><td colspan="4" class="text-center text-muted py-3">No activity scores entered for {{ selected_subject or 'this subject' }} · {{ selected_period | marking_period_label }} yet.</td></tr>
                                     {% endif %}
                                 </tbody>
                             </table>
@@ -306,11 +354,17 @@
                                             <a href="{{ url_for('student_download_activity', assessment_id=item.assessment.id) }}" class="btn btn-sm btn-outline-primary py-0 px-2"><i class="fas fa-download"></i></a>
                                             {% else %}<span class="text-muted">—</span>{% endif %}
                                         </td>
-                                        <td class="text-center font-monospace fw-bold">{% if item.score is not none %}{{ item.score }}/{{ item.max_score }}{% else %}—{% endif %}</td>
+                                        <td class="score-cell text-center">
+                                            {% if item.score is not none %}
+                                            <div class="score-value">{{ item.score }}/{{ item.max_score }}</div>
+                                            {% else %}
+                                            <span class="text-muted">Awaiting mark</span>
+                                            {% endif %}
+                                        </td>
                                         <td class="text-center">
                                             {% if item.status == 'Graded' %}<span class="badge bg-success">Graded</span>
                                             {% elif item.status == 'Submitted' %}<span class="badge bg-info text-dark">Submitted</span>
-                                            {% else %}<span class="badge bg-secondary">Open</span>{% endif %}
+                                            {% else %}<span class="badge bg-light text-muted border">Awaiting mark</span>{% endif %}
                                         </td>
                                     </tr>
                                     {% else %}
@@ -360,7 +414,7 @@
                                class="subject-pill {% if not selected_subject %}active{% endif %}">All Subjects</a>
                             {% for subject in subjects %}
                             <a href="{{ url_for('student_dashboard', tab='activities', academic_year_id=display_year.id if display_year else None, subject=subject.name, period=selected_period) }}"
-                               class="subject-pill {% if selected_subject == subject.name %}active{% endif %}">{{ subject.name }}</a>
+                               class="subject-pill {% if selected_subject and (selected_subject | subjects_match(subject.name)) %}active{% endif %}">{{ subject.name }}</a>
                             {% endfor %}
                         </div>
                         {% endif %}
@@ -401,13 +455,17 @@
                                         <td class="small">{{ item.assessment.subject_name }}</td>
                                         <td class="small">{{ item.period_label }}</td>
                                         <td class="small">{{ item.type_label }}</td>
-                                        <td class="text-center font-monospace fw-bold">
-                                            {% if item.score is not none %}{{ item.score }}/{{ item.max_score }}{% else %}—{% endif %}
+                                        <td class="score-cell text-center">
+                                            {% if item.score is not none %}
+                                            <div class="score-value">{{ item.score }}/{{ item.max_score }}</div>
+                                            {% else %}
+                                            <span class="text-muted">Awaiting mark</span>
+                                            {% endif %}
                                         </td>
                                         <td class="text-center">
                                             {% if item.status == 'Graded' %}<span class="badge bg-success">Graded</span>
                                             {% elif item.status == 'Submitted' %}<span class="badge bg-info text-dark">Submitted</span>
-                                            {% else %}<span class="badge bg-secondary">Open</span>{% endif %}
+                                            {% else %}<span class="badge bg-light text-muted border">Awaiting mark</span>{% endif %}
                                         </td>
                                     </tr>
                                     {% else %}
@@ -677,13 +735,78 @@
     }
     .btn-student-primary { background: #1e40af; color: #fff; font-weight: 600; border: none; border-radius: 8px; }
     .btn-student-primary:hover { background: #1e3a8a; color: #fff; }
-    .standing-box { border-radius: 12px; padding: 1rem; border: 1px solid #e2e8f0; background: #fff; }
-    .standing-draft { border-left: 4px solid #f59e0b; }
-    .standing-published { border-left: 4px solid #10b981; }
+    .standing-ledger {
+        border-radius: 16px;
+        padding: 1.1rem 1.15rem;
+        border: 1px solid #e2e8f0;
+        background:
+            linear-gradient(180deg, rgba(255,255,255,0.96) 0%, #fff 48%),
+            radial-gradient(120px 80px at 100% 0%, rgba(30,64,175,0.08), transparent 70%);
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+    }
+    .standing-draft { border-left: 5px solid #d97706; }
+    .standing-published { border-left: 5px solid #059669; }
+    .standing-ledger-mark {
+        display: inline-block;
+        font-size: 0.65rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #9a3412;
+        background: #fff7ed;
+        border-radius: 999px;
+        padding: 0.18rem 0.55rem;
+        margin-bottom: 0.75rem;
+    }
+    .standing-ledger-mark.official {
+        color: #047857;
+        background: #ecfdf5;
+    }
+    .score-meter.published span { background: linear-gradient(90deg, #047857, #34d399); }
+    .standing-ledger-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.85rem;
+    }
+    .standing-kicker {
+        font-size: 0.68rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #64748b;
+        font-weight: 700;
+    }
+    .standing-chip {
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        border-radius: 999px;
+        padding: 0.2rem 0.55rem;
+    }
+    .draft-chip { background: #fff7ed; color: #9a3412; }
+    .official-chip { background: #ecfdf5; color: #047857; }
     .standing-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; color: #475569; }
-    .standing-sub { font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.35rem; }
-    .standing-score { font-size: 1.5rem; font-weight: 800; color: #0f172a; line-height: 1.1; }
+    .standing-sub { font-size: 0.75rem; color: #94a3b8; }
+    .standing-score { font-size: 1.65rem; font-weight: 800; color: #0f172a; line-height: 1.1; }
     .standing-score span { font-size: 0.85rem; font-weight: 500; color: #64748b; }
+    .score-cell { min-width: 7.5rem; }
+    .score-value { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-weight: 800; color: #0f172a; }
+    .score-meter {
+        height: 6px;
+        border-radius: 999px;
+        background: #e2e8f0;
+        overflow: hidden;
+        margin-top: 0.35rem;
+    }
+    .score-meter span {
+        display: block;
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #1e40af, #38bdf8);
+    }
+    .score-meter-official span { background: linear-gradient(90deg, #047857, #34d399); }
     .task-card { background: #fff; transition: box-shadow 0.2s; }
     .upload-zone { display: block; padding: 1.25rem; border: 2px dashed #cbd5e1; border-radius: 8px; cursor: pointer; color: #64748b; }
     .upload-zone:hover { border-color: #1e40af; color: #1e40af; background: #f8fafc; }

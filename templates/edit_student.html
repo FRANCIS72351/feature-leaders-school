@@ -61,6 +61,63 @@
     .fee-highlight .text-muted { color: #4b5563 !important; }
     .fee-highlight .req-star { color: #c82828; }
     .receipt-field-wrap.is-inactive { display: none; }
+    .enroll-help-label {
+        color: #e8eef7 !important;
+        font-weight: 600;
+    }
+    .enroll-help-text {
+        color: #d5deea !important;
+        font-size: 0.78rem;
+        margin-top: 0.35rem;
+    }
+    .id-photo-well {
+        width: 132px;
+        height: 132px;
+        max-width: 42vw;
+        aspect-ratio: 1 / 1;
+        border-radius: 10px;
+        overflow: hidden;
+        background: #0B192C;
+        border: 3px solid #c9a227;
+        box-shadow: 0 0 0 3px #002d62, 0 8px 18px rgba(0, 0, 0, 0.35);
+        margin: 0.35rem 0 0.65rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .id-photo-well img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+    .id-photo-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.35rem;
+        color: #d5deea;
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-align: center;
+        padding: 0.5rem;
+    }
+    .id-photo-empty i { font-size: 1.45rem; color: #c9a227; }
+    .academic-division-readout { margin-top: 0.45rem; }
+    .division-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        background: rgba(201, 162, 39, 0.14);
+        border: 1px solid #c9a227;
+        color: #f3e3a6;
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        padding: 0.28rem 0.65rem;
+        border-radius: 999px;
+    }
 </style>
 
 <div class="container-fluid py-4 px-md-4">
@@ -136,8 +193,17 @@
                     {{ form.gender(class_='form-select form-cyber py-2') }}
                 </div>
                 <div class="col-sm-6 col-md-4">
-                    <label class="text-muted small mb-1">Academic Level</label>
-                    {{ form.level(class_='form-select form-cyber py-2') }}
+                    <label class="enroll-help-label small mb-1" for="level">Academic Level</label>
+                    {{ form.level(class_='form-select form-cyber py-2', id='level') }}
+                    {% set current_division = student.academic_division_label or form.level.data %}
+                    <div class="academic-division-readout" id="divisionReadout"{% if not current_division %} hidden{% endif %}>
+                        <span class="division-chip"><i class="fas fa-layer-group" aria-hidden="true"></i> <span id="divisionChipLabel">{{ current_division }}</span></span>
+                    </div>
+                    <div class="form-text enroll-help-text">Filled from the assigned class (Elementary, Junior High, or Senior High).</div>
+                </div>
+                <div class="col-sm-6 col-md-4">
+                    <label class="text-muted small mb-1">Parent / Guardian Full Name</label>
+                    {{ form.guardian_name(class_='form-control form-cyber py-2', placeholder='Name as printed on the ID card') }}
                 </div>
                 <div class="col-sm-6 col-md-4">
                     <label class="text-muted small mb-1">Parent/Guardian Email</label>
@@ -162,20 +228,39 @@
                     {{ form.password(class_='form-control form-cyber py-2', type='password', placeholder='Leave blank to keep current') }}
                 </div>
                 <div class="col-sm-6 col-md-4">
-                    <label class="text-muted small mb-1">Class</label>
-                    {{ form.klass(class_='form-select form-cyber py-2') }}
+                    <label class="text-muted small mb-1">Confirm new password</label>
+                    {{ form.confirm_password(class_='form-control form-cyber py-2', type='password', placeholder='Re-enter if changing password') }}
+                    {% if form.confirm_password.errors %}
+                    <div class="text-danger small mt-1">{% for error in form.confirm_password.errors %}{{ error }}{% endfor %}</div>
+                    {% endif %}
+                </div>
+                <div class="col-sm-6 col-md-4">
+                    <label class="enroll-help-label small mb-1" for="klass">Class</label>
+                    {{ form.klass(class_='form-select form-cyber py-2', id='klass') }}
                 </div>
                 <div class="col-sm-6 col-md-4">
                     <label class="text-muted small mb-1">Academic Year</label>
                     {{ form.academic_year(class_='form-select form-cyber py-2') }}
                 </div>
                 <div class="col-sm-6 col-md-4">
-                    <label class="text-muted small mb-1">Photo</label>
-                    {{ form.photo(class_='form-control form-cyber py-2') }}
-                    <div class="form-text text-muted" style="font-size:0.72rem;">Automatically cropped to a square ID-card photo.</div>
-                    {% if student %}
-                    <img src="{{ student.photo_url }}" alt="Current photo" class="mt-2 rounded-circle" width="72" height="72" style="object-fit:cover;aspect-ratio:1/1;overflow:hidden;" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
-                    {% endif %}
+                    <label class="enroll-help-label small mb-1" for="photo">Student Photo</label>
+                    <div class="id-photo-well" id="photoWell" aria-live="polite">
+                        {% if student.has_id_photo %}
+                        <img src="{{ student.photo_url }}" alt="Current student ID photo" id="photoPreview" style="width:100%;height:100%;object-fit:cover;">
+                        <div class="id-photo-empty" id="photoEmpty" hidden>
+                            <i class="fas fa-id-badge" aria-hidden="true"></i>
+                            <span>No photo on file</span>
+                        </div>
+                        {% else %}
+                        <img id="photoPreview" alt="Current student ID photo" hidden>
+                        <div class="id-photo-empty" id="photoEmpty">
+                            <i class="fas fa-id-badge" aria-hidden="true"></i>
+                            <span>No photo on file</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {{ form.photo(class_='form-control form-cyber py-2', id='photo', accept='image/jpeg,image/png,image/gif,image/webp') }}
+                    <div class="form-text enroll-help-text">Keep the current ID photo, or choose a file to replace it.</div>
                 </div>
             </div>
 
@@ -252,6 +337,47 @@ document.addEventListener('DOMContentLoaded', function () {
     const status = document.getElementById('registration_payment_status');
     const receipt = document.getElementById('receipt_reference');
     const wrap = document.getElementById('receiptFieldWrap');
+    const inputLevel = document.getElementById('level');
+    const inputKlass = document.getElementById('klass');
+    const inputPhoto = document.getElementById('photo');
+    const photoPreview = document.getElementById('photoPreview');
+    const photoEmpty = document.getElementById('photoEmpty');
+    const divisionReadout = document.getElementById('divisionReadout');
+    const divisionChipLabel = document.getElementById('divisionChipLabel');
+    const classDivisionLabels = {{ class_division_labels|default({})|tojson }};
+    const storedPhotoUrl = {{ (student.photo_url if student.has_id_photo else '')|tojson }};
+
+    function showPhotoPreview(url) {
+        if (photoPreview && url) {
+            photoPreview.src = url;
+            photoPreview.hidden = false;
+            photoPreview.style.display = 'block';
+            if (photoEmpty) photoEmpty.hidden = true;
+            return;
+        }
+        if (photoPreview) {
+            photoPreview.removeAttribute('src');
+            photoPreview.hidden = true;
+            photoPreview.style.display = 'none';
+        }
+        if (photoEmpty) photoEmpty.hidden = false;
+    }
+
+    function updateDivisionReadout(value) {
+        const label = (value || (inputLevel && inputLevel.value) || '').trim();
+        if (divisionChipLabel) divisionChipLabel.textContent = label;
+        if (divisionReadout) divisionReadout.hidden = !label;
+    }
+
+    function applyLevelFromClass() {
+        if (!inputKlass || !inputLevel) return;
+        const label = classDivisionLabels[String(inputKlass.value)] || '';
+        if (label && label !== 'Other') {
+            inputLevel.value = label;
+            updateDivisionReadout(label);
+        }
+    }
+
     function syncReceipt() {
         const needed = status && (status.value === 'paid' || status.value === 'partial');
         if (wrap) wrap.classList.toggle('is-inactive', !needed);
@@ -263,6 +389,25 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     if (status) status.addEventListener('change', syncReceipt);
     syncReceipt();
+    if (inputKlass) inputKlass.addEventListener('change', applyLevelFromClass);
+    if (inputLevel) inputLevel.addEventListener('change', function () {
+        updateDivisionReadout(inputLevel.value);
+    });
+    if (inputPhoto) {
+        inputPhoto.addEventListener('change', function () {
+            const file = this.files && this.files[0];
+            if (!file) {
+                showPhotoPreview(storedPhotoUrl);
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function (event) {
+                showPhotoPreview(event.target.result);
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+    updateDivisionReadout(inputLevel ? inputLevel.value : '');
 });
 </script>
 

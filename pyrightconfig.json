@@ -1,0 +1,18 @@
+{
+  "include": ["."],
+  "exclude": [
+    "**/venv",
+    "**/.venv",
+    "**/instance",
+    "**/static/uploads",
+    "**/__pycache__",
+    "**/node_modules"
+  ],
+  "venvPath": ".",
+  "venv": "venv",
+  "pythonVersion": "3.13",
+  "pythonPlatform": "Windows",
+  "typeCheckingMode": "basic",
+  "useLibraryCodeForTypes": true,
+  "reportMissingImports": true
+}

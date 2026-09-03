@@ -1,5 +1,13 @@
 {% extends 'base.html' %}
 
+{% block head %}
+<style>
+  .academy-name {
+    color: #dc2626 !important;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="landing-scope">
   <header class="hero-wrapper position-relative overflow-hidden d-flex align-items-center">
@@ -9,9 +17,9 @@
     <div class="container py-5 position-relative" style="z-index: 3;">
       <div class="row align-items-center g-5">
         <div class="col-lg-6" data-aos="fade-right">
-          <span class="badge bg-brand-light text-brand fw-bold mb-3 px-3 py-2 text-uppercase tracking-wider">Future Leaders Preparatory Academy (F.L.P.A)</span>
-          <h1 class="display-4 fw-extrabold text-brand mb-3">Character. Community. Excellence.</h1>
-          <p class="lead text-brand mb-4 fw-medium">Empowering future leaders through Service, Discipline, and Success. Established since 2013 on Salt Beach PHP Community, Monrovia.</p>
+          <span class="badge bg-brand-light fw-bold mb-3 px-3 py-2 text-uppercase tracking-wider academy-name" style="color: #dc2626 !important;">Future Leaders Preparatory Academy (F.L.P.A)</span>
+          <h1 class="display-4 fw-extrabold text-brand mb-3">Honor, Excellence, Academics, Discipline, Success</h1>
+          <p class="lead text-brand mb-4 fw-medium">Empowering future leaders. Established March 9, 2015 on South Beach PHP Community, Monrovia.</p>
           <div class="d-flex flex-wrap gap-3">
             <a href="{{ url_for('login') }}" class="btn btn-action-primary btn-lg"><i class="fas fa-sign-in-alt me-2"></i>Access Portal</a>
             <a href="{{ url_for('about') }}" class="btn btn-action-outline btn-lg">Discover More</a>
@@ -291,26 +299,6 @@
     </div>
   </section>
 
-  <footer class="footer-bg text-slate-300 py-5 border-top border-brand-dark position-relative overflow-hidden">
-    <div class="container position-relative" style="z-index: 2;">
-      <div class="row g-4 align-items-center text-center text-md-start mb-4">
-        <div class="col-md-6">
-          <h5 class="fw-bold text-brand mb-1">Future Leaders Preparatory Academy (F.L.P.A)</h5>
-          <p class="small text-slate-400 mb-2 font-monospace">Established Since 2013 | Salt Beach PHP Community, Monrovia</p>
-          <p class="small text-brand mb-0"><em>"Character. Community. Excellence. Service. Discipline. Success."</em></p>
-        </div>
-        <div class="col-md-6 text-center text-md-end">
-          <a href="{{ url_for('login') }}" class="btn btn-action-primary btn-sm me-2">Portal Access</a>
-          <a href="{{ url_for('about') }}" class="btn btn-action-outline btn-sm">About Academy</a>
-        </div>
-      </div>
-      <hr class="border-secondary opacity-25 my-3">
-      <div class="text-center">
-        <p class="mb-1 text-slate-400 small">&copy; {{ current_year }} Future Leaders Preparatory Academy. Powered by SoftnetAfrica.</p>
-        <p class="style-micro text-slate-400 mb-0">Empowering the Next Generation of Systems.</p>
-      </div>
-    </div>
-  </footer>
 </div>
 {% endblock %}
 
@@ -334,6 +322,7 @@
   .text-brand { color: var(--brand-red) !important; }
   .bg-brand { background-color: var(--brand-red) !important; }
   .bg-brand-light { background-color: rgba(200, 29, 37, 0.15); }
+  .academy-name { color: #dc2626 !important; }
   
   .text-navy { color: var(--brand-navy) !important; }
   .bg-navy { background-color: var(--brand-navy) !important; }
@@ -342,7 +331,6 @@
   .text-accent { color: var(--brand-gold) !important; }
   .bg-accent-light { background-color: rgba(212, 175, 55, 0.12); }
 
-  .footer-bg { background-color: #07101D; }
   .border-brand-dark { border-color: rgba(200, 29, 37, 0.3) !important; }
 
   /* Utility Spacing Extensions */

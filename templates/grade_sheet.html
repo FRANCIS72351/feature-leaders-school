@@ -12,6 +12,8 @@
             --ink: #111111;
             --muted: #334155;
             --paper: #ffffff;
+            --mark-pass: #1d4ed8;
+            --mark-fail: #b42318;
         }
         html, body {
             margin: 0;
@@ -71,6 +73,11 @@
             background: #fffbeb;
             border: 1px solid #fde68a;
             color: #92400e;
+        }
+        .status-banner.awaiting {
+            background: #fff7ed;
+            border: 1px solid #fdba74;
+            color: #9a3412;
         }
         .action-bar {
             display: flex;
@@ -196,7 +203,7 @@
         }
         .official-header-center { text-align: center; padding: 0 6px; }
         .official-school-name {
-            font-family: Cinzel, 'Times New Roman', Times, serif;
+            font-family: Algerian, 'Times New Roman', Times, serif;
             font-size: 20px;
             font-weight: 700;
             color: var(--flpa-red);
@@ -300,6 +307,18 @@
             padding-left: 6px;
             padding-right: 4px;
             white-space: nowrap;
+        }
+        .official-grade-table td.score-mark.mark-pass {
+            color: var(--mark-pass) !important;
+            font-weight: 700;
+        }
+        .official-grade-table td.score-mark.mark-fail {
+            color: var(--mark-fail) !important;
+            font-weight: 700;
+        }
+        .official-grade-table td.score-mark.mark-empty {
+            color: #64748b;
+            font-weight: 500;
         }
         .official-grade-table tr.summary-row td {
             font-weight: 800;
@@ -405,6 +424,7 @@
     </style>
 </head>
 <body>
+    {% from 'partials/official_score_mark.html' import score_td %}
     {% set brand = data.school or school_print_brand %}
     {% set division_sheet_title = data.division_sheet_title or 'Grade Sheet' %}
     {% set promotion_statement = data.promotion.label if data.promotion and data.promotion.label else 'Pending promotion decision' %}
@@ -435,6 +455,19 @@
         <i class="fas fa-check-circle"></i>
         <span><strong>Published Grade Sheet</strong> — {{ published_count }} official grade record{{ 's' if published_count != 1 else '' }} for {{ data.academic_year or 'this year' }}.</span>
     </div>
+    {% if data.awaiting_vpa_note %}
+    <div class="status-banner awaiting">
+        <i class="fas fa-hourglass-half"></i>
+        <span>{{ data.awaiting_vpa_note }}</span>
+    </div>
+    {% endif %}
+    {% if approved_periods %}
+    <div class="status-banner published">
+        <i class="fas fa-layer-group"></i>
+        <span><strong>Periodic results available:</strong>
+        {% for period_num, period_name in data.grading_periods if period_num in approved_periods %}{{ period_name }}{% if not loop.last %}, {% endif %}{% endfor %}.</span>
+    </div>
+    {% endif %}
     {% else %}
     <div class="status-banner empty">
         <i class="fas fa-hourglass-half"></i>
@@ -446,7 +479,7 @@
         <a class="btn-action outline" href="{{ url_for('student_dashboard', tab='activities', academic_year_id=display_year.id if display_year else none) }}">
             <i class="fas fa-list"></i> Activities Record
         </a>
-        <a class="btn-action outline" href="{{ url_for('student_grade_sheet_pdf') }}?academic_year_id={{ display_year.id if display_year else '' }}">
+        <a class="btn-action outline" href="{{ url_for('student_grade_sheet_pdf', academic_year_id=display_year.id if display_year else none) }}">
             <i class="fas fa-download"></i> Download PDF
         </a>
         <a class="btn-action outline" href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}">
@@ -491,6 +524,9 @@
                 </tr>
             </table>
 
+            {% if data.awaiting_vpa_note %}
+            <p class="official-awaiting-note" style="margin:0 0 6px;font-size:10px;font-style:italic;color:#334155;line-height:1.45;">{{ data.awaiting_vpa_note }}</p>
+            {% endif %}
             <table class="official-meta">
                 <tr>
                     <td><span class="lbl">Name:</span><span class="val">{{ data.student_name }}</span></td>
@@ -498,6 +534,11 @@
                     <td><span class="lbl">Gender:</span><span class="val">{{ student.gender or '—' }}</span></td>
                     <td><span class="lbl">Promotion Statement:</span><span class="val">{{ promotion_statement }}</span></td>
                 </tr>
+                {% if data.promotion and data.promotion.reason %}
+                <tr>
+                    <td colspan="4"><span class="lbl">Official decision:</span><span class="val">{{ data.promotion.reason }}</span></td>
+                </tr>
+                {% endif %}
             </table>
 
             <table class="official-grade-table">
@@ -531,18 +572,19 @@
                         {% for subject in data.subjects %}
                         <tr class="{% if subject.is_summary %}summary-row{% endif %}">
                             <td class="subject-cell">{{ subject.name }}</td>
-                            <td>{{ subject.p1 if subject.p1 not in [None, ''] else '—' }}</td>
-                            <td>{{ subject.p2 if subject.p2 not in [None, ''] else '—' }}</td>
-                            <td>{{ subject.p3 if subject.p3 not in [None, ''] else '—' }}</td>
-                            <td>{{ subject.exam if subject.exam not in [None, ''] else '—' }}</td>
-                            <td>{{ subject.avg if subject.avg not in [None, ''] else '—' }}</td>
-                            <td>{{ subject.p4 if subject.p4 not in [None, ''] else '—' }}</td>
-                            <td>{{ subject.p5 if subject.p5 not in [None, ''] else '—' }}</td>
-                            <td>{{ subject.p6 if subject.p6 not in [None, ''] else '—' }}</td>
-                            <td>{{ subject.final_exam if subject.final_exam not in [None, ''] else '—' }}</td>
-                            <td>{{ subject.sem2_avg if subject.sem2_avg not in [None, ''] else '—' }}</td>
-                            <td>{{ subject.final_avg if subject.final_avg not in [None, ''] else '—' }}</td>
-                            <td>{{ subject.remark or '—' }}</td>
+                            {% set blank_empty = subject.blank_empty|default(False) %}
+                            {{ score_td(subject.p1, blank_empty) }}
+                            {{ score_td(subject.p2, blank_empty) }}
+                            {{ score_td(subject.p3, blank_empty) }}
+                            {{ score_td(subject.exam if subject.exam not in [None, ''] else subject.exam1, blank_empty) }}
+                            {{ score_td(subject.avg if subject.avg not in [None, ''] else subject.sem1, blank_empty) }}
+                            {{ score_td(subject.p4, blank_empty) }}
+                            {{ score_td(subject.p5, blank_empty) }}
+                            {{ score_td(subject.p6, blank_empty) }}
+                            {{ score_td(subject.final_exam if subject.final_exam not in [None, ''] else subject.exam2, blank_empty) }}
+                            {{ score_td(subject.sem2_avg if subject.sem2_avg not in [None, ''] else subject.sem2, blank_empty) }}
+                            {{ score_td(subject.final_avg if subject.final_avg not in [None, ''] else subject.yearly, blank_empty) }}
+                            <td>{% if subject.is_summary %}{{ subject.remark or subject.remarks or '' }}{% else %}{{ subject.remark or subject.remarks or '—' }}{% endif %}</td>
                         </tr>
                         {% endfor %}
                     {% else %}
@@ -554,7 +596,7 @@
             </table>
 
             <div class="official-footer">
-                <p class="official-rank">Rank in class: {{ rank_label }}</p>
+                <p class="official-rank">RANK IN CLASS: {{ rank_label }}</p>
                 <table class="grading-legend">
                     <caption>Grading method</caption>
                     <tr>

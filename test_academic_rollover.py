@@ -1,20 +1,32 @@
 import unittest
 import uuid
 from datetime import date
+from types import SimpleNamespace
 
 from app import (
     app,
     check_promotion_criteria,
+    evaluate_year_promotion_decision,
     execute_academic_rollover,
+    execute_moe_academic_rollover,
+    find_academic_year_by_name,
     get_class_registration_fee,
     preview_moe_academic_rollover,
     promotion_pass_score,
     max_failing_subjects_for_promotion,
+    repeat_class_failing_subject_threshold,
     save_class_registration_fees,
+    build_default_promotion_map,
+    build_report_card_structured_data,
+    _academic_year_id_prefix,
+    _default_id_expiration_date,
+    _next_academic_year_name,
+    _parse_grade_level,
     _principal_build_class_portfolios,
     _principal_students_for_class,
     _student_ids_with_year_history,
     _students_for_display_year,
+    _sync_student_id_card,
     get_active_academic_year,
 )
 from constants import ROLE_ADMIN
@@ -99,6 +111,7 @@ class AcademicRolloverTestCase(unittest.TestCase):
                     subject_name=subject,
                     score=score,
                     marking_period=1,
+                    submitted=True,
                 )
                 db.session.add(grade)
                 db.session.flush()
@@ -138,10 +151,31 @@ class AcademicRolloverTestCase(unittest.TestCase):
             sess['_user_id'] = str(self.admin_id)
             sess['_fresh'] = True
 
+    def _replace_subject_scores(self, student, year, class_id, scores):
+        Grade.query.filter_by(student_id=student.id, academic_year_id=year.id).delete(
+            synchronize_session=False,
+        )
+        for subject, score in scores:
+            grade = Grade(
+                student_id=student.id,
+                academic_year_id=year.id,
+                class_id=class_id,
+                subject=subject,
+                subject_name=subject,
+                score=score,
+                marking_period=1,
+                submitted=True,
+            )
+            db.session.add(grade)
+            db.session.flush()
+            self.created_ids['grades'].append(grade.id)
+        db.session.commit()
+
     def test_promotion_config_defaults(self):
         with self.app.app_context():
             self.assertEqual(promotion_pass_score(), 70)
             self.assertEqual(max_failing_subjects_for_promotion(), 2)
+            self.assertEqual(repeat_class_failing_subject_threshold(), 3)
 
     def test_check_promotion_criteria_passes(self):
         with self.app.app_context():
@@ -196,6 +230,17 @@ class AcademicRolloverTestCase(unittest.TestCase):
             self.assertEqual(preview['retained'], 1)
             self.assertEqual(preview['promoted'], 0)
             self.assertEqual(preview['graduated'], 0)
+            self.assertEqual(preview['summer_school'], 0)
+
+            next_class = Class(name=f'Grade 11 {uuid.uuid4().hex[:6]}', grade_level=11)
+            db.session.add(next_class)
+            db.session.flush()
+            self.created_ids['classes'].append(next_class.id)
+            from app import build_rollover_preview
+            classes = Class.query.filter(Class.id.in_([self.class_id, next_class.id])).all()
+            wizard_preview = build_rollover_preview(year, classes, [student])
+            self.assertEqual(wizard_preview['counts']['repeat'], 1)
+            self.assertEqual(wizard_preview['counts']['promote'], 0)
 
     def test_preview_page_requires_login(self):
         response = self.client.get('/admin/academic-rollover')
@@ -450,6 +495,626 @@ class AcademicRolloverTestCase(unittest.TestCase):
                 p for p in portfolios if p['klass'].id == self.class_id
             )
             self.assertEqual(klass_portfolio['student_count'], 0)
+
+    def test_parse_grade_level_accepts_ordinal_and_labeled_values(self):
+        self.assertEqual(_parse_grade_level(12), 12)
+        self.assertEqual(_parse_grade_level('12'), 12)
+        self.assertEqual(_parse_grade_level('12th'), 12)
+        self.assertEqual(_parse_grade_level('Grade 12'), 12)
+        self.assertEqual(_parse_grade_level('11th'), 11)
+        self.assertEqual(_parse_grade_level('10th'), 10)
+        self.assertEqual(_parse_grade_level('SSS 3'), 12)
+        self.assertIsNone(_parse_grade_level(None))
+        self.assertIsNone(_parse_grade_level(''))
+
+    def test_grade_12_ordinal_is_treated_as_graduation(self):
+        with self.app.app_context():
+            student = db.session.get(Student, self.student_id)
+            student.grade_level = '12th'
+            db.session.commit()
+            year = db.session.get(AcademicYear, self.year_id)
+            decision = evaluate_year_promotion_decision(student, year)
+            self.assertTrue(decision['passed'])
+            self.assertEqual(decision['code'], 'GRADUATED')
+
+    def test_promotion_map_matches_ordinal_grade_labels(self):
+        with self.app.app_context():
+            tenth = Class(name=f'G10 {uuid.uuid4().hex[:6]}', grade_level='10th')
+            eleventh = Class(name=f'G11 {uuid.uuid4().hex[:6]}', grade_level='11th')
+            twelfth = Class(name=f'G12 {uuid.uuid4().hex[:6]}', grade_level='12th')
+            db.session.add_all([tenth, eleventh, twelfth])
+            db.session.flush()
+            self.created_ids['classes'].extend([tenth.id, eleventh.id, twelfth.id])
+            promo = build_default_promotion_map([tenth, eleventh, twelfth])
+            self.assertEqual(promo[tenth.id], eleventh.id)
+            self.assertEqual(promo[eleventh.id], twelfth.id)
+            self.assertEqual(promo[twelfth.id], 'graduate')
+
+    def test_moe_rollover_includes_repeat_students_and_clears_status(self):
+        with self.app.app_context():
+            admin = db.session.get(User, self.admin_id)
+            student = db.session.get(Student, self.student_id)
+            source_year = db.session.get(AcademicYear, self.year_id)
+            student.status = 'REPEAT'
+            span_start = 4100 + (uuid.uuid4().int % 400)
+            source_year.name = f'{span_start}-{span_start + 1}'
+            source_year.start_date = date(span_start, 9, 1)
+            source_year.end_date = date(span_start + 1, 6, 30)
+            next_class = Class(name=f'Grade 11 {uuid.uuid4().hex[:6]}', grade_level=11)
+            db.session.add(next_class)
+            db.session.flush()
+            self.created_ids['classes'].append(next_class.id)
+            for year in AcademicYear.query.filter(AcademicYear.id != source_year.id).all():
+                year.is_active = False
+            source_year.is_active = True
+            db.session.commit()
+
+            from flask_login import login_user
+            with self.app.test_request_context():
+                login_user(admin)
+                results = execute_moe_academic_rollover(
+                    source_year, allow_repeat_today=True,
+                )
+
+            db.session.expire_all()
+            student = db.session.get(Student, self.student_id)
+            self.assertEqual(results['promoted'], 1)
+            self.assertNotEqual(student.academic_year_id, source_year.id)
+            self.assertEqual(student.status, 'ACTIVE')
+            self.assertEqual(_parse_grade_level(student.grade_level), 11)
+            if student.academic_year_id and student.academic_year_id not in self.created_ids['years']:
+                self.created_ids['years'].append(student.academic_year_id)
+
+    def test_student_id_prefix_normalizes_endash_year_names(self):
+        with self.app.app_context():
+            year = db.session.get(AcademicYear, self.year_id)
+            year.name = '2025–2026'
+            self.assertEqual(_academic_year_id_prefix(year), '2526')
+            self.assertEqual(_next_academic_year_name('2025–2026'), '2026-2027')
+            self.assertEqual(_next_academic_year_name('2026/2027'), '2027-2028')
+
+    def test_id_card_expiration_refreshes_when_prior_year_date_is_stale(self):
+        with self.app.app_context():
+            student = db.session.get(Student, self.student_id)
+            year = db.session.get(AcademicYear, self.year_id)
+            student.id_expiration_date = date(2024, 6, 30)
+            _sync_student_id_card(student, academic_year=year)
+            self.assertEqual(student.id_expiration_date, year.end_date)
+            self.assertEqual(_default_id_expiration_date(year), year.end_date)
+
+    def test_longevity_year_helpers_work_ten_to_fifteen_years_ahead(self):
+        with self.app.app_context():
+            self.assertEqual(_parse_grade_level('12th'), 12)
+            self.assertEqual(_parse_grade_level('Grade 12'), 12)
+            self.assertEqual(_next_academic_year_name('2035-2036'), '2036-2037')
+            self.assertEqual(_next_academic_year_name('2035–36'), '2036-2037')
+            self.assertEqual(_next_academic_year_name('2040/2041'), '2041-2042')
+            self.assertEqual(_next_academic_year_name('2099-00'), '2100-2101')
+            year_2035 = SimpleNamespace(name='2035–2036', id=99, end_date=None, start_date=None)
+            year_2040 = SimpleNamespace(
+                name='2040-2041', id=100, end_date=date(2041, 6, 30), start_date=date(2040, 9, 1),
+            )
+            year_name_only = SimpleNamespace(
+                name='2040-2041', id=101, end_date=None, start_date=None,
+            )
+            self.assertEqual(_academic_year_id_prefix(year_2035), '3536')
+            self.assertEqual(_academic_year_id_prefix(year_2040), '4041')
+            self.assertEqual(_default_id_expiration_date(year_2040), date(2041, 6, 30))
+            self.assertEqual(_default_id_expiration_date(year_name_only), date(2041, 7, 31))
+
+    def test_promotion_map_advances_kindergarten_and_grade_twelve(self):
+        with self.app.app_context():
+            token = uuid.uuid4().hex[:6]
+            k2 = Class(name=f'K-2 {token}', grade_level='K-2')
+            first = Class(name=f'1st {token}', grade_level='1st')
+            twelfth = Class(name=f'12 {token}', grade_level='12th')
+            db.session.add_all([k2, first, twelfth])
+            db.session.flush()
+            self.created_ids['classes'].extend([k2.id, first.id, twelfth.id])
+            promo = build_default_promotion_map([k2, first, twelfth])
+            self.assertEqual(promo[k2.id], first.id)
+            self.assertEqual(promo[twelfth.id], 'graduate')
+
+    def test_moe_rollover_finds_existing_endash_next_year(self):
+        with self.app.app_context():
+            admin = db.session.get(User, self.admin_id)
+            student = db.session.get(Student, self.student_id)
+            source_year = db.session.get(AcademicYear, self.year_id)
+            base = 4300 + (uuid.uuid4().int % 500)
+            source_year.name = f'{base}-{base + 1}'
+            source_year.start_date = date(base, 9, 1)
+            source_year.end_date = date(base + 1, 6, 30)
+            next_year = AcademicYear(
+                name=f'{base + 1}–{base + 2}',
+                start_date=date(base + 1, 9, 1),
+                end_date=date(base + 2, 6, 30),
+                is_active=False,
+                created_by=self.admin_id,
+            )
+            db.session.add(next_year)
+            db.session.flush()
+            self.created_ids['years'].append(next_year.id)
+            for year in AcademicYear.query.filter(AcademicYear.id != source_year.id).all():
+                year.is_active = False
+            source_year.is_active = True
+            student.status = 'ACTIVE'
+            db.session.commit()
+
+            from flask_login import login_user
+            with self.app.test_request_context():
+                login_user(admin)
+                results = execute_moe_academic_rollover(
+                    source_year, allow_repeat_today=True,
+                )
+
+            db.session.expire_all()
+            found = find_academic_year_by_name(f'{base + 1}-{base + 2}')
+            self.assertIsNotNone(found)
+            self.assertEqual(found.id, next_year.id)
+            self.assertEqual(results['target_year_name'], next_year.name)
+            student = db.session.get(Student, self.student_id)
+            self.assertEqual(student.academic_year_id, next_year.id)
+
+    def test_grade_twelve_still_graduates_in_2040(self):
+        with self.app.app_context():
+            admin = db.session.get(User, self.admin_id)
+            token = uuid.uuid4().hex[:6]
+            twelfth = Class(name=f'Grade 12 {token}', grade_level='12th')
+            db.session.add(twelfth)
+            db.session.flush()
+            self.created_ids['classes'].append(twelfth.id)
+            base = 4600 + (uuid.uuid4().int % 300)
+            year = AcademicYear(
+                name=f'{base}-{base + 1}',
+                start_date=date(base, 9, 1),
+                end_date=date(base + 1, 6, 30),
+                is_active=True,
+                created_by=self.admin_id,
+            )
+            db.session.add(year)
+            db.session.flush()
+            self.created_ids['years'].append(year.id)
+            senior = Student(
+                student_id=f'G12{token.upper()}',
+                first_name='Future',
+                last_name='Graduate',
+                dob=date(2023, 5, 1),
+                gender='F',
+                klass_id=twelfth.id,
+                grade_level='12th',
+                academic_year_id=year.id,
+                status='ACTIVE',
+            )
+            db.session.add(senior)
+            db.session.flush()
+            self.created_ids['students'].append(senior.id)
+            for subject, score in [('Mathematics', 88), ('English', 84), ('Science', 80)]:
+                grade = Grade(
+                    student_id=senior.id,
+                    academic_year_id=year.id,
+                    class_id=twelfth.id,
+                    subject=subject,
+                    subject_name=subject,
+                    score=score,
+                    marking_period=1,
+                    submitted=True,
+                )
+                db.session.add(grade)
+                db.session.flush()
+                self.created_ids['grades'].append(grade.id)
+            for other in AcademicYear.query.filter(AcademicYear.id != year.id).all():
+                other.is_active = False
+            db.session.commit()
+
+            from flask_login import login_user
+            with self.app.test_request_context():
+                login_user(admin)
+                results = execute_moe_academic_rollover(year, allow_repeat_today=True)
+
+            db.session.expire_all()
+            senior = db.session.get(Student, senior.id)
+            self.assertEqual(results['graduated'], 1)
+            self.assertEqual((senior.status or '').upper(), 'ALUMNI')
+            self.assertEqual(senior.academic_year_id, year.id)
+            if senior.academic_year_id and senior.academic_year_id not in self.created_ids['years']:
+                self.created_ids['years'].append(senior.academic_year_id)
+            next_created = find_academic_year_by_name(f'{base + 1}-{base + 2}')
+            if next_created and next_created.id not in self.created_ids['years']:
+                self.created_ids['years'].append(next_created.id)
+
+    def test_two_failing_yearly_averages_assign_summer_school_not_promote(self):
+        with self.app.app_context():
+            student = db.session.get(Student, self.student_id)
+            year = db.session.get(AcademicYear, self.year_id)
+            self._replace_subject_scores(student, year, self.class_id, [
+                ('Mathematics', 90),
+                ('English', 90),
+                ('Science', 90),
+                ('History', 65),
+                ('French', 65),
+            ])
+            decision = evaluate_year_promotion_decision(student, year)
+            self.assertEqual(decision['failing_subject_count'], 2)
+            self.assertAlmostEqual(decision['overall_average'], 80.0)
+            self.assertFalse(decision['passed'])
+            self.assertFalse(check_promotion_criteria(student, year))
+            self.assertEqual(decision['code'], 'SUMMER_SCHOOL')
+            self.assertEqual(decision['decision'], 'summer_school')
+            self.assertEqual(decision['label'], 'Summer School')
+            self.assertIn('Summer School', decision['reason'])
+            self.assertIn('not promoted', decision['reason'])
+
+            preview = preview_moe_academic_rollover(year)
+            self.assertEqual(preview['summer_school'], 1)
+            self.assertEqual(preview['promoted'], 0)
+            self.assertEqual(preview['retained'], 0)
+
+            from app import build_rollover_preview
+            next_class = Class(name=f'Grade 11 {uuid.uuid4().hex[:6]}', grade_level=11)
+            db.session.add(next_class)
+            db.session.flush()
+            self.created_ids['classes'].append(next_class.id)
+            classes = Class.query.filter(Class.id.in_([self.class_id, next_class.id])).all()
+            wizard_preview = build_rollover_preview(year, classes, [student])
+            self.assertEqual(wizard_preview['counts']['summer_school'], 1)
+            self.assertEqual(wizard_preview['counts']['promote'], 0)
+            self.assertEqual(wizard_preview['counts']['repeat'], 0)
+
+    def test_three_failing_yearly_averages_repeat_despite_high_overall(self):
+        with self.app.app_context():
+            student = db.session.get(Student, self.student_id)
+            year = db.session.get(AcademicYear, self.year_id)
+            self._replace_subject_scores(student, year, self.class_id, [
+                ('Mathematics', 100),
+                ('English', 100),
+                ('Science', 100),
+                ('History', 100),
+                ('French', 65),
+                ('Physical Education', 65),
+                ('Computer Science', 65),
+            ])
+            decision = evaluate_year_promotion_decision(student, year)
+            self.assertEqual(decision['failing_subject_count'], 3)
+            self.assertAlmostEqual(decision['overall_average'], 85.0)
+            self.assertFalse(decision['passed'])
+            self.assertEqual(decision['code'], 'REPEAT')
+            self.assertEqual(decision['decision'], 'repeat')
+            self.assertEqual(decision['label'], 'Repeat class')
+            self.assertIn('regardless of the overall yearly average', decision['reason'])
+            self.assertNotIn('reparting', decision['reason'].lower())
+            self.assertNotIn('reparting', decision['label'].lower())
+
+    def test_one_failing_yearly_average_promotes_when_overall_meets_moe(self):
+        with self.app.app_context():
+            student = db.session.get(Student, self.student_id)
+            year = db.session.get(AcademicYear, self.year_id)
+            self._replace_subject_scores(student, year, self.class_id, [
+                ('Mathematics', 80),
+                ('English', 80),
+                ('Science', 80),
+                ('History', 60),
+            ])
+            decision = evaluate_year_promotion_decision(student, year)
+            self.assertEqual(decision['failing_subject_count'], 1)
+            self.assertAlmostEqual(decision['overall_average'], 75.0)
+            self.assertTrue(decision['passed'])
+            self.assertTrue(check_promotion_criteria(student, year))
+            self.assertEqual(decision['code'], 'PROMOTED')
+            self.assertEqual(decision['decision'], 'promote')
+            self.assertEqual(decision['label'], 'Promoted')
+
+    def test_conduct_fail_does_not_count_toward_red_marks(self):
+        with self.app.app_context():
+            student = db.session.get(Student, self.student_id)
+            year = db.session.get(AcademicYear, self.year_id)
+            self._replace_subject_scores(student, year, self.class_id, [
+                ('Mathematics', 80),
+                ('English', 75),
+                ('Science', 72),
+                ('CONDUCT', 40),
+            ])
+            decision = evaluate_year_promotion_decision(student, year)
+            self.assertEqual(decision['failing_subject_count'], 0)
+            self.assertTrue(decision['passed'])
+            self.assertEqual(decision['code'], 'PROMOTED')
+
+            self._replace_subject_scores(student, year, self.class_id, [
+                ('Mathematics', 90),
+                ('English', 90),
+                ('Science', 90),
+                ('History', 65),
+                ('French', 65),
+                ('CONDUCT', 40),
+            ])
+            decision = evaluate_year_promotion_decision(student, year)
+            self.assertEqual(decision['failing_subject_count'], 2)
+            self.assertEqual(decision['code'], 'SUMMER_SCHOOL')
+            self.assertNotEqual(decision['code'], 'REPEAT')
+
+    def test_grade_12_two_reds_summer_school_not_graduate(self):
+        with self.app.app_context():
+            student = db.session.get(Student, self.student_id)
+            student.grade_level = 12
+            db.session.commit()
+            year = db.session.get(AcademicYear, self.year_id)
+            self._replace_subject_scores(student, year, self.class_id, [
+                ('Mathematics', 90),
+                ('English', 90),
+                ('Science', 90),
+                ('History', 65),
+                ('French', 65),
+            ])
+            decision = evaluate_year_promotion_decision(student, year)
+            self.assertFalse(decision['passed'])
+            self.assertEqual(decision['code'], 'SUMMER_SCHOOL')
+            self.assertEqual(decision['decision'], 'summer_school')
+            self.assertEqual(decision['label'], 'Summer School')
+            self.assertIn('not eligible to graduate', decision['reason'])
+
+    def test_grade_12_three_reds_repeat_not_graduate(self):
+        with self.app.app_context():
+            student = db.session.get(Student, self.student_id)
+            student.grade_level = 12
+            db.session.commit()
+            year = db.session.get(AcademicYear, self.year_id)
+            self._replace_subject_scores(student, year, self.class_id, [
+                ('Mathematics', 100),
+                ('English', 100),
+                ('Science', 100),
+                ('History', 100),
+                ('French', 65),
+                ('Physical Education', 65),
+                ('Computer Science', 65),
+            ])
+            decision = evaluate_year_promotion_decision(student, year)
+            self.assertFalse(decision['passed'])
+            self.assertEqual(decision['code'], 'REPEAT')
+            self.assertEqual(decision['decision'], 'repeat')
+            self.assertEqual(decision['label'], 'Repeat class')
+            self.assertIn('not eligible to graduate', decision['reason'])
+
+    def test_moe_rollover_keeps_summer_school_students_in_current_class(self):
+        with self.app.app_context():
+            admin = db.session.get(User, self.admin_id)
+            student = db.session.get(Student, self.student_id)
+            source_year = db.session.get(AcademicYear, self.year_id)
+            self._replace_subject_scores(student, source_year, self.class_id, [
+                ('Mathematics', 90),
+                ('English', 90),
+                ('Science', 90),
+                ('History', 65),
+                ('French', 65),
+            ])
+            span_start = 4500 + (uuid.uuid4().int % 400)
+            source_year.name = f'{span_start}-{span_start + 1}'
+            source_year.start_date = date(span_start, 9, 1)
+            source_year.end_date = date(span_start + 1, 6, 30)
+            next_class = Class(name=f'Grade 11 {uuid.uuid4().hex[:6]}', grade_level=11)
+            db.session.add(next_class)
+            db.session.flush()
+            self.created_ids['classes'].append(next_class.id)
+            for year in AcademicYear.query.filter(AcademicYear.id != source_year.id).all():
+                year.is_active = False
+            source_year.is_active = True
+            db.session.commit()
+
+            from flask_login import login_user
+            with self.app.test_request_context():
+                login_user(admin)
+                results = execute_moe_academic_rollover(
+                    source_year, allow_repeat_today=True,
+                )
+
+            db.session.expire_all()
+            student = db.session.get(Student, self.student_id)
+            self.assertEqual(results['summer_school'], 1)
+            self.assertEqual(results['promoted'], 0)
+            self.assertEqual(results['retained'], 0)
+            self.assertEqual(student.status, 'SUMMER_SCHOOL')
+            self.assertEqual(_parse_grade_level(student.grade_level), 10)
+            self.assertEqual(student.klass_id, self.class_id)
+            self.assertNotEqual(student.academic_year_id, source_year.id)
+            if student.academic_year_id and student.academic_year_id not in self.created_ids['years']:
+                self.created_ids['years'].append(student.academic_year_id)
+
+    def test_average_footer_row_does_not_count_as_red_subject(self):
+        with self.app.app_context():
+            student = db.session.get(Student, self.student_id)
+            year = db.session.get(AcademicYear, self.year_id)
+            self._replace_subject_scores(student, year, self.class_id, [
+                ('Mathematics', 90),
+                ('English', 90),
+                ('Science', 90),
+                ('History', 65),
+                ('French', 65),
+                ('AVERAGE', 40),
+            ])
+            decision = evaluate_year_promotion_decision(student, year)
+            self.assertEqual(decision['failing_subject_count'], 2)
+            self.assertEqual(decision['code'], 'SUMMER_SCHOOL')
+            self.assertNotEqual(decision['code'], 'REPEAT')
+
+            data = build_report_card_structured_data(student, year.id)
+            self.assertEqual(data['promotion']['code'], 'SUMMER_SCHOOL')
+            self.assertEqual(data['promotion']['label'], 'Summer School')
+            printed_names = [row['name'] for row in data['subjects']]
+            self.assertIn('AVERAGE', printed_names)
+
+    def test_one_red_repeats_when_overall_below_moe(self):
+        with self.app.app_context():
+            student = db.session.get(Student, self.student_id)
+            year = db.session.get(AcademicYear, self.year_id)
+            self._replace_subject_scores(student, year, self.class_id, [
+                ('Mathematics', 70),
+                ('English', 70),
+                ('History', 50),
+            ])
+            decision = evaluate_year_promotion_decision(student, year)
+            self.assertEqual(decision['failing_subject_count'], 1)
+            self.assertAlmostEqual(decision['overall_average'], 63.33, places=1)
+            self.assertFalse(decision['passed'])
+            self.assertEqual(decision['code'], 'REPEAT')
+            self.assertEqual(decision['label'], 'Repeat class')
+            self.assertFalse(check_promotion_criteria(student, year))
+
+    def test_two_reds_with_low_overall_still_summer_school(self):
+        with self.app.app_context():
+            student = db.session.get(Student, self.student_id)
+            year = db.session.get(AcademicYear, self.year_id)
+            self._replace_subject_scores(student, year, self.class_id, [
+                ('Mathematics', 50),
+                ('English', 50),
+                ('Science', 80),
+            ])
+            decision = evaluate_year_promotion_decision(student, year)
+            self.assertEqual(decision['failing_subject_count'], 2)
+            self.assertAlmostEqual(decision['overall_average'], 60.0)
+            self.assertEqual(decision['code'], 'SUMMER_SCHOOL')
+            self.assertEqual(decision['label'], 'Summer School')
+            self.assertFalse(check_promotion_criteria(student, year))
+
+    def test_unsubmitted_failing_drafts_do_not_count_as_red_marks(self):
+        with self.app.app_context():
+            student = db.session.get(Student, self.student_id)
+            year = db.session.get(AcademicYear, self.year_id)
+            self._replace_subject_scores(student, year, self.class_id, [
+                ('Mathematics', 80),
+                ('English', 80),
+                ('Science', 80),
+            ])
+            for subject, score in [('History', 40), ('French', 40)]:
+                grade = Grade(
+                    student_id=student.id,
+                    academic_year_id=year.id,
+                    class_id=self.class_id,
+                    subject=subject,
+                    subject_name=subject,
+                    score=score,
+                    marking_period=1,
+                    submitted=False,
+                )
+                db.session.add(grade)
+                db.session.flush()
+                self.created_ids['grades'].append(grade.id)
+            db.session.commit()
+            decision = evaluate_year_promotion_decision(student, year)
+            self.assertEqual(decision['failing_subject_count'], 0)
+            self.assertEqual(decision['code'], 'PROMOTED')
+
+            data = build_report_card_structured_data(student, year.id)
+            self.assertEqual(data['promotion']['code'], 'PROMOTED')
+            self.assertEqual(data['promotion']['label'], 'Promoted')
+
+    def test_moe_rollover_keeps_repeaters_in_current_class(self):
+        with self.app.app_context():
+            admin = db.session.get(User, self.admin_id)
+            student = db.session.get(Student, self.student_id)
+            source_year = db.session.get(AcademicYear, self.year_id)
+            self._replace_subject_scores(student, source_year, self.class_id, [
+                ('Mathematics', 100),
+                ('English', 100),
+                ('Science', 100),
+                ('History', 100),
+                ('French', 65),
+                ('Physical Education', 65),
+                ('Computer Science', 65),
+            ])
+            span_start = 4700 + (uuid.uuid4().int % 400)
+            source_year.name = f'{span_start}-{span_start + 1}'
+            source_year.start_date = date(span_start, 9, 1)
+            source_year.end_date = date(span_start + 1, 6, 30)
+            next_class = Class(name=f'Grade 11 {uuid.uuid4().hex[:6]}', grade_level=11)
+            db.session.add(next_class)
+            db.session.flush()
+            self.created_ids['classes'].append(next_class.id)
+            for year in AcademicYear.query.filter(AcademicYear.id != source_year.id).all():
+                year.is_active = False
+            source_year.is_active = True
+            db.session.commit()
+
+            from flask_login import login_user
+            with self.app.test_request_context():
+                login_user(admin)
+                results = execute_moe_academic_rollover(
+                    source_year, allow_repeat_today=True,
+                )
+
+            db.session.expire_all()
+            student = db.session.get(Student, self.student_id)
+            self.assertEqual(results['retained'], 1)
+            self.assertEqual(results['promoted'], 0)
+            self.assertEqual(results['summer_school'], 0)
+            self.assertEqual(student.status, 'REPEAT')
+            self.assertEqual(_parse_grade_level(student.grade_level), 10)
+            self.assertEqual(student.klass_id, self.class_id)
+            self.assertNotEqual(student.academic_year_id, source_year.id)
+            if student.academic_year_id and student.academic_year_id not in self.created_ids['years']:
+                self.created_ids['years'].append(student.academic_year_id)
+
+    def test_grade_12_rollover_two_reds_summer_school_not_alumni(self):
+        with self.app.app_context():
+            admin = db.session.get(User, self.admin_id)
+            student = db.session.get(Student, self.student_id)
+            twelfth = Class(name=f'Grade 12 {uuid.uuid4().hex[:6]}', grade_level=12)
+            db.session.add(twelfth)
+            db.session.flush()
+            self.created_ids['classes'].append(twelfth.id)
+            student.grade_level = 12
+            student.klass_id = twelfth.id
+            source_year = db.session.get(AcademicYear, self.year_id)
+            self._replace_subject_scores(student, source_year, twelfth.id, [
+                ('Mathematics', 90),
+                ('English', 90),
+                ('Science', 90),
+                ('History', 65),
+                ('French', 65),
+            ])
+            span_start = 4800 + (uuid.uuid4().int % 400)
+            source_year.name = f'{span_start}-{span_start + 1}'
+            source_year.start_date = date(span_start, 9, 1)
+            source_year.end_date = date(span_start + 1, 6, 30)
+            for year in AcademicYear.query.filter(AcademicYear.id != source_year.id).all():
+                year.is_active = False
+            source_year.is_active = True
+            db.session.commit()
+
+            from flask_login import login_user
+            with self.app.test_request_context():
+                login_user(admin)
+                results = execute_moe_academic_rollover(
+                    source_year, allow_repeat_today=True,
+                )
+
+            db.session.expire_all()
+            student = db.session.get(Student, self.student_id)
+            if student.academic_year_id and student.academic_year_id not in self.created_ids['years']:
+                self.created_ids['years'].append(student.academic_year_id)
+            self.assertEqual(results['summer_school'], 1)
+            self.assertEqual(results['graduated'], 0)
+            self.assertEqual(student.status, 'SUMMER_SCHOOL')
+            self.assertNotEqual((student.status or '').upper(), 'ALUMNI')
+            self.assertEqual(_parse_grade_level(student.grade_level), 12)
+            self.assertEqual(student.klass_id, twelfth.id)
+
+    def test_report_and_grade_sheet_promotion_statement_matches_yrly_reds(self):
+        with self.app.app_context():
+            student = db.session.get(Student, self.student_id)
+            year = db.session.get(AcademicYear, self.year_id)
+            self._replace_subject_scores(student, year, self.class_id, [
+                ('Mathematics', 100),
+                ('English', 100),
+                ('Science', 100),
+                ('History', 100),
+                ('French', 65),
+                ('Physical Education', 65),
+                ('Computer Science', 65),
+            ])
+            data = build_report_card_structured_data(student, year.id)
+            self.assertEqual(data['promotion']['label'], 'Repeat class')
+            self.assertNotIn('reparting', (data['promotion']['label'] or '').lower())
+            self.assertNotIn('reparting', (data['promotion']['reason'] or '').lower())
+            self.assertEqual(data['promotion']['failing_subject_count'], 3)
+            self.assertFalse(data['promotion']['passed'])
 
 
 if __name__ == '__main__':

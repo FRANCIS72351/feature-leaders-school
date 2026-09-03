@@ -8,6 +8,11 @@
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/LOGO.png') }}">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    <link rel="dns-prefetch" href="https://unpkg.com">
     
     <!-- Google Fonts & Font Awesome Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -17,7 +22,6 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     
     <link href="https://unpkg.com/aos@2.3.4/dist/aos.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
         :root {
@@ -45,7 +49,7 @@
 
           /* Typography Setup */
           --font-body: 'Manrope', system-ui, -apple-system, sans-serif;
-          --font-display: 'Cormorant Garamond', Georgia, serif;
+          --font-display: Algerian, 'Times New Roman', serif;
         }
 
         body {
@@ -58,7 +62,15 @@
               linear-gradient(180deg, #fffcf9 0%, var(--surface-bg) 100%);
             color: var(--text-main);
             overflow-x: hidden;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
             padding-top: calc(85px + env(safe-area-inset-top, 0px));
+        }
+
+        .site-main {
+            flex: 1 0 auto;
+            width: 100%;
         }
 
         img, video {
@@ -91,17 +103,32 @@
         .navbar-brand-custom {
             font-family: var(--font-display);
             font-weight: 800;
-            letter-spacing: -0.5px;
+            letter-spacing: -0.02em;
             color: var(--primary-brand) !important;
             display: flex;
             align-items: center;
-            gap: 12px;
-            text-transform: uppercase;
+            gap: 0;
+            text-transform: none;
             font-size: 1.15rem;
             text-decoration: none;
+            min-width: 0;
+        }
+
+        .navbar-brand-stage {
+            --logo-slot: 48px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            width: 320px;
+            max-width: min(320px, calc(100vw - 7.5rem));
+            height: 48px;
+            overflow: hidden;
         }
 
         .navbar-logo {
+            position: relative;
+            z-index: 2;
+            flex-shrink: 0;
             width: 44px;
             height: 44px;
             object-fit: contain;
@@ -110,6 +137,7 @@
             padding: 2px;
             background: #ffffff;
             border: 1px solid rgba(200, 40, 40, 0.15);
+            box-shadow: 8px 0 14px 4px rgba(255, 248, 243, 0.92);
             transition: transform 0.2s ease;
         }
 
@@ -117,21 +145,116 @@
             transform: scale(1.04);
         }
 
+        .navbar-brand-ticker {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+            pointer-events: none;
+            -webkit-mask-image: linear-gradient(
+                90deg,
+                transparent 0,
+                transparent calc(var(--logo-slot) - 8px),
+                rgba(0, 0, 0, 0.35) calc(var(--logo-slot) + 2px),
+                #000 calc(var(--logo-slot) + 16px),
+                #000 calc(100% - 1.5rem),
+                transparent 100%
+            );
+            mask-image: linear-gradient(
+                90deg,
+                transparent 0,
+                transparent calc(var(--logo-slot) - 8px),
+                rgba(0, 0, 0, 0.35) calc(var(--logo-slot) + 2px),
+                #000 calc(var(--logo-slot) + 16px),
+                #000 calc(100% - 1.5rem),
+                transparent 100%
+            );
+        }
+
+        .navbar-brand-ticker-track {
+            display: flex;
+            align-items: center;
+            width: max-content;
+            will-change: transform;
+            animation: navbar-brand-marquee 32s linear infinite;
+        }
+
+        .navbar-brand-custom:hover .navbar-brand-ticker-track {
+            animation-play-state: paused;
+        }
+
         .navbar-brand-text {
+            flex-shrink: 0;
+            padding-right: 3rem;
             white-space: nowrap;
-            color: var(--secondary-brand);
+            color: #c82828 !important;
             font-weight: 700;
+            letter-spacing: 0.04em;
+        }
+
+        .navbar-brand-custom:hover .navbar-brand-text {
+            color: #c82828 !important;
+        }
+
+        @keyframes navbar-brand-marquee {
+            from { transform: translate3d(0, 0, 0); }
+            to { transform: translate3d(-50%, 0, 0); }
         }
 
         @media (max-width: 991.98px) {
+            .navbar-brand-stage {
+                --logo-slot: 42px;
+                width: 220px;
+                max-width: calc(100vw - 6.5rem);
+                height: 42px;
+            }
+
             .navbar-logo {
                 width: 38px;
                 height: 38px;
             }
 
             .navbar-brand-text {
-                display: inline-block;
                 font-size: 0.95rem;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .navbar-brand-stage {
+                overflow: visible;
+                width: auto;
+                max-width: min(52vw, 18rem);
+                gap: 12px;
+            }
+
+            .navbar-logo {
+                box-shadow: none;
+            }
+
+            .navbar-brand-ticker {
+                position: static;
+                min-width: 0;
+                overflow: hidden;
+                -webkit-mask-image: none;
+                mask-image: none;
+            }
+
+            .navbar-brand-ticker-track {
+                animation: none;
+                transform: none;
+                will-change: auto;
+            }
+
+            .navbar-brand-ticker-track .navbar-brand-text:last-child {
+                display: none;
+            }
+
+            .navbar-brand-text {
+                padding-right: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
             }
         }
 
@@ -188,7 +311,7 @@
         h1, h2, h3, h4, h5, h6,
         .navbar-brand-custom {
             font-family: var(--font-display) !important;
-            letter-spacing: -0.02em;
+          letter-spacing: 0;
         }
 
         .btn-primary {
@@ -305,12 +428,6 @@
                 width: 100%;
                 justify-content: center;
             }
-
-            .navbar-brand-text {
-                max-width: 52vw;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            }
         }
 
         /* Shared dashboard chrome: keep cards in document flow on phones */
@@ -350,7 +467,7 @@
                 padding-top: calc(96px + env(safe-area-inset-top, 0px));
             }
 
-            body.dashboard-theme > .container {
+            body.dashboard-theme > .site-main {
                 max-width: 100%;
                 padding-left: 0.7rem;
                 padding-right: 0.7rem;
@@ -368,7 +485,174 @@
                 max-width: 100%;
             }
         }
+
+        /* Site-wide academy footer — isolated from dashboard body/color overrides */
+        .site-footer {
+            flex-shrink: 0;
+            width: 100%;
+            margin-top: auto;
+            isolation: isolate;
+            background-color: #07101d !important;
+            color: #cbd5e1 !important;
+            padding: 2.25rem 0 calc(1.75rem + env(safe-area-inset-bottom, 0px));
+            border-top: 3px solid transparent;
+            border-image: linear-gradient(90deg, var(--primary-brand), var(--accent-gold), var(--secondary-brand)) 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .site-footer .container {
+            position: relative;
+            z-index: 2;
+            max-width: 1140px;
+        }
+
+        .site-footer h2,
+        .site-footer p,
+        .site-footer nav,
+        .site-footer a {
+            color: inherit;
+        }
+
+        .site-footer-name {
+            font-family: var(--font-display);
+            font-weight: 700;
+            color: #dc2626 !important;
+            font-size: clamp(1.05rem, 2.4vw, 1.25rem);
+            line-height: 1.3;
+        }
+
+        .site-footer-meta {
+            font-size: 0.8rem;
+            color: #94a3b8 !important;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            margin-bottom: 0.5rem;
+        }
+
+        .site-footer-motto {
+            font-size: 0.9rem;
+            color: #e8b4b4 !important;
+            margin: 0;
+            line-height: 1.45;
+        }
+
+        .site-footer-heading {
+            font-size: 0.72rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-weight: 700;
+            color: #d4af37 !important;
+            margin: 0;
+        }
+
+        .site-footer-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.45rem 1rem;
+            justify-content: center;
+        }
+
+        .site-footer-links a {
+            color: #e2e8f0 !important;
+            text-decoration: none;
+            font-size: 0.88rem;
+            font-weight: 600;
+        }
+
+        .site-footer-links a:hover,
+        .site-footer a:hover {
+            color: #d4af37 !important;
+        }
+
+        .site-footer-btn,
+        .site-footer-btn-outline {
+            display: inline-block;
+            font-size: 0.82rem;
+            font-weight: 700;
+            padding: 0.45rem 1rem;
+            border-radius: 10px;
+            text-decoration: none;
+            margin: 0.2rem;
+            transition: transform 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+        }
+
+        .site-footer-btn {
+            background-color: #c82828;
+            color: #ffffff !important;
+            border: 1px solid #c82828;
+        }
+
+        .site-footer-btn:hover {
+            background-color: #a32020;
+            color: #ffffff !important;
+            transform: translateY(-1px);
+        }
+
+        .site-footer-btn-outline {
+            background: transparent;
+            color: #e2e8f0 !important;
+            border: 1px solid rgba(212, 175, 55, 0.55);
+        }
+
+        .site-footer-btn-outline:hover {
+            color: #d4af37 !important;
+            border-color: #d4af37;
+        }
+
+        .site-footer-rule {
+            border: 0;
+            border-top: 1px solid rgba(148, 163, 184, 0.22);
+            margin: 1.15rem 0 1rem;
+        }
+
+        .site-footer-copy,
+        .site-footer-tagline {
+            color: #94a3b8 !important;
+            font-size: 0.82rem;
+        }
+
+        .site-footer-tagline {
+            font-size: 0.75rem;
+        }
+
+        .site-footer-copy a {
+            color: #e2e8f0 !important;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+
+        @media (min-width: 768px) {
+            .site-footer-links {
+                justify-content: flex-start;
+            }
+        }
+
+        @media (max-width: 767.98px) {
+            .site-footer {
+                padding-top: 1.75rem;
+                text-align: center;
+            }
+
+            .site-footer-name {
+                font-size: 1.05rem;
+            }
+
+            .site-footer .text-md-end {
+                text-align: center !important;
+            }
+
+            .site-footer-links {
+                justify-content: center;
+            }
+        }
+
+        @media print {
+            .site-footer {
+                display: none !important;
+            }
+        }
     </style>
+    {% block styles %}{% endblock %}
     {% block head %}{% endblock %}
   </head>
   <body class="{% if request.endpoint and 'dashboard' in request.endpoint %}dashboard-theme{% endif %}">
@@ -377,8 +661,16 @@
     <nav class="navbar navbar-expand-lg fixed-top navbar-custom">
       <div class="container">
         <a class="navbar-brand navbar-brand-custom" href="{{ url_for('index') }}">
-          <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="School logo" class="navbar-logo" onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
-          <span class="navbar-brand-text">Future Leaders School</span>
+          <span class="navbar-brand-stage">
+            <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="" class="navbar-logo" onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
+            <span class="navbar-brand-ticker" aria-hidden="true">
+              <span class="navbar-brand-ticker-track">
+                <span class="navbar-brand-text">Future Leaders Preparatory Academy</span>
+                <span class="navbar-brand-text">Future Leaders Preparatory Academy</span>
+              </span>
+            </span>
+          </span>
+          <span class="visually-hidden">Future Leaders Preparatory Academy</span>
         </a>
         
         <button class="navbar-toggler border-0 shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar" aria-controls="mainNavbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -401,9 +693,21 @@
                 </a>
                 <ul class="dropdown-menu dropdown-menu-end dropdown-menu-custom border-0" aria-labelledby="dashboardDropdown">
                   {% if user_role == "vpi" %}
-                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('vpi_dashboard') }}"><i class="fas fa-book fa-sm me-2"></i>VPI Dashboard</a></li>
+                    <li><h6 class="dropdown-header">VPI — Finance &amp; Operations</h6></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('vpi_dashboard') }}"><i class="fas fa-coins fa-sm me-2"></i>VPI Command Center</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('business_management') }}"><i class="fas fa-cash-register fa-sm me-2"></i>Collect Tuition &amp; Fees</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('financial_reports') }}"><i class="fas fa-chart-bar fa-sm me-2"></i>Financial Reports</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('daily_expense_report') }}"><i class="fas fa-calendar-day fa-sm me-2"></i>Daily Expenses</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('business_overview') }}"><i class="fas fa-landmark fa-sm me-2"></i>Fiscal Oversight</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('class_create') }}"><i class="fas fa-door-open fa-sm me-2"></i>Class Fees &amp; Rooms</a></li>
                   {% elif user_role == "vpa" %}
-                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('vpa_dashboard') }}"><i class="fas fa-paste fa-sm me-2"></i>VPA Dashboard</a></li>
+                    <li><h6 class="dropdown-header">VPA — Academics</h6></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('vpa_dashboard') }}"><i class="fas fa-graduation-cap fa-sm me-2"></i>VPA Command Center</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('subject_setup') }}"><i class="fas fa-book-open fa-sm me-2"></i>Subject Setup &amp; Curriculum</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('class_create') }}"><i class="fas fa-chalkboard-teacher fa-sm me-2"></i>Assign Teachers &amp; Classes</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('principal_class_sponsors') }}"><i class="fas fa-user-shield fa-sm me-2"></i>Class Sponsors</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('academic_years') }}"><i class="fas fa-calendar-alt fa-sm me-2"></i>Academic Years</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('attendance_overview') }}"><i class="fas fa-clipboard-list fa-sm me-2"></i>Academic Attendance</a></li>
                   {% elif user_role == "principal" %}
                     <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('principal_dashboard') }}"><i class="fas fa-user-shield fa-sm me-2"></i>General Dashboard</a></li>
                   {% elif user_role == "registrar" %}
@@ -444,6 +748,9 @@
               {% if can_manage_school_media %}
                 <li class="nav-item"><a class="nav-link" href="{{ url_for('school_media_manage') }}"><i class="fas fa-cloud-upload-alt fa-sm me-1"></i> Manage Media</a></li>
               {% endif %}
+              {% if can_issue_id_cards %}
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('id_cards_folder_hub') }}"><i class="fas fa-id-card fa-sm me-1"></i> ID Cards</a></li>
+              {% endif %}
               
               <li class="nav-item"><a class="nav-link" href="{{ url_for('events_list') }}"><i class="fas fa-calendar-alt fa-sm me-1"></i> Events</a></li>
               <li class="nav-item d-none d-lg-flex align-items-center ms-lg-2 me-lg-1">
@@ -460,7 +767,7 @@
     </nav>
 
     <!-- Main Dynamic Content Wrapper -->
-    <div class="container my-4">
+    <div class="container my-4 site-main">
       {% if request.endpoint and 'dashboard' in request.endpoint and current_user.is_authenticated %}
         <div class="dashboard-welcome-banner" role="region" aria-label="Dashboard welcome message">
           <div class="dashboard-welcome-brand">
@@ -497,6 +804,10 @@
 
       {% block content %}{% endblock %}
     </div>
+
+    {% block footer %}
+      {% include '_site_footer.html' %}
+    {% endblock %}
 
     <!-- Bootstrap 5 JavaScript Bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>

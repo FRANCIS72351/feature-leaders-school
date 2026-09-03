@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Grade Release Approval — VPA{% endblock %}
+
+{% block content %}
+<style>
+    .vpa-release-page { color: #1f2937; }
+    .vpa-release-page h2 { color: #002d62; font-weight: 800; }
+    .vpa-release-card {
+        background: #fff;
+        border: 1px solid #dbe7f3;
+        border-radius: 12px;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+    }
+    .vpa-release-table th {
+        background: #f3f8fd;
+        color: #0369a1;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    .badge-pending { background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; }
+    .badge-returned { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .badge-approved { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .btn-approve { background: #002d62; color: #fff; border: none; }
+    .btn-approve:hover { background: #c82828; color: #fff; }
+    .comment-box { min-width: 180px; font-size: 0.82rem; }
+</style>
+
+<div class="container py-4 vpa-release-page">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-4">
+        <div>
+            <h2 class="mb-1"><i class="fas fa-stamp me-2"></i>Grade Release Approval</h2>
+            <p class="text-muted mb-0">Teachers submit one class marking period at a time. Approve each period separately so students can view that period while later periods remain under review.</p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ url_for('vpa_dashboard') }}" class="btn btn-outline-secondary btn-sm">Back to VPA dashboard</a>
+            <form method="get" class="d-flex gap-2">
+                <select name="academic_year_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                    {% for y in years %}
+                    <option value="{{ y.id }}" {% if display_year and y.id == display_year.id %}selected{% endif %}>{{ y.name }}{% if y.is_active %} (Active){% endif %}</option>
+                    {% endfor %}
+                </select>
+            </form>
+        </div>
+    </div>
+
+    <div class="vpa-release-card p-3 p-md-4 mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0" style="color:#002d62;">Pending VPA approval</h5>
+            <span class="badge badge-pending">{{ pending_rows|length }} waiting</span>
+        </div>
+        {% if pending_rows %}
+        <div class="table-responsive">
+            <table class="table align-middle vpa-release-table mb-0">
+                <thead>
+                    <tr>
+                        <th>Class / Period</th>
+                        <th>Period</th>
+                        <th>Year</th>
+                        <th>Published</th>
+                        <th>Grades</th>
+                        <th>Review</th>
+                        <th>Decision</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in pending_rows %}
+                    <tr>
+                        <td class="fw-semibold">{{ row.class_period_label or ((row.klass.name if row.klass else '—') ~ ' — ' ~ row.period_label) }}</td>
+                        <td>{{ row.period_label }}</td>
+                        <td>{{ row.year.name if row.year else '—' }}</td>
+                        <td>
+                            <div>{{ row.publisher.full_name if row.publisher else 'Teacher' }}</div>
+                            <div class="small text-muted">{{ row.release.published_at.strftime('%b %d, %Y %H:%M') if row.release.published_at else '—' }}</div>
+                        </td>
+                        <td>{{ row.submitted_count }}</td>
+                        <td>
+                            {% if row.sample_student %}
+                            <a href="{{ url_for('report_card', student_id=row.sample_student.id, academic_year_id=row.release.academic_year_id) }}" target="_blank" rel="noopener">Preview report</a>
+                            ·
+                            <a href="{{ url_for('transcript', student_id=row.sample_student.id, academic_year_id=row.release.academic_year_id) }}" target="_blank" rel="noopener">Official Transcript</a>
+                            ·
+                            {% else %}
+                            <span class="text-muted">No roster</span>
+                            {% endif %}
+                            <a href="{{ url_for('class_period_grade_sheet', class_id=row.release.class_id, period=row.release.period, academic_year_id=row.release.academic_year_id) }}" target="_blank" rel="noopener">Class grade sheet</a>
+                        </td>
+                        <td>
+                            <form method="POST" action="{{ url_for('vpa_approve_grade_release', release_id=row.release.id) }}" class="d-flex flex-column gap-2">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <textarea name="review_comment" class="form-control form-control-sm comment-box" rows="2" placeholder="Optional comment">{{ row.release.review_comment or '' }}</textarea>
+                                <div class="d-flex gap-2">
+                                    <button type="submit" class="btn btn-sm btn-approve">Approve</button>
+                                    <button type="submit" formaction="{{ url_for('vpa_return_grade_release', release_id=row.release.id) }}" class="btn btn-sm btn-outline-danger">Return</button>
+                                </div>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">No class periods are waiting for approval{% if display_year %} in {{ display_year.name }}{% endif %}.</p>
+        {% endif %}
+    </div>
+
+    {% if returned_rows %}
+    <div class="vpa-release-card p-3 p-md-4 mb-4">
+        <h5 class="mb-3" style="color:#c82828;">Returned to teacher</h5>
+        <div class="table-responsive">
+            <table class="table align-middle vpa-release-table mb-0">
+                <thead>
+                    <tr>
+                        <th>Class / Period</th>
+                        <th>Period</th>
+                        <th>Comment</th>
+                        <th>Returned</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in returned_rows %}
+                    <tr>
+                        <td class="fw-semibold">{{ row.class_period_label or ((row.klass.name if row.klass else '—') ~ ' — ' ~ row.period_label) }}</td>
+                        <td>{{ row.period_label }}</td>
+                        <td>{{ row.release.review_comment or '—' }}</td>
+                        <td class="small text-muted">{{ row.release.returned_at.strftime('%b %d, %Y') if row.release.returned_at else '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if approved_rows %}
+    <div class="vpa-release-card p-3 p-md-4">
+        <h5 class="mb-3" style="color:#047857;">Recently approved</h5>
+        <div class="table-responsive">
+            <table class="table align-middle vpa-release-table mb-0">
+                <thead>
+                    <tr>
+                        <th>Class / Period</th>
+                        <th>Period</th>
+                        <th>Approved by</th>
+                        <th>Unlocked</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in approved_rows %}
+                    <tr>
+                        <td class="fw-semibold">{{ row.class_period_label or ((row.klass.name if row.klass else '—') ~ ' — ' ~ row.period_label) }}</td>
+                        <td>{{ row.period_label }}</td>
+                        <td>{{ row.approver.full_name if row.approver else 'VPA' }}</td>
+                        <td class="small text-muted">{{ row.release.approved_at.strftime('%b %d, %Y') if row.release.approved_at else '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

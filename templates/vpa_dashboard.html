@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% block title %}VPA Academic Command Center{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+{% endblock %}
 
 {% block content %}
 <style>
@@ -11,7 +14,7 @@
     .text-amber { color: #f59e0b !important; }
     .text-rose { color: #f43f5e !important; }
     .text-violet { color: #8b5cf6 !important; }
-    .glow-title { font-weight: 700; color: #fff; text-shadow: 0 0 20px rgba(139,92,246,0.15); }
+    .glow-title { font-weight: 700; color: var(--primary-brand, #c82828); text-shadow: none; }
     .sec-card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
     .metric-card { background: #0f172a; border: 1px solid #1f2937; border-radius: 12px; padding: 1rem 1.1rem; height: 100%; }
     .form-cyber { background: #070a12 !important; border: 1px solid #374151 !important; color: #fff !important; border-radius: 8px; }
@@ -98,9 +101,13 @@
     .vpa-terminal .text-muted {
         color: #5f7892 !important;
     }
-    .vpa-terminal .glow-title {
-        color: #0f172a !important;
+    .vpa-terminal .glow-title,
+    .vpa-terminal .glow-title i {
+        color: var(--primary-brand, #c82828) !important;
         text-shadow: none;
+    }
+    .vpa-terminal .vpa-command-subtitle {
+        color: var(--primary-brand, #c82828) !important;
     }
     .vpa-terminal .sec-card,
     .vpa-terminal .metric-card,
@@ -134,23 +141,46 @@
         border-color: #cfe0ef !important;
         color: #0f172a !important;
     }
-    .vpa-terminal .form-cyber:focus {
+    .vpa-terminal .form-cyber option,
+    .vpa-terminal .form-cyber optgroup {
+        color: #0f172a !important;
+        background: #ffffff !important;
+    }
+    .vpa-terminal .btn-command {
+        color: #0f172a !important;
+        font-weight: 600;
+        font-size: 0.92rem;
+        line-height: 1.35;
+    }
+    .vpa-terminal .btn-command:hover {
+        color: #0f172a !important;
         border-color: #4f46e5 !important;
-        box-shadow: 0 0 0 0.2rem rgba(79, 70, 229, 0.2) !important;
+        background: #f8fafc !important;
+    }
+    .vpa-terminal .btn-command .btn-command-label {
+        color: #0f172a !important;
     }
     .vpa-terminal .stat-pill {
         border-color: #d7e7f5;
         background: #f4f9fe;
         color: #33506b !important;
     }
+    .vpa-terminal .badge-pass,
+    .vpa-terminal .badge-fail,
+    .vpa-terminal .badge-none {
+        white-space: nowrap;
+        overflow: visible;
+        padding: 0.3rem 0.7rem;
+    }
 </style>
+{% include 'partials/roster_status_styles.html' %}
 
 <div class="container-fluid py-4 px-md-4 vpa-terminal pro-dashboard">
     {% set year_param = {'academic_year_id': display_year.id} if display_year else {} %}
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4 pb-3 border-bottom border-secondary border-opacity-10">
         <div>
-            <h2 class="glow-title mb-0"><i class="fas fa-graduation-cap text-violet me-2"></i>VPA Academic Command Center</h2>
-            <p class="text-muted small mb-0 mt-1">Curriculum oversight, grade monitoring, and MoE {{ stats.moe_standard }}% passing standard</p>
+            <h2 class="glow-title mb-0"><i class="fas fa-graduation-cap me-2"></i>VPA Academic Command Center</h2>
+            <p class="vpa-command-subtitle small mb-0 mt-1">Vice Principal for Academics — curriculum, teachers, grades, and MoE {{ stats.moe_standard }}% standard. Tuition and the ledger belong to the VPI office.</p>
         </div>
         <form method="get" class="d-flex gap-2 mt-2 mt-md-0 flex-wrap">
             {% if class_id %}<input type="hidden" name="class_id" value="{{ class_id }}">{% endif %}
@@ -187,8 +217,9 @@
     <div class="row g-3 mb-4">
         <div class="col-6 col-md-3"><div class="metric-card"><span class="text-muted small d-block">Classes</span><div class="fw-bold">{{ stats.total_classes }}</div></div></div>
         <div class="col-6 col-md-3"><div class="metric-card"><span class="text-muted small d-block">Subjects Allocated</span><div class="fw-bold text-violet">{{ stats.subjects_allocated }}</div></div></div>
-        <div class="col-6 col-md-3"><div class="metric-card"><span class="text-muted small d-block">Published Grades</span><div class="fw-bold text-emerald">{{ stats.grades_published }}</div></div></div>
-        <div class="col-6 col-md-3"><div class="metric-card"><span class="text-muted small d-block">No Grade Data</span><div class="fw-bold text-amber">{{ stats.no_grade_data }}</div></div></div>
+        <div class="col-6 col-md-3 col-xl"><div class="metric-card"><span class="text-muted small d-block">Published Grades</span><div class="fw-bold text-emerald">{{ stats.grades_published }}</div></div></div>
+        <div class="col-6 col-md-3 col-xl"><div class="metric-card"><span class="text-muted small d-block">Pending VPA Approval</span><div class="fw-bold text-amber">{{ stats.pending_vpa_releases }}</div></div></div>
+        <div class="col-6 col-md-3 col-xl"><div class="metric-card"><span class="text-muted small d-block">No Grade Data</span><div class="fw-bold text-amber">{{ stats.no_grade_data }}</div></div></div>
     </div>
 
     <div class="row g-4">
@@ -198,7 +229,7 @@
                     <img src="{{ current_user.photo_url }}" class="rounded-circle border border-secondary border-opacity-25" style="width:64px;height:64px;aspect-ratio:1/1;object-fit:cover;overflow:hidden;" alt="VPA" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
                     <div>
                         <h5 class="mb-0">{{ current_user.full_name }}</h5>
-                        <span class="badge text-violet border small" style="background:rgba(139,92,246,0.1);border-color:rgba(139,92,246,0.25)!important;">Vice Principal for Academics</span>
+                        <span class="badge text-violet border small" style="background:rgba(139,92,246,0.1);border-color:rgba(139,92,246,0.25)!important;">Vice Principal for Academics (VPA)</span>
                     </div>
                 </div>
                 {% if active_year %}
@@ -210,37 +241,50 @@
             </div>
 
             <div class="card sec-card p-4">
-                <h6 class="fw-bold mb-3"><i class="fas fa-bolt text-amber me-2"></i>VPA Responsibilities</h6>
+                <h6 class="fw-bold mb-3"><i class="fas fa-bolt text-amber me-2"></i>VPA Responsibilities (Academics only)</h6>
                 <div class="d-flex flex-column gap-2 small">
-                    <div><i class="fas fa-book-open text-violet me-2"></i>Curriculum &amp; subject catalog oversight</div>
-                    <div><i class="fas fa-chalkboard-teacher text-cyan me-2"></i>Teacher grade entry monitoring</div>
-                    <div><i class="fas fa-chart-line text-emerald me-2"></i>Student performance (MoE {{ stats.moe_standard }}% standard)</div>
-                    <div><i class="fas fa-layer-group text-amber me-2"></i>Class academic snapshots &amp; promotion readiness</div>
-                    <div><i class="fas fa-exclamation-triangle text-rose me-2"></i>At-risk &amp; failing student follow-up</div>
-                    <div><i class="fas fa-file-alt text-cyan me-2"></i>Report card &amp; assessment audit</div>
+                    <div><i class="fas fa-book-open text-violet me-2"></i>Curriculum &amp; subject catalog</div>
+                    <div><i class="fas fa-chalkboard-teacher text-cyan me-2"></i>Assign teachers to class subjects</div>
+                    <div><i class="fas fa-user-shield text-amber me-2"></i>Assign class sponsors / homeroom teachers</div>
+                    <div><i class="fas fa-chart-line text-emerald me-2"></i>Monitor grades vs MoE {{ stats.moe_standard }}% standard</div>
+                    <div><i class="fas fa-exclamation-triangle text-rose me-2"></i>At-risk students &amp; promotion readiness</div>
+                    <div><i class="fas fa-file-alt text-cyan me-2"></i>Report cards, assessments, academic years</div>
+                    <div class="text-muted pt-1">Not this office: tuition, fees, expenses, or the school ledger (that is VPI).</div>
                 </div>
             </div>
 
             <div class="card sec-card p-4">
                 <h6 class="fw-bold mb-3"><i class="fas fa-terminal text-violet me-2"></i>Quick Actions</h6>
                 <div class="d-flex flex-column gap-2">
+                    <a href="{{ url_for('vpa_grade_releases') }}" class="btn-command">
+                        <i class="fas fa-stamp text-amber me-2"></i><span class="btn-command-label">Approve Grade Releases{% if stats.pending_vpa_releases %} ({{ stats.pending_vpa_releases }}){% endif %}</span>
+                    </a>
+                    <a href="{{ url_for('vpa_transcript_releases') }}" class="btn-command">
+                        <i class="fas fa-scroll text-cyan me-2"></i><span class="btn-command-label">Approve Transcripts{% if stats.pending_transcript_releases %} ({{ stats.pending_transcript_releases }}){% endif %}</span>
+                    </a>
                     <a href="{{ url_for('subject_setup') }}" class="btn-command">
-                        <i class="fas fa-book text-violet me-2"></i>Subject Setup &amp; Curriculum
+                        <i class="fas fa-book text-violet me-2"></i><span class="btn-command-label">Subject Setup &amp; Curriculum</span>
                     </a>
                     <a href="{{ url_for('class_create') }}" class="btn-command">
-                        <i class="fas fa-school text-cyan me-2"></i>Class &amp; Faculty Management
+                        <i class="fas fa-chalkboard-teacher text-cyan me-2"></i><span class="btn-command-label">Assign Teachers to Classes</span>
+                    </a>
+                    <a href="{{ url_for('principal_class_sponsors') }}" class="btn-command">
+                        <i class="fas fa-user-shield text-amber me-2"></i><span class="btn-command-label">Class Sponsors</span>
                     </a>
                     <a href="{{ url_for('academic_years') }}" class="btn-command">
-                        <i class="fas fa-calendar-alt text-emerald me-2"></i>Academic Years
+                        <i class="fas fa-calendar-alt text-emerald me-2"></i><span class="btn-command-label">Academic Years</span>
+                    </a>
+                    <a href="{{ url_for('attendance_overview') }}" class="btn-command">
+                        <i class="fas fa-clipboard-list text-cyan me-2"></i><span class="btn-command-label">Academic Attendance</span>
                     </a>
                     <a href="{{ url_for('announcements') }}" class="btn-command">
-                        <i class="fas fa-bullhorn text-amber me-2"></i>School Announcements
+                        <i class="fas fa-bullhorn text-amber me-2"></i><span class="btn-command-label">School Announcements</span>
                     </a>
                     <a href="{{ url_for('school_media_manage') }}" class="btn-command">
-                        <i class="fas fa-photo-video text-violet me-2"></i>School Media Hub
+                        <i class="fas fa-photo-video text-violet me-2"></i><span class="btn-command-label">School Media Hub</span>
                     </a>
                     <a href="{{ url_for('admin_events_list') }}" class="btn-command">
-                        <i class="fas fa-calendar-plus text-cyan me-2"></i>Manage School Events
+                        <i class="fas fa-calendar-plus text-cyan me-2"></i><span class="btn-command-label">Manage School Events</span>
                     </a>
                 </div>
             </div>
@@ -314,12 +358,15 @@
                 <form method="get" class="row g-2 mb-3">
                     {% if display_year %}<input type="hidden" name="academic_year_id" value="{{ display_year.id }}">{% endif %}
                     <div class="col-md-4">
-                        <select name="class_id" class="form-select form-cyber form-select-sm">
+                        <select name="class_id" class="form-select form-cyber form-select-sm" onchange="this.form.submit()">
                             <option value="">All classes</option>
                             {% for group in class_snapshots_by_division %}
                             <optgroup label="{{ group.label }}">
                                 {% for snap in group.classes %}
-                                <option value="{{ snap.klass.id }}" {% if class_id == snap.klass.id %}selected{% endif %}>{{ snap.klass.name }}</option>
+                                <option value="{{ snap.klass.id }}" {% if class_id == snap.klass.id %}selected{% endif %}>
+                                    {{ snap.klass.name }}{% if snap.klass.grade_level %} · {{ snap.klass.grade_level }}{% endif %}
+                                    {% if snap.student_count is defined %} ({{ snap.student_count }}){% endif %}
+                                </option>
                                 {% endfor %}
                             </optgroup>
                             {% endfor %}
@@ -340,44 +387,45 @@
                                 <th>Class</th>
                                 <th>Average</th>
                                 <th>Letter</th>
-                                <th>MoE Status</th>
-                                <th></th>
+                                <th>Status</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for student in students[:25] %}
+                            {% set registry_students = students %}
+                            {% for student in registry_students %}
                             <tr>
                                 <td>
                                     <div class="small registry-student-name">{{ student.full_name }}</div>
                                     <div class="text-muted" style="font-size:0.7rem;">{{ student.student_id or '—' }}</div>
-                                    {% if viewing_archived and student.status in ('ALUMNI', 'GRADUATED') %}
-                                    <span class="badge bg-secondary mt-1" style="font-size:0.6rem;">{{ student.status|title }}</span>
-                                    {% elif student.status == 'FAILED' %}
-                                    <span class="badge bg-rose bg-opacity-10 text-rose border border-rose border-opacity-10 mt-1" style="font-size:0.6rem;">Failed</span>
-                                    {% endif %}
                                 </td>
                                 <td class="small"><span class="registry-student-class">{{ student.display_klass.name if student.display_klass else (student.klass.name if student.klass else 'Unassigned') }}</span></td>
                                 <td class="small fw-bold {% if student.academic_average is not none and student.academic_average >= stats.moe_standard %}text-emerald{% elif student.academic_average is not none %}text-rose{% endif %}">
                                     {% if student.academic_average is not none %}{{ student.academic_average }}%{% else %}—{% endif %}
                                 </td>
                                 <td><span class="badge bg-dark border border-secondary">{{ student.grade_letter }}</span></td>
-                                <td>
-                                    {% if student.moe_status == 'Passing' %}
-                                    <span class="badge badge-pass small">{{ student.moe_status }}</span>
-                                    {% elif student.moe_status == 'Below MoE Standard' %}
-                                    <span class="badge badge-fail small">{{ student.moe_status }}</span>
-                                    {% else %}
-                                    <span class="badge badge-none small">{{ student.moe_status }}</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-end">
-                                    <a href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}" class="btn btn-sm btn-outline-light py-0 px-2" title="Report card">
-                                        <i class="fas fa-file-alt"></i>
-                                    </a>
+                                <td class="roster-status-cell">
+                                    <div class="roster-status-cluster">
+                                        {% if student.status and student.status|upper not in ('ACTIVE',) %}
+                                        {% include 'partials/roster_status_pill.html' %}
+                                        {% endif %}
+                                        {% if student.moe_status == 'Passing' %}
+                                        <span class="badge badge-pass small roster-status-pill">{{ student.moe_status }}</span>
+                                        {% elif student.moe_status == 'Below MoE Standard' %}
+                                        <span class="badge badge-fail small roster-status-pill">{{ student.moe_status }}</span>
+                                        {% else %}
+                                        <span class="badge badge-none small roster-status-pill">{{ student.moe_status }}</span>
+                                        {% endif %}
+                                        <a href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}" class="roster-grade-sheet-link" title="Grade sheet" aria-label="Grade sheet">
+                                            <i class="fas fa-file-alt" aria-hidden="true"></i>
+                                        </a>
+                                        <a href="{{ url_for('transcript', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}" class="roster-grade-sheet-link" title="Official Transcript" aria-label="Official Transcript" target="_blank" rel="noopener">
+                                            <i class="fas fa-scroll" aria-hidden="true"></i>
+                                        </a>
+                                    </div>
                                 </td>
                             </tr>
                             {% else %}
-                            <tr><td colspan="6" class="text-muted small text-center py-3">
+                            <tr><td colspan="5" class="text-muted small text-center py-3">
                                 {% if selected_class and viewing_archived and display_year %}
                                 No students are recorded in this class for {{ display_year.name }}. Alumni and graduated learners appear here when their enrollment history matches this folder.
                                 {% else %}
@@ -388,8 +436,21 @@
                         </tbody>
                     </table>
                 </div>
-                {% if students|length > 25 %}
-                <p class="text-muted small mb-0 mt-2">Showing first 25 of {{ students|length }} students. Refine your search to narrow results.</p>
+                {% if registry_total is defined %}
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
+                    <p class="text-muted small mb-0">Showing {{ students|length }} of {{ registry_total }} student{{ 's' if registry_total != 1 else '' }} for this year only. Older years stay in their own academic-year folder.</p>
+                    {% if registry_pages and registry_pages > 1 %}
+                    <div class="d-flex gap-2">
+                        {% if registry_page > 1 %}
+                        <a class="btn btn-sm btn-outline-light" href="{{ url_for('vpa_dashboard', academic_year_id=display_year.id if display_year else none, class_id=class_id or none, q=search_q or none, page=registry_page-1) }}">Previous</a>
+                        {% endif %}
+                        <span class="small align-self-center">Page {{ registry_page }} / {{ registry_pages }}</span>
+                        {% if registry_page < registry_pages %}
+                        <a class="btn btn-sm btn-outline-light" href="{{ url_for('vpa_dashboard', academic_year_id=display_year.id if display_year else none, class_id=class_id or none, q=search_q or none, page=registry_page+1) }}">Next</a>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
                 {% endif %}
             </div>
 
@@ -461,11 +522,11 @@
                                         <td class="small recent-grade-student-name">{{ grade.student.full_name if grade.student else '—' }}</td>
                                         <td class="small"><span class="recent-grade-subject">{{ grade.subject_name or grade.subject or '—' }}</span></td>
                                         <td class="small recent-grade-score">{{ grade.score|round(1) if grade.score is not none else '—' }}%</td>
-                                        <td>
+                                        <td class="roster-status-cell">
                                             {% if grade.submitted %}
-                                            <span class="badge badge-pass small">Published</span>
+                                            <span class="badge badge-pass small roster-status-pill">Published</span>
                                             {% else %}
-                                            <span class="badge badge-none small">Draft</span>
+                                            <span class="badge badge-none small roster-status-pill">Draft</span>
                                             {% endif %}
                                         </td>
                                     </tr>
@@ -510,7 +571,8 @@
                 </div>
                 <p class="text-muted small mb-0 mt-3">
                     Liberia MoE standard: Continuous Assessment (60%) + Examination (40%) per period.
-                    Students must maintain a {{ stats.moe_standard }}% average with no more than two failing core subjects for promotion.
+                    Students must maintain a {{ stats.moe_standard }}% overall yearly average.
+                    Two failing subject yearly averages assign Summer School; three or more require the student to repeat class, regardless of overall average.
                 </p>
             </div>
         </div>

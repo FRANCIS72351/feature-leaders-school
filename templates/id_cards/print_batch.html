@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ID Cards{% if klass %} — {{ klass.name }}{% endif %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&family=Great+Vibes&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --cardinal: {{ school_print_brand.brand_red or '#c82828' }};
+            --navy: #002d62;
+            --gold: #c9a227;
+            --ink: #1a2332;
+            --muted: #4b5563;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #e8edf3;
+            font-family: Montserrat, "Segoe UI", Arial, sans-serif;
+            color: var(--ink);
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .toolbar {
+            max-width: 210mm;
+            margin: 0 auto 16px;
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .toolbar p { margin: 0; font-size: 0.9rem; color: #4b5563; }
+        .ios-save-hint {
+            max-width: 210mm;
+            margin: 0 auto 14px;
+            font-size: 0.82rem;
+            color: #4b5563;
+        }
+        .no-print-btn, .btn-back, .btn-download {
+            border: none;
+            border-radius: 4px;
+            padding: 10px 18px;
+            font-weight: 700;
+            font-size: 0.95rem;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .no-print-btn { background: var(--navy); color: #fff; }
+        .btn-back { background: #fff; color: var(--navy); border: 1px solid var(--navy); }
+        .btn-download {
+            background: var(--navy);
+            color: var(--gold);
+            border: 1px solid var(--gold);
+        }
+        .btn-refresh-ids {
+            background: #fff;
+            color: var(--navy);
+            border: 1px solid var(--gold);
+        }
+        .id-flash {
+            max-width: 210mm;
+            margin: 0 auto 12px;
+            padding: 10px 14px;
+            background: #fff7ed;
+            border: 1px solid #f59e0b;
+            border-radius: 6px;
+            color: #9a3412;
+            font-size: 0.88rem;
+            font-weight: 600;
+            line-height: 1.45;
+        }
+        .id-flash.success {
+            background: #ecfdf5;
+            border-color: #34d399;
+            color: #065f46;
+        }
+
+        .id-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            justify-content: center;
+            max-width: 210mm;
+            margin: 0 auto;
+        }
+        .card-pair {
+            display: flex;
+            gap: 8px;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            margin-bottom: 10px;
+        }
+
+        /* CR80 portrait: 53.98mm × 85.6mm */
+        .id-card {
+            width: 53.98mm;
+            height: 85.6mm;
+            border-radius: 3.5mm;
+            background: #fff;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 45, 98, 0.2);
+            border: 0.3mm solid var(--navy);
+        }
+        .id-card.front::after {
+            content: "";
+            position: absolute;
+            inset: 28% 12% 18%;
+            background: url("{{ school_logo_url }}") center / contain no-repeat;
+            opacity: 0.06;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .front-header, .back-header {
+            height: 11.5mm;
+            display: flex;
+            align-items: center;
+            gap: 2.2mm;
+            padding: 0 3mm;
+            position: relative;
+            z-index: 2;
+        }
+        .front-header { background: var(--cardinal); }
+        .back-header { background: var(--navy); }
+        .header-logo {
+            width: 8.2mm;
+            height: 8.2mm;
+            object-fit: contain;
+            background: #fff;
+            border-radius: 50%;
+            padding: 0.6mm;
+            flex-shrink: 0;
+        }
+        .header-name {
+            font-size: 6.2pt;
+            font-weight: 800;
+            line-height: 1.15;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+        }
+        .front-header .header-name { color: #fff; }
+        .back-header .header-name { color: var(--gold); }
+
+        .sunburst {
+            height: 16mm;
+            margin-top: -1px;
+            background:
+                repeating-conic-gradient(
+                    from 180deg at 50% -8%,
+                    var(--cardinal) 0deg 9deg,
+                    var(--navy) 9deg 18deg
+                );
+            clip-path: polygon(0 0, 100% 0, 50% 100%);
+        }
+
+        /* Gold photo well: true square. Width is 24mm; height comes from
+           aspect-ratio / the 800×800 JPEG (height: auto). Do not set both
+           width and height in mm — Safari then ignores aspect-ratio and can
+           stretch this into a tall rectangle. */
+        .photo-wrap {
+            position: relative;
+            z-index: 3;
+            width: 24mm;
+            max-width: 24mm;
+            height: auto !important;
+            min-height: 0 !important;
+            aspect-ratio: 1 / 1 !important;
+            flex-shrink: 0;
+            margin: -9mm auto 0;
+            overflow: hidden;
+        }
+        .photo-ring {
+            position: relative;
+            width: 100%;
+            height: auto !important;
+            min-width: 0;
+            min-height: 0 !important;
+            aspect-ratio: 1 / 1 !important;
+            box-sizing: border-box;
+            border-radius: 0.8mm;
+            border: 0.7mm solid var(--gold);
+            overflow: hidden;
+            padding: 0;
+            background: #fff;
+            box-shadow: 0 0 0 0.45mm var(--navy);
+        }
+        /*
+         * JPEG is already a composed 800×800 head-and-shoulders square
+         * (head in the upper half, chest in the lower third, ~10% headroom).
+         * Show the WHOLE JPEG in this square. NEVER object-fit: cover +
+         * object-position: top / center top / 22% — that zooms into the
+         * crown and cuts off the face. Do not revert.
+         */
+        .photo-ring img {
+            display: block;
+            width: 100%;
+            height: auto !important;
+            max-width: 100%;
+            aspect-ratio: 1 / 1;
+            box-sizing: border-box;
+            padding: 0;
+            margin: 0;
+            border: 0;
+            object-fit: contain;
+            object-position: center center;
+            background: #fff;
+        }
+        .navy-band {
+            height: 8mm;
+            background: var(--navy);
+            margin-top: -11mm;
+            margin-bottom: 11mm;
+        }
+
+        .front-body {
+            padding: 0.8mm 4.2mm 8.5mm;
+            position: relative;
+            z-index: 1;
+        }
+        .id-row {
+            display: grid;
+            grid-template-columns: 20mm 1fr;
+            gap: 1mm;
+            align-items: start;
+            margin: 0 0 1mm;
+            font-size: 6.1pt;
+            line-height: 1.2;
+        }
+        .front-body, .back-copy, .expire, .principal-block { position: relative; z-index: 1; }
+        .id-row .lbl {
+            color: var(--cardinal);
+            font-weight: 700;
+            min-width: 0;
+            overflow: hidden;
+        }
+        .id-row .val {
+            color: var(--ink);
+            font-weight: 600;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .id-row.parent-row .val {
+            white-space: normal;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
+        }
+
+        .front-footer {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 7.2mm;
+            background: var(--cardinal);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 2.5mm;
+            z-index: 2;
+        }
+        .front-footer::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: -1.2mm;
+            height: 1.2mm;
+            background: var(--gold);
+        }
+        .front-motto {
+            color: #fff;
+            font-size: 4.4pt;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            text-align: center;
+            line-height: 1.15;
+            text-transform: uppercase;
+        }
+
+        .back-rule {
+            height: 1.3mm;
+            background: var(--gold);
+        }
+        .back-seal-wrap {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 2.1mm 0 0.8mm;
+            position: relative;
+            z-index: 1;
+        }
+        .back-seal-plate {
+            width: 22mm;
+            height: 22mm;
+            border-radius: 50%;
+            background: #fffef8;
+            border: 0.4mm solid var(--gold);
+            box-shadow: 0 0 0 0.35mm var(--navy);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.1mm;
+        }
+        .back-seal-plate img {
+            width: 19mm;
+            height: 19mm;
+            object-fit: contain;
+            display: block;
+            /* Black line-art tinted to FLPA navy for print and screen */
+            filter: brightness(0) saturate(100%) invert(13%) sepia(48%) saturate(2140%) hue-rotate(199deg) brightness(92%) contrast(112%);
+        }
+        .back-copy {
+            padding: 1.6mm 4mm 0;
+            text-align: center;
+        }
+        .back-copy p {
+            margin: 0 0 1.4mm;
+            font-size: 6pt;
+            font-weight: 600;
+            color: var(--muted);
+            line-height: 1.35;
+        }
+        .back-address {
+            color: var(--navy) !important;
+            font-weight: 800 !important;
+            text-transform: uppercase;
+            font-size: 6.2pt !important;
+            letter-spacing: 0.02em;
+        }
+        .expire {
+            margin: 2.2mm 0 1.6mm;
+            color: var(--cardinal);
+            font-size: 7pt;
+            font-weight: 800;
+            text-align: center;
+            letter-spacing: 0.03em;
+        }
+        .principal-block {
+            text-align: center;
+            margin: 0 auto 2mm;
+            width: 32mm;
+        }
+        .principal-sig {
+            font-family: "Great Vibes", "Segoe Script", cursive;
+            font-size: 13pt;
+            color: var(--navy);
+            line-height: 1;
+            min-height: 7mm;
+        }
+        .principal-sig img {
+            height: 7mm;
+            max-width: 32mm;
+            object-fit: contain;
+        }
+        .principal-line {
+            border-top: 0.35mm solid #9ca3af;
+            margin-top: 0.5mm;
+            padding-top: 0.6mm;
+            font-size: 6.5pt;
+            font-weight: 800;
+            color: var(--muted);
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .back-qr {
+            position: absolute;
+            right: 2.2mm;
+            bottom: 15.5mm;
+            width: 13mm;
+            text-align: center;
+            z-index: 2;
+        }
+        .back-qr img {
+            width: 13mm;
+            height: 13mm;
+            display: block;
+            background: #fff;
+            padding: 0.4mm;
+            border: 0.25mm solid #e5e7eb;
+        }
+        .qr-caption {
+            margin: 0.4mm 0 0;
+            font-size: 3.6pt;
+            font-weight: 800;
+            color: var(--navy);
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+        }
+
+        .back-footer {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 14mm;
+        }
+        .back-footer .band-navy { height: 3.2mm; background: var(--navy); }
+        .back-footer .band-cardinal { height: 2.4mm; background: var(--cardinal); }
+        .back-footer .stripes {
+            height: 8.4mm;
+            background:
+                repeating-linear-gradient(
+                    118deg,
+                    var(--navy) 0 3.2mm,
+                    var(--cardinal) 3.2mm 5.6mm,
+                    var(--gold) 5.6mm 6.4mm
+                );
+        }
+
+        .skipped {
+            max-width: 210mm;
+            margin: 16px auto 0;
+            font-size: 0.8rem;
+            color: #6b7280;
+        }
+        .qr-host-warn {
+            max-width: 210mm;
+            margin: 0 auto 16px;
+            padding: 10px 14px;
+            background: #fffbeb;
+            border: 1px solid #f59e0b;
+            border-radius: 6px;
+            color: #92400e;
+            font-size: 0.82rem;
+            font-weight: 600;
+            line-height: 1.45;
+        }
+        .qr-host-warn code {
+            font-weight: 700;
+            background: #fff7ed;
+            padding: 0 0.25em;
+        }
+
+        @media print {
+            .toolbar, .skipped, .no-print-btn, .btn-back, .btn-download, .btn-refresh-ids, .qr-host-warn, .ios-save-hint, .id-flash { display: none !important; }
+            body { background: none; padding: 0; }
+            .id-card { box-shadow: none; border-color: #bbb; }
+            .card-pair { page-break-inside: avoid; }
+            .id-grid { max-width: none; }
+            .photo-wrap,
+            .photo-ring {
+                width: 24mm !important;
+                height: auto !important;
+                max-width: 24mm !important;
+                min-height: 0 !important;
+                aspect-ratio: 1 / 1 !important;
+            }
+            .photo-ring img {
+                width: 100% !important;
+                height: auto !important;
+                aspect-ratio: 1 / 1 !important;
+                object-fit: contain !important;
+                object-position: center center !important;
+            }
+        }
+        @page { size: A4; margin: 8mm; }
+    </style>
+</head>
+<body>
+    {% set brand = school_print_brand %}
+    <div class="toolbar">
+        <p>
+            {{ cards|length }} ID card{{ 's' if cards|length != 1 else '' }}
+            {% if klass %} · {{ klass.name }}{% endif %}
+            {% if display_year %} · {{ display_year.name }}{% endif %}
+        </p>
+        <div>
+            {% if refresh_photos_url %}
+            <form method="post" action="{{ refresh_photos_url }}" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn-refresh-ids" type="submit">Refresh ID photos</button>
+            </form>
+            {% endif %}
+            <a class="btn-back" href="{{ url_for('id_cards_folder_hub') }}">Back</a>
+            {% if download_url %}
+            <a class="btn-download" href="{{ download_url }}" download="{{ download_filename or 'FLPA_ID_Cards.pdf' }}">
+                Download / Save PDF
+            </a>
+            {% endif %}
+            <button class="no-print-btn" type="button" id="print-batch-btn">
+                Print Batch{% if klass %} ({{ klass.name }}){% endif %}
+            </button>
+        </div>
+    </div>
+    {% if download_url %}
+    <p class="ios-save-hint">On iPhone, tap Share → Save to Files.</p>
+    {% endif %}
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+        <div class="id-flash{% if category == 'success' %} success{% endif %}" role="alert">{{ message }}</div>
+        {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    {% if qr_localhost_warning %}
+    <div class="qr-host-warn" role="alert">
+        Phones cannot open this QR: it encodes <code>localhost</code>.
+        Set <code>SITE_URL</code> to the public tunnel you use in the browser
+        (for example <code>https://wb9jv14t-3000.uks1.devtunnels.ms</code>), restart the app, and reprint.
+        If this page is already open through that tunnel, the codes below are rewritten to this tab’s address before you print.
+    </div>
+    {% endif %}
+
+    <div class="id-grid">
+        {% for card in cards %}
+        {% set student = card.student %}
+        {% set parent_name = card.parent_name or student.parent_guardian_name or student.guardian_name or (student.parent_user.full_name if student.parent_user else none) %}
+        {% set phone = student.parent_phone or brand.phones %}
+        <div class="card-pair">
+            <article class="id-card front" aria-label="Student ID front">
+                <header class="front-header">
+                    <img class="header-logo" src="{{ school_logo_url }}" alt="" decoding="async"{% if loop.index > 2 %} loading="lazy"{% endif %}>
+                    <div class="header-name">{{ brand.name }}</div>
+                </header>
+                <div class="sunburst" aria-hidden="true"></div>
+                <div class="photo-wrap">
+                    <div class="photo-ring">
+                        <img src="{{ card.photo_url or student.photo_url }}" alt="{{ student.full_name }}" decoding="async"{% if loop.index > 2 %} loading="lazy"{% endif %}>
+                    </div>
+                </div>
+                <div class="navy-band" aria-hidden="true"></div>
+                <div class="front-body">
+                    <div class="id-row"><span class="lbl">Student Name:</span><span class="val">{{ student.full_name }}</span></div>
+                    <div class="id-row parent-row"><span class="lbl">Parent / Guardian:</span><span class="val">{{ parent_name or '—' }}</span></div>
+                    <div class="id-row"><span class="lbl">Student ID:</span><span class="val">{{ student.student_id }}</span></div>
+                    <div class="id-row"><span class="lbl">Class:</span><span class="val">{{ card.class_label or (klass.name if klass else '—') }}</span></div>
+                    <div class="id-row"><span class="lbl">Phone:</span><span class="val">{{ phone or '—' }}</span></div>
+                    {% if display_year %}
+                    <div class="id-row"><span class="lbl">Session:</span><span class="val">{{ display_year.name }}</span></div>
+                    {% endif %}
+                </div>
+                <div class="front-footer">
+                    <div class="front-motto">{{ brand.motto }}</div>
+                </div>
+            </article>
+
+            <article class="id-card back" aria-label="Student ID back">
+                <header class="back-header">
+                    <img class="header-logo" src="{{ school_logo_url }}" alt="" decoding="async"{% if loop.index > 2 %} loading="lazy"{% endif %}>
+                    <div class="header-name">{{ brand.name }}</div>
+                </header>
+                <div class="back-rule" aria-hidden="true"></div>
+                {% if liberia_seal_url %}
+                <div class="back-seal-wrap">
+                    <div class="back-seal-plate">
+                        <img src="{{ liberia_seal_url }}" alt="Republic of Liberia coat of arms" decoding="async"{% if loop.index > 2 %} loading="lazy"{% endif %}>
+                    </div>
+                </div>
+                {% endif %}
+                <div class="back-copy">
+                    <p>This ID card is the property of this school.</p>
+                    <p>If found, please return it to the location below.</p>
+                    <p class="back-address">{{ brand.full_address }}</p>
+                </div>
+                <div class="expire">
+                    Expire Date:
+                    {% if student.id_expiration_date %}
+                        {{ student.id_expiration_date.strftime('%m/%d/%Y') }}
+                    {% else %}
+                        —
+                    {% endif %}
+                </div>
+                <div class="principal-block">
+                    <div class="principal-sig">
+                        {% if student.signature_url %}
+                        <img src="{{ student.signature_url }}" alt="Signature" decoding="async" loading="lazy">
+                        {% else %}
+                        {{ student.official_signature_mark }}
+                        {% endif %}
+                    </div>
+                    <div class="principal-line">Signature</div>
+                </div>
+                {% if card.qr_code_data_uri %}
+                <div class="back-qr">
+                    <img src="{{ card.qr_code_data_uri }}" alt="Student portal QR code"{% if card.portal_path %} data-portal-path="{{ card.portal_path }}"{% endif %}>
+                    <div class="qr-caption">Scan for portal</div>
+                </div>
+                {% endif %}
+                <div class="back-footer" aria-hidden="true">
+                    <div class="band-navy"></div>
+                    <div class="band-cardinal"></div>
+                    <div class="stripes"></div>
+                </div>
+            </article>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if skipped %}
+    <p class="skipped">Skipped (missing photo, class, or student ID): {% for s in skipped %}{{ s.full_name }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+    {% endif %}
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+    <script>
+    (function () {
+        var host = (location.hostname || '').toLowerCase();
+        var origin = (location.origin || '').replace(/\/$/, '');
+        var isLoopback = !host || host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+        var isTunnel = /\.devtunnels\.ms$/i.test(host);
+        var printBtn = document.getElementById('print-batch-btn');
+
+        function whenQrReady(cb, tries) {
+            if (window.QRCode && QRCode.toDataURL) {
+                cb();
+                return;
+            }
+            if ((tries || 0) > 40) {
+                cb();
+                return;
+            }
+            setTimeout(function () { whenQrReady(cb, (tries || 0) + 1); }, 50);
+        }
+
+        function rewriteQrs(done) {
+            var finish = typeof done === 'function' ? done : function () {};
+            var imgs = Array.prototype.slice.call(document.querySelectorAll('img[data-portal-path]'));
+            if (!imgs.length || isLoopback) {
+                finish();
+                return;
+            }
+            if (!isTunnel && !/\./.test(host)) {
+                finish();
+                return;
+            }
+            whenQrReady(function () {
+                if (!window.QRCode || !QRCode.toDataURL) {
+                    finish();
+                    return;
+                }
+                var pending = imgs.length;
+                imgs.forEach(function (img) {
+                    var path = img.getAttribute('data-portal-path') || '';
+                    if (!path) {
+                        if (--pending === 0) finish();
+                        return;
+                    }
+                    if (path.charAt(0) !== '/') path = '/' + path;
+                    QRCode.toDataURL(origin + path, { width: 256, margin: 1, errorCorrectionLevel: 'M' }, function (err, dataUrl) {
+                        if (!err && dataUrl) img.src = dataUrl;
+                        if (--pending === 0) finish();
+                    });
+                });
+            });
+        }
+
+        function printWhenReady() {
+            rewriteQrs(function () { window.print(); });
+        }
+
+        if (printBtn) {
+            printBtn.addEventListener('click', function () { printWhenReady(); });
+        }
+        if (isTunnel) {
+            rewriteQrs();
+        }
+    })();
+    </script>
+</body>
+</html>

@@ -13,6 +13,8 @@
             --muted: #334155;
             --paper: #ffffff;
             --moe-blue: #002d62;
+            --mark-pass: #1d4ed8;
+            --mark-fail: #b42318;
         }
         body {
             font-family: 'Source Serif 4', 'Times New Roman', Times, serif;
@@ -126,7 +128,7 @@
             padding: 0 8px;
         }
         .official-school-name {
-            font-family: Cinzel, 'Times New Roman', Times, serif;
+            font-family: Algerian, 'Times New Roman', Times, serif;
             font-size: 22px;
             font-weight: 700;
             color: var(--flpa-red);
@@ -240,6 +242,18 @@
             padding-right: 8px;
             white-space: nowrap;
         }
+        .official-grade-table td.score-mark.mark-pass {
+            color: var(--mark-pass) !important;
+            font-weight: 700;
+        }
+        .official-grade-table td.score-mark.mark-fail {
+            color: var(--mark-fail) !important;
+            font-weight: 700;
+        }
+        .official-grade-table td.score-mark.mark-empty {
+            color: #64748b;
+            font-weight: 500;
+        }
         .official-grade-table tr.summary-row td {
             font-weight: 800;
             background: #f8fafc;
@@ -328,9 +342,13 @@
     </style>
 </head>
 <body>
+    {% from 'partials/official_score_mark.html' import score_td %}
     {% set brand = data.school or school_print_brand %}
     {% set division_report_title = data.division_report_title or 'Report Card' %}
     {% set promotion_statement = data.promotion.label if data.promotion and data.promotion.label else 'Pending promotion decision' %}
+    {% if data.promotion and data.promotion.code == 'PROMOTED' and data.promotion.promoted_to %}
+    {% set promotion_statement = 'Promoted to ' ~ data.promotion.promoted_to %}
+    {% endif %}
     {% set rank_label = data.class_rank.label if data.class_rank and data.class_rank.label else '—' %}
 
     <div class="action-bar">
@@ -343,6 +361,11 @@
         <a class="btn-print" href="{{ url_for('download_report_card', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}" style="text-decoration:none;margin-right:10px;" title="PDF export does not include the parent QR block">
             <i class="fas fa-download"></i> Download PDF
         </a>
+        {% if can_print_official_transcript %}
+        <a class="btn-print" href="{{ url_for('transcript', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}" style="text-decoration:none;margin-right:10px;" target="_blank" rel="noopener">
+            <i class="fas fa-scroll"></i> Official Transcript
+        </a>
+        {% endif %}
         <button class="btn-print" onclick="window.print()">
             <i class="fas fa-print"></i> Print Report Card
         </button>
@@ -376,6 +399,9 @@
                 <div class="official-year">Academic Year: {{ data.academic_year or (display_year.name if display_year else '') }}</div>
             </div>
 
+            {% if data.awaiting_vpa_note %}
+            <p class="official-awaiting-note" style="margin:0 0 8px;font-size:10px;font-style:italic;color:#334155;line-height:1.45;">{{ data.awaiting_vpa_note }}</p>
+            {% endif %}
             <table class="official-meta">
                 <tr>
                     <td><span class="lbl">Name:</span><span class="val">{{ data.student_name }}</span></td>
@@ -383,6 +409,11 @@
                     <td><span class="lbl">Gender:</span><span class="val">{{ student.gender or '—' }}</span></td>
                     <td><span class="lbl">Promotion Statement:</span><span class="val">{{ promotion_statement }}</span></td>
                 </tr>
+                {% if data.promotion and data.promotion.reason %}
+                <tr>
+                    <td colspan="4"><span class="lbl">Official decision:</span><span class="val">{{ data.promotion.reason }}</span></td>
+                </tr>
+                {% endif %}
             </table>
 
             <div class="grade-table-scroll">
@@ -417,18 +448,19 @@
                         {% for subject in data.subjects %}
                             <tr class="{% if subject.is_summary %}summary-row{% endif %}">
                                 <td class="subject-cell">{{ subject.name }}</td>
-                                <td>{{ subject.p1 if subject.p1 not in [None, ''] else '—' }}</td>
-                                <td>{{ subject.p2 if subject.p2 not in [None, ''] else '—' }}</td>
-                                <td>{{ subject.p3 if subject.p3 not in [None, ''] else '—' }}</td>
-                                <td>{{ subject.exam if subject.exam not in [None, ''] else '—' }}</td>
-                                <td>{{ subject.avg if subject.avg not in [None, ''] else '—' }}</td>
-                                <td>{{ subject.p4 if subject.p4 not in [None, ''] else '—' }}</td>
-                                <td>{{ subject.p5 if subject.p5 not in [None, ''] else '—' }}</td>
-                                <td>{{ subject.p6 if subject.p6 not in [None, ''] else '—' }}</td>
-                                <td>{{ subject.final_exam if subject.final_exam not in [None, ''] else '—' }}</td>
-                                <td>{{ subject.sem2_avg if subject.sem2_avg not in [None, ''] else '—' }}</td>
-                                <td>{{ subject.final_avg if subject.final_avg not in [None, ''] else '—' }}</td>
-                                <td>{{ subject.remark or '—' }}</td>
+                                {% set blank_empty = subject.blank_empty|default(False) %}
+                                {{ score_td(subject.p1, blank_empty) }}
+                                {{ score_td(subject.p2, blank_empty) }}
+                                {{ score_td(subject.p3, blank_empty) }}
+                                {{ score_td(subject.exam if subject.exam not in [None, ''] else subject.exam1, blank_empty) }}
+                                {{ score_td(subject.avg if subject.avg not in [None, ''] else subject.sem1, blank_empty) }}
+                                {{ score_td(subject.p4, blank_empty) }}
+                                {{ score_td(subject.p5, blank_empty) }}
+                                {{ score_td(subject.p6, blank_empty) }}
+                                {{ score_td(subject.final_exam if subject.final_exam not in [None, ''] else subject.exam2, blank_empty) }}
+                                {{ score_td(subject.sem2_avg if subject.sem2_avg not in [None, ''] else subject.sem2, blank_empty) }}
+                                {{ score_td(subject.final_avg if subject.final_avg not in [None, ''] else subject.yearly, blank_empty) }}
+                                <td>{% if subject.is_summary %}{{ subject.remark or subject.remarks or '' }}{% else %}{{ subject.remark or subject.remarks or '—' }}{% endif %}</td>
                             </tr>
                         {% endfor %}
                     {% else %}
@@ -447,7 +479,7 @@
                 ('Failure', 'Below 70', 'D')
             ] %}
             <div class="official-footer">
-                <p class="official-rank">Rank in class: {{ rank_label }}</p>
+                <p class="official-rank">RANK IN CLASS: {{ rank_label }}</p>
                 <p class="official-grading" style="margin-bottom:4px;">Grading method</p>
                 <table class="official-meta" style="width:auto;max-width:100%;margin:0 0 8px;table-layout:auto;">
                     <tr>

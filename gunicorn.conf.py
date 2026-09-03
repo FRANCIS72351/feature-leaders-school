@@ -1,6 +1,7 @@
 """Gunicorn configuration for Linux / VPS deployment."""
-import multiprocessing
 import os
+
+from scale import recommended_web_concurrency, recommended_worker_threads, env_int
 
 _default_bind = (
     '0.0.0.0:8000'
@@ -10,19 +11,15 @@ _default_bind = (
 bind = os.environ.get('GUNICORN_BIND', _default_bind)
 
 # SQLite works best with a single worker; use more workers only with PostgreSQL.
-_db_url = os.environ.get('DATABASE_URL', '')
-if _db_url.startswith('sqlite') or 'sqlite' in _db_url:
-    workers = int(os.environ.get('WEB_CONCURRENCY', '1'))
-else:
-    workers = int(os.environ.get('WEB_CONCURRENCY', max(2, multiprocessing.cpu_count() * 2 + 1)))
-
-threads = int(os.environ.get('GUNICORN_THREADS', '4'))
+workers = recommended_web_concurrency()
+threads = recommended_worker_threads()
 worker_class = os.environ.get('GUNICORN_WORKER_CLASS', 'gthread')
-timeout = int(os.environ.get('GUNICORN_TIMEOUT', '120'))
-graceful_timeout = int(os.environ.get('GUNICORN_GRACEFUL_TIMEOUT', '30'))
-keepalive = int(os.environ.get('GUNICORN_KEEPALIVE', '5'))
-max_requests = int(os.environ.get('GUNICORN_MAX_REQUESTS', '1000'))
-max_requests_jitter = int(os.environ.get('GUNICORN_MAX_REQUESTS_JITTER', '50'))
+timeout = env_int('GUNICORN_TIMEOUT', 120, minimum=30, maximum=600)
+graceful_timeout = env_int('GUNICORN_GRACEFUL_TIMEOUT', 30, minimum=5, maximum=120)
+keepalive = env_int('GUNICORN_KEEPALIVE', 15, minimum=2, maximum=75)
+max_requests = env_int('GUNICORN_MAX_REQUESTS', 1000, minimum=0, maximum=100000)
+max_requests_jitter = env_int('GUNICORN_MAX_REQUESTS_JITTER', 50, minimum=0, maximum=500)
+backlog = env_int('GUNICORN_BACKLOG', 256, minimum=64, maximum=2048)
 
 accesslog = os.environ.get('GUNICORN_ACCESS_LOG', '-')
 errorlog = os.environ.get('GUNICORN_ERROR_LOG', '-')

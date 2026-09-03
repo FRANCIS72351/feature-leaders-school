@@ -1,10 +1,12 @@
 {# Registrar class-folder cabinet. Expects roster_folders_by_division (group.classes). #}
 {% set year_param = year_param if year_param is defined else ({'academic_year_id': display_year.id} if display_year else {}) %}
 {% set open_class_id = open_class_id|default(none) %}
+{% set open_student_id = open_student_id|default(none) %}
 {% set unassigned_roster_students = unassigned_roster_students|default([]) %}
 {% set roster_folders_by_division = roster_folders_by_division|default([]) %}
 
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap'); /* display=swap: text stays readable on slow links */
     .registrar-folder-cabinet {
         overflow-x: hidden;
         width: 100%;
@@ -61,6 +63,8 @@
         box-shadow: 0 8px 18px rgba(200, 40, 40, 0.22);
         position: relative;
         user-select: none;
+        min-width: 0;
+        overflow-x: hidden;
     }
     .roster-folder > summary::-webkit-details-marker { display: none; }
     .roster-folder > summary::marker { content: ''; }
@@ -227,6 +231,8 @@
     .student-file-actions {
         display: flex;
         justify-content: flex-end;
+        flex-wrap: wrap;
+        gap: 0.45rem;
         margin-top: 0.7rem;
         padding-top: 0.65rem;
         border-top: 1px dashed #ead4d4;
@@ -243,6 +249,309 @@
         display: inline-flex;
         align-items: center;
         gap: 0.35rem;
+    }
+    .btn-folder-print {
+        background: #ffffff;
+        color: #c82828 !important;
+        border: 1px solid #c82828;
+        font-weight: 700;
+        font-size: 0.75rem;
+        border-radius: 8px;
+        padding: 0.38rem 0.8rem;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+    }
+    .btn-folder-print:hover {
+        background: #fff1ee;
+        color: #a81f1f !important;
+    }
+    .btn-folder-download {
+        background: #002d62;
+        color: #c9a227 !important;
+        border: 1px solid #c9a227;
+        font-weight: 700;
+        font-size: 0.75rem;
+        border-radius: 8px;
+        padding: 0.38rem 0.8rem;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+    }
+    .btn-folder-download:hover {
+        background: #013a7a;
+        color: #e0c04a !important;
+    }
+    .student-doc-vault {
+        margin-top: 0.85rem;
+        padding-top: 0.75rem;
+        border-top: 1px dashed #ead4d4;
+    }
+    .student-doc-vault-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.5rem;
+        margin-bottom: 0.45rem;
+    }
+    .student-doc-vault-title {
+        margin: 0;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #7a1d1d;
+    }
+    .student-doc-vault-count {
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #9a4a4a;
+    }
+    .student-doc-vault-hint {
+        margin: 0 0 0.55rem;
+        font-size: 0.72rem;
+        color: #6b4a4a;
+        line-height: 1.4;
+    }
+    .student-doc-scan-form .scan-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+        gap: 0.4rem;
+        margin-bottom: 0.4rem;
+    }
+    .student-doc-scan-form select,
+    .student-doc-scan-form input[type="text"] {
+        width: 100%;
+        border: 1px solid #e7c9c9;
+        border-radius: 8px;
+        padding: 0.38rem 0.5rem;
+        font-size: 0.78rem;
+        background: #fff;
+        color: #1f2937;
+    }
+    .student-doc-scan-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+    .student-doc-scan-form input[type="file"] {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        overflow: hidden;
+    }
+    .btn-folder-scan,
+    .btn-folder-upload {
+        font-weight: 700;
+        font-size: 0.75rem;
+        border-radius: 8px;
+        padding: 0.4rem 0.75rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        cursor: pointer;
+        border: none;
+    }
+    .btn-folder-scan {
+        background: #c82828;
+        color: #fff;
+    }
+    .btn-folder-upload {
+        background: #fff;
+        color: #c82828;
+        border: 1px solid #c82828;
+    }
+    .student-doc-list {
+        list-style: none;
+        margin: 0.65rem 0 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+    }
+    .student-doc-item {
+        display: grid;
+        grid-template-columns: 52px minmax(0, 1fr) auto;
+        gap: 0.55rem;
+        align-items: center;
+        background: #fff;
+        border: 1px solid #f0d4d4;
+        border-radius: 10px;
+        padding: 0.4rem 0.45rem;
+    }
+    .student-doc-thumb {
+        width: 52px;
+        height: 52px;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #f8ecec;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #c82828;
+        font-size: 1.15rem;
+    }
+    .student-doc-thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .student-doc-meta .doc-title {
+        display: block;
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #111827;
+        line-height: 1.25;
+    }
+    .student-doc-meta .doc-sub {
+        display: block;
+        font-size: 0.68rem;
+        color: #7a5a5a;
+        margin-top: 0.12rem;
+    }
+    .student-doc-item-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+    .student-doc-item-actions a,
+    .student-doc-item-actions button {
+        font-size: 0.68rem;
+        font-weight: 700;
+        border-radius: 6px;
+        padding: 0.2rem 0.45rem;
+        text-decoration: none;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+    }
+    .student-doc-item-actions a {
+        color: #c82828;
+        border: 1px solid #e7c9c9;
+        text-align: center;
+    }
+    .student-doc-item-actions button {
+        color: #9a1f1f;
+    }
+    .student-id-setup {
+        margin-top: 0.85rem;
+        padding-top: 0.75rem;
+        border-top: 1px dashed #ead4d4;
+    }
+    .student-id-setup-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        margin-bottom: 0.35rem;
+    }
+    .student-id-setup-title {
+        margin: 0;
+        font-size: 0.82rem;
+        font-weight: 800;
+        color: #111827;
+    }
+    .id-ready-chip {
+        font-size: 0.68rem;
+        font-weight: 800;
+        border-radius: 999px;
+        padding: 0.28rem 0.65rem;
+        white-space: nowrap;
+        overflow: visible;
+    }
+    .id-ready-chip.ready { background: #ecfdf5; color: #047857; }
+    .id-ready-chip.pending { background: #fff7ed; color: #c2410c; }
+    .student-id-setup-hint {
+        margin: 0 0 0.55rem;
+        font-size: 0.72rem;
+        color: #7a5a5a;
+    }
+    .student-id-previews {
+        display: flex;
+        gap: 0.55rem;
+        margin-bottom: 0.55rem;
+    }
+    .id-preview {
+        width: 72px;
+        text-align: center;
+        font-size: 0.65rem;
+        font-weight: 700;
+        color: #7a5a5a;
+    }
+    .id-preview img, .id-preview i {
+        display: block;
+        width: 72px;
+        height: 72px;
+        object-fit: contain;
+        object-position: center center;
+        border-radius: 8px;
+        border: 1px solid #ead4d4;
+        background: #fff;
+        margin-bottom: 0.2rem;
+    }
+    .id-preview i {
+        line-height: 72px;
+        font-size: 1.25rem;
+        color: #c82828;
+    }
+    .id-preview .sig-mark {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 72px;
+        height: 72px;
+        padding: 4px;
+        border-radius: 8px;
+        border: 1px solid #ead4d4;
+        background: #fff;
+        margin-bottom: 0.2rem;
+        font-family: "Great Vibes", "Segoe Script", "Lucida Handwriting", cursive;
+        font-size: 0.92rem;
+        font-weight: 400;
+        color: #1a2744;
+        line-height: 1.15;
+        letter-spacing: 0.02em;
+        text-align: center;
+        word-break: break-word;
+        overflow: hidden;
+    }
+    .student-id-setup-form {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.4rem;
+    }
+    .id-file-label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: #4b5563;
+    }
+    .student-id-setup-form input[type="file"],
+    .student-id-setup-form input[type="date"],
+    .student-id-setup-form input[type="text"] {
+        width: 100%;
+        font-size: 0.72rem;
+        border: 1px solid #e7c9c9;
+        border-radius: 8px;
+        padding: 0.3rem 0.4rem;
+        background: #fff;
+    }
+    .student-id-setup-form .id-guardian-label {
+        grid-column: 1 / -1;
+    }
+    .student-id-setup-form .btn-folder-scan {
+        grid-column: 1 / -1;
+        justify-content: center;
+    }
+    @media (max-width: 640px) {
+        .student-doc-scan-form .scan-row {
+            grid-template-columns: 1fr;
+        }
     }
     .btn-folder-edit:hover {
         background: #a81f1f;
@@ -268,14 +577,129 @@
         display: inline-flex;
         align-items: center;
         border-radius: 999px;
-        padding: 0.12rem 0.5rem;
+        padding: 0.28rem 0.65rem;
         font-size: 0.72rem;
         font-weight: 800;
         letter-spacing: 0.02em;
+        white-space: nowrap;
+        overflow: visible;
     }
     .fee-chip.paid { background: #ecfdf5; color: #047857; }
     .fee-chip.partial { background: #fffbeb; color: #b45309; }
     .fee-chip.unpaid { background: #fef2f2; color: #b91c1c; }
+    .roster-folder-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.45rem;
+        min-width: 0;
+        max-width: 100%;
+        overflow-x: hidden;
+        margin-bottom: 0.75rem;
+    }
+    .roster-folder-toolbar .roster-inclass-search {
+        flex: 1 1 auto;
+        min-width: 0;
+        max-width: 100%;
+        margin-bottom: 0;
+        width: auto;
+    }
+    .roster-folder-toolbar .btn-folder-print,
+    .roster-folder-toolbar .btn-folder-download {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+    .ios-save-hint {
+        margin: 0 0 0.75rem;
+        font-size: 0.78rem;
+        color: #6b7280;
+    }
+    .roster-inclass-search {
+        width: 100%;
+        margin-bottom: 0.75rem;
+        border: 1px solid #e8c4c4;
+        border-radius: 8px;
+        padding: 0.45rem 0.7rem;
+        font-size: 0.82rem;
+        color: #111827;
+        background: #fff;
+    }
+    .roster-inclass-search:focus {
+        outline: 2px solid rgba(200, 40, 40, 0.35);
+        border-color: #c82828;
+    }
+    .student-folder {
+        background: transparent;
+        border: none;
+        margin: 0 0 0.55rem;
+    }
+    .student-folder:last-child { margin-bottom: 0; }
+    .student-folder > summary {
+        list-style: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        background: linear-gradient(180deg, #ffffff 0%, #fff6f4 100%);
+        color: #111827;
+        border: 1px solid #ead4d4;
+        border-left: 4px solid #c82828;
+        border-radius: 10px;
+        padding: 0.5rem 0.7rem;
+        user-select: none;
+    }
+    .student-folder > summary::-webkit-details-marker { display: none; }
+    .student-folder > summary::marker { content: ''; }
+    .student-folder[open] > summary {
+        border-radius: 10px 10px 0 0;
+        background: #fff1ee;
+    }
+    .student-folder-tab-icon {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 7px;
+        background: rgba(200, 40, 40, 0.12);
+        color: #c82828;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        font-size: 0.9rem;
+    }
+    .student-folder-copy {
+        min-width: 0;
+        flex: 1;
+    }
+    .student-folder-copy .folder-name {
+        display: block;
+        font-weight: 800;
+        font-size: 0.9rem;
+        line-height: 1.2;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .student-folder-copy .folder-meta {
+        display: block;
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #c82828;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    .student-folder-interior {
+        border: 1px solid #ead4d4;
+        border-top: none;
+        border-radius: 0 0 10px 10px;
+        padding: 0.65rem;
+        background: #fffdfb;
+    }
+    .student-folder-interior .student-file-card {
+        margin-bottom: 0;
+        box-shadow: none;
+        border: none;
+        padding: 0.35rem 0.15rem 0.15rem;
+    }
+    .student-folder.is-filtered-out { display: none; }
     @media (max-width: 767.98px) {
         .roster-folder-grid {
             display: flex;
@@ -289,6 +713,25 @@
         .roster-folder-interior {
             overflow-x: hidden;
         }
+    }
+</style>
+{% include 'partials/roster_status_styles.html' %}
+<style>
+    .student-folder > summary .roster-status-pill {
+        flex-shrink: 0;
+        font-size: 0.68rem;
+    }
+    .student-file-value .roster-status-pill {
+        display: inline-flex;
+        margin-top: 0.1rem;
+    }
+    .student-folder > summary a.roster-grade-sheet-link,
+    .student-folder > summary a.roster-grade-sheet-link i {
+        color: #c82828 !important;
+        -webkit-text-fill-color: #c82828 !important;
+        font-size: 1.15rem;
+        opacity: 1 !important;
+        flex-shrink: 0;
     }
 </style>
 
@@ -308,9 +751,9 @@
             </div>
             <div class="roster-folder-grid">
                 {% for folder in group.classes %}
-                <details class="roster-folder" id="folder-{{ folder.id }}" {% if open_class_id == folder.id %}open{% endif %}>
+                <details class="roster-folder" id="folder-{{ folder.id }}" {% if open_class_id and open_class_id|int == folder.id %}open{% endif %}>
                     <summary>
-                        <span class="roster-folder-tab-icon" aria-hidden="true"><i class="fas fa-folder{% if open_class_id == folder.id %}-open{% endif %}"></i></span>
+                        <span class="roster-folder-tab-icon" aria-hidden="true"><i class="fas fa-folder{% if open_class_id and open_class_id|int == folder.id %}-open{% endif %}"></i></span>
                         <span class="roster-folder-tab-copy">
                             <span class="folder-name">{{ folder.name }}</span>
                             <span class="folder-meta">{{ folder.division_label }}{% if folder.grade_level %} · {{ folder.grade_level }}{% endif %}</span>
@@ -319,14 +762,45 @@
                         <i class="fas fa-chevron-down roster-folder-chevron" aria-hidden="true"></i>
                     </summary>
                     <div class="roster-folder-interior">
+                        {% if folder.students %}
+                        {% set ready_id_count = folder.students|selectattr('id_card_ready')|list|length %}
+                        <div class="roster-folder-toolbar">
+                            <input type="search" class="roster-inclass-search" placeholder="Find a student in {{ folder.name }}…" data-folder-filter="folder-{{ folder.id }}" aria-label="Find student in {{ folder.name }}">
+                            <a href="{{ url_for('print_class_id_cards', class_id=folder.id) }}" class="btn-folder-print" target="_blank" rel="noopener"><i class="fas fa-id-card"></i> Print class IDs</a>
+                            {% if ready_id_count %}
+                            <a href="{{ url_for('download_class_id_cards', class_id=folder.id) }}" class="btn-folder-download" download="{{ folder.id_download_filename or 'FLPA_ID_Cards.pdf' }}"><i class="fas fa-file-arrow-down"></i> Download ID folder</a>
+                            {% endif %}
+                        </div>
+                        {% if ready_id_count %}
+                        <p class="ios-save-hint">On iPhone, tap Share → Save to Files.</p>
+                        {% endif %}
                         {% for student in folder.students %}
-                            {% include 'partials/registrar_student_file_card.html' %}
+                        <details class="student-folder" id="student-folder-{{ student.id }}" data-student-search="{{ student.full_name }} {{ student.student_id or '' }}" {% if open_student_id and open_student_id|int == student.id %}open{% endif %}>
+                            <summary>
+                                <span class="student-folder-tab-icon" aria-hidden="true"><i class="fas fa-folder{% if open_student_id and open_student_id|int == student.id %}-open{% endif %}"></i></span>
+                                <span class="student-folder-copy">
+                                    <span class="folder-name">{{ student.full_name }}</span>
+                                    <span class="folder-meta">{{ student.student_id or 'No student ID' }}</span>
+                                </span>
+                                {% if student.status and student.status|upper != 'ACTIVE' %}
+                                {% include 'partials/roster_status_pill.html' %}
+                                {% endif %}
+                                <a href="{{ url_for('report_card', student_id=student.id) }}{% if display_year %}?academic_year_id={{ display_year.id }}{% endif %}" class="roster-grade-sheet-link" title="Grade sheet" aria-label="Grade sheet" onclick="event.stopPropagation();">
+                                    <i class="fas fa-file-alt" aria-hidden="true"></i>
+                                </a>
+                                <i class="fas fa-chevron-down roster-folder-chevron" aria-hidden="true"></i>
+                            </summary>
+                            <div class="student-folder-interior">
+                                {% include 'partials/registrar_student_file_card.html' %}
+                            </div>
+                        </details>
+                        {% endfor %}
                         {% else %}
                         <div class="roster-empty-class">
                             <i class="fas fa-folder-open"></i>
                             This class folder is empty — no students assigned for this session.
                         </div>
-                        {% endfor %}
+                        {% endif %}
                     </div>
                 </details>
                 {% endfor %}
@@ -358,8 +832,27 @@
                     <i class="fas fa-chevron-down roster-folder-chevron" aria-hidden="true"></i>
                 </summary>
                 <div class="roster-folder-interior">
+                    <input type="search" class="roster-inclass-search" placeholder="Find a student in this folder…" data-folder-filter="folder-unassigned" aria-label="Find unassigned student">
                     {% for student in unassigned_roster_students %}
-                        {% include 'partials/registrar_student_file_card.html' %}
+                    <details class="student-folder" id="student-folder-{{ student.id }}" data-student-search="{{ student.full_name }} {{ student.student_id or '' }}" {% if open_student_id and open_student_id|int == student.id %}open{% endif %}>
+                        <summary>
+                            <span class="student-folder-tab-icon" aria-hidden="true"><i class="fas fa-folder{% if open_student_id and open_student_id|int == student.id %}-open{% endif %}"></i></span>
+                            <span class="student-folder-copy">
+                                <span class="folder-name">{{ student.full_name }}</span>
+                                <span class="folder-meta">{{ student.student_id or 'No student ID' }}</span>
+                            </span>
+                            {% if student.status and student.status|upper != 'ACTIVE' %}
+                            {% include 'partials/roster_status_pill.html' %}
+                            {% endif %}
+                            <a href="{{ url_for('report_card', student_id=student.id) }}{% if display_year %}?academic_year_id={{ display_year.id }}{% endif %}" class="roster-grade-sheet-link" title="Grade sheet" aria-label="Grade sheet" onclick="event.stopPropagation();">
+                                <i class="fas fa-file-alt" aria-hidden="true"></i>
+                            </a>
+                            <i class="fas fa-chevron-down roster-folder-chevron" aria-hidden="true"></i>
+                        </summary>
+                        <div class="student-folder-interior">
+                            {% include 'partials/registrar_student_file_card.html' %}
+                        </div>
+                    </details>
                     {% endfor %}
                 </div>
             </details>
@@ -370,16 +863,49 @@
 
 <script>
 (function () {
+    var openStudentId = {{ open_student_id if open_student_id else 'null' }};
+
     function openFolderFromHash() {
         var hash = window.location.hash || '';
-        if (hash.indexOf('#folder-') !== 0) return;
+        if (!hash) return;
         var el = document.querySelector(hash);
-        if (el && el.tagName === 'DETAILS') {
+        if (!el) return;
+        if (el.classList.contains('student-folder')) {
+            var parent = el.closest('details.roster-folder');
+            if (parent) parent.open = true;
+            el.open = true;
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            return;
+        }
+        if (el.tagName === 'DETAILS') {
             el.open = true;
             el.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
     }
-    openFolderFromHash();
+
+    if (openStudentId) {
+        var studentEl = document.getElementById('student-folder-' + openStudentId);
+        if (studentEl) {
+            var classEl = studentEl.closest('details.roster-folder');
+            if (classEl) classEl.open = true;
+            studentEl.open = true;
+            studentEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    } else {
+        openFolderFromHash();
+    }
     window.addEventListener('hashchange', openFolderFromHash);
+
+    document.querySelectorAll('.roster-inclass-search').forEach(function (input) {
+        input.addEventListener('input', function () {
+            var needle = (input.value || '').trim().toLowerCase();
+            var box = input.closest('.roster-folder-interior');
+            if (!box) return;
+            box.querySelectorAll('.student-folder').forEach(function (folder) {
+                var hay = (folder.getAttribute('data-student-search') || '').toLowerCase();
+                folder.classList.toggle('is-filtered-out', needle !== '' && hay.indexOf(needle) === -1);
+            });
+        });
+    });
 })();
 </script>

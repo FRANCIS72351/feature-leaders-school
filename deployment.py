@@ -1,8 +1,6 @@
 """Production deployment helpers for Linux / VPS hosting."""
 import os
 
-from sqlalchemy import event
-from sqlalchemy.engine import Engine
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 
@@ -56,9 +54,12 @@ def configure_app(app):
 
     max_mb = int(os.environ.get('MAX_UPLOAD_MB', '16'))
     video_max_mb = int(os.environ.get('SCHOOL_VIDEO_MAX_MB', '150'))
-    site_url = (os.environ.get('SITE_URL') or '').strip().rstrip('/')
+    site_url = (os.environ.get('SITE_URL') or os.environ.get('PUBLIC_SITE_URL') or '').strip().rstrip('/')
     if site_url:
         app.config['SITE_URL'] = site_url
+    public_site_url = (os.environ.get('PUBLIC_SITE_URL') or '').strip().rstrip('/')
+    if public_site_url:
+        app.config['PUBLIC_SITE_URL'] = public_site_url
     app.config['MAX_CONTENT_LENGTH'] = max(max_mb, video_max_mb) * 1024 * 1024
 
     default_bind_host = '0.0.0.0' if is_container() else '127.0.0.1'
@@ -73,18 +74,11 @@ def configure_app(app):
             'may not work on phones until you set SITE_URL to your public HTTPS address.'
         )
 
+    from scale import apply_http_performance
+    apply_http_performance(app)
+
 
 def configure_sqlite_performance(app, db):
-    """Enable SQLite WAL mode for better concurrent read performance on VPS."""
-    uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
-
-    @event.listens_for(Engine, 'connect')
-    def _sqlite_pragmas(dbapi_connection, connection_record):
-        if not uri.startswith('sqlite'):
-            return
-        cursor = dbapi_connection.cursor()
-        cursor.execute('PRAGMA journal_mode=WAL')
-        cursor.execute('PRAGMA synchronous=NORMAL')
-        cursor.execute('PRAGMA foreign_keys=ON')
-        cursor.execute('PRAGMA busy_timeout=5000')
-        cursor.close()
+    """WAL, cache, and mmap so multi-year SQLite files stay fast under concurrent reads."""
+    from scale import register_sqlite_pragmas
+    register_sqlite_pragmas(app)

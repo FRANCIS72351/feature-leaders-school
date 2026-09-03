@@ -1,3 +1,39 @@
 {
-    "chat.disableAIFeatures": false
+    "chat.disableAIFeatures": false,
+    "python.languageServer": "None",
+    "python.defaultInterpreterPath": "${workspaceFolder}/venv/Scripts/python.exe",
+    "python.terminal.activateEnvironment": true,
+    "python.venvFolders": ["venv"],
+    "python.analysis.diagnosticMode": "workspace",
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.useLibraryCodeForTypes": true,
+    "python.analysis.autoSearchPaths": true,
+    "python.analysis.extraPaths": ["."],
+    "python.analysis.indexing": true,
+    "python.analysis.exclude": [
+        "**/venv/**",
+        "**/.venv/**",
+        "**/instance/**",
+        "**/static/uploads/**",
+        "**/__pycache__/**"
+    ],
+    "cursorpyright.analysis.diagnosticMode": "workspace",
+    "cursorpyright.analysis.typeCheckingMode": "basic",
+    "cursorpyright.analysis.useLibraryCodeForTypes": true,
+    "cursorpyright.analysis.autoSearchPaths": true,
+    "cursorpyright.analysis.extraPaths": ["."],
+    "cursorpyright.analysis.exclude": [
+        "**/venv/**",
+        "**/.venv/**",
+        "**/instance/**",
+        "**/static/uploads/**",
+        "**/__pycache__/**"
+    ],
+    "files.watcherExclude": {
+        "**/venv/**": true,
+        "**/.venv/**": true,
+        "**/instance/**": true,
+        "**/static/uploads/**": true,
+        "**/__pycache__/**": true
+    }
 }

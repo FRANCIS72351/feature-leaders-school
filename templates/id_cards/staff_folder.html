@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block title %}Staff & Teacher ID Cards{% endblock %}
+{% block content %}
+<style>
+    .staff-id-page { max-width:1120px; margin:0 auto; padding:2rem 1rem; }
+    .staff-id-hero { background:linear-gradient(135deg,#002d62,#111827); color:#fff; border-radius:14px; padding:1.5rem; display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; }
+    .staff-id-hero h1 { margin:0 0 .35rem; font-family:var(--font-display,'Georgia',serif); font-size:1.55rem; }
+    .staff-id-hero p { margin:0; color:#dbeafe; font-size:.9rem; }
+    .staff-id-count { text-align:center; min-width:7rem; }
+    .staff-id-count strong { display:block; color:#c9a227; font-size:1.8rem; }
+    .staff-id-count span { color:#cbd5e1; font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; }
+    .staff-id-toolbar { display:flex; justify-content:space-between; align-items:center; gap:.75rem; flex-wrap:wrap; margin:1.25rem 0; }
+    .staff-id-btn { border:0; border-radius:8px; padding:.6rem 1rem; text-decoration:none; font-size:.85rem; font-weight:700; display:inline-flex; align-items:center; gap:.45rem; }
+    .staff-id-btn-primary { background:#c82828; color:#fff; }
+    .staff-id-btn-secondary { background:#fff; border:1px solid #cbd5e1; color:#334155; }
+    .staff-id-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:1rem; }
+    .staff-id-card { background:#fff; border:1px solid #e2e8f0; border-top:4px solid #c82828; border-radius:10px; padding:1rem; display:flex; align-items:center; gap:.8rem; }
+    .staff-id-avatar { width:58px; height:72px; border-radius:7px; object-fit:cover; border:2px solid #c9a227; background:#f1f5f9; }
+    .staff-id-name { color:#002d62; font-weight:800; margin:0; }
+    .staff-id-position { color:#c82828; font-size:.8rem; font-weight:700; margin:.15rem 0; }
+    .staff-id-number { color:#64748b; font-size:.75rem; }
+    .staff-id-print { color:#002d62; font-size:.75rem; font-weight:700; text-decoration:none; }
+    .staff-id-empty { border:1px dashed #cbd5e1; border-radius:10px; padding:2rem; text-align:center; color:#64748b; }
+</style>
+<div class="staff-id-page">
+    <div class="staff-id-hero">
+        <div>
+            <h1><i class="fas fa-id-badge me-2"></i>Staff &amp; Teacher ID Folder</h1>
+            <p>Generate official CR80 identity cards for active teachers and school staff from their account profiles.</p>
+        </div>
+        <div class="staff-id-count"><strong>{{ ready_count if ready_count is defined else staff_count }}</strong><span>Ready to print</span></div>
+    </div>
+    <div class="staff-id-toolbar">
+        <a href="{{ url_for('id_cards_folder_hub') }}" class="staff-id-btn staff-id-btn-secondary"><i class="fas fa-arrow-left"></i> Student ID Folder</a>
+        {% if cards %}
+        <a href="{{ download_url }}" class="staff-id-btn staff-id-btn-primary"><i class="fas fa-file-pdf"></i> Download All Staff IDs</a>
+        {% endif %}
+    </div>
+    {% if staff_cards or cards %}
+    <div class="staff-id-grid">
+        {% for card in (staff_cards or cards) %}
+        {% set is_ready = card.student.id in ready_ids %}
+        <article class="staff-id-card">
+            <img class="staff-id-avatar" src="{{ card.photo_url or default_avatar_url }}" alt="{{ card.student.full_name }}">
+            <div>
+                <p class="staff-id-name">{{ card.student.full_name }}</p>
+                <p class="staff-id-position">{{ card.position }}</p>
+                <div class="staff-id-number">{{ card.staff_id }}</div>
+                {% if is_ready %}
+                <a class="staff-id-print" href="{{ url_for('print_staff_id_card', user_id=card.student.id) }}" target="_blank" rel="noopener"><i class="fas fa-print"></i> Print card</a>
+                {% else %}
+                <a class="staff-id-print" style="color:#c82828;" href="{{ url_for('setup_staff_id_card', user_id=card.student.id) }}"><i class="fas fa-upload"></i> Complete setup</a>
+                {% endif %}
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="staff-id-empty"><i class="fas fa-users-slash fa-2x mb-2"></i><br>No active staff or teacher accounts are available.</div>
+    {% endif %}
+</div>
+{% endblock %}

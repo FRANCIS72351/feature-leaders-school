@@ -43,8 +43,11 @@
     .dean-terminal .text-muted {
         color: #5f7892 !important;
     }
-    .dean-terminal .glow-title {
-        color: #0f172a !important;
+    .dean-terminal .glow-title,
+    .dean-terminal .glow-title i,
+    .dean-terminal .dean-command-subtitle {
+        color: var(--primary-brand, #c82828) !important;
+        -webkit-text-fill-color: var(--primary-brand, #c82828);
         text-shadow: none;
     }
     .dean-terminal .sec-card,
@@ -88,13 +91,14 @@
         color: #33506b !important;
     }
 </style>
+{% include 'partials/roster_status_styles.html' %}
 
 <div class="container-fluid py-4 px-md-4 dean-terminal pro-dashboard">
     {% set year_param = {'academic_year_id': display_year.id} if display_year else {} %}
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4 pb-3 border-bottom border-secondary border-opacity-10">
         <div>
-            <h2 class="glow-title mb-0"><i class="fas fa-user-shield text-cyan me-2"></i>Dean of Students Command Center</h2>
-            <p class="text-muted small mb-0 mt-1">Student conduct, welfare, attendance oversight, and campus safety</p>
+            <h2 class="glow-title mb-0"><i class="fas fa-user-shield me-2"></i>Dean of Students Command Center</h2>
+            <p class="dean-command-subtitle small mb-0 mt-1">Student conduct, welfare, attendance oversight, and campus safety</p>
         </div>
         <div class="d-flex flex-wrap align-items-center gap-2 mt-2 mt-md-0">
             {% if years|length > 1 %}
@@ -246,20 +250,24 @@
                                     <div class="fw-semibold">{{ student.full_name }}</div>
                                     <div class="text-muted small">ID: {{ student.student_id }}</div>
                                     {% if viewing_archived and student.status in ('ALUMNI', 'GRADUATED') %}
-                                    <span class="badge bg-secondary mt-1" style="font-size:0.65rem;">{{ student.status|title }}</span>
+                                    {% include 'partials/roster_status_pill.html' %}
                                     {% endif %}
                                 </td>
                                 <td>{{ (student.display_klass or student.klass).name if (student.display_klass or student.klass) else 'Unassigned' }}</td>
-                                <td>
-                                    {% if student.has_active_suspension %}
-                                    <span class="badge bg-rose bg-opacity-10 text-rose border border-rose border-opacity-10">Suspended</span>
-                                    {% elif student.status == 'FAILED' %}
-                                    <span class="badge bg-rose bg-opacity-10 text-rose border border-rose border-opacity-10">Failed — Repeat Year</span>
-                                    {% elif student.status == 'ACTIVE' %}
-                                    <span class="badge bg-emerald bg-opacity-10 text-emerald border border-emerald border-opacity-10">Active</span>
-                                    {% else %}
-                                    <span class="badge bg-secondary">{{ student.status|title }}</span>
-                                    {% endif %}
+                                <td class="roster-status-cell">
+                                    <div class="roster-status-cluster">
+                                        {% if student.has_active_suspension %}
+                                        {% with status_code='SUSPENDED' %}{% include 'partials/roster_status_pill.html' %}{% endwith %}
+                                        {% elif student.status == 'FAILED' %}
+                                        {% with status_pill_label='Failed — Repeat Year' %}{% include 'partials/roster_status_pill.html' %}{% endwith %}
+                                        {% else %}
+                                        {% include 'partials/roster_status_pill.html' %}
+                                        {% endif %}
+                                        <a href="{{ url_for('report_card', student_id=student.id) }}{% if display_year %}?academic_year_id={{ display_year.id }}{% endif %}"
+                                           class="roster-grade-sheet-link" title="Grade sheet" aria-label="Grade sheet">
+                                            <i class="fas fa-file-alt" aria-hidden="true"></i>
+                                        </a>
+                                    </div>
                                 </td>
                                 <td>
                                     <span class="badge {% if student.incident_count >= 3 %}bg-amber text-dark{% else %}bg-dark border border-secondary{% endif %}">
@@ -267,10 +275,6 @@
                                     </span>
                                 </td>
                                 <td class="text-end">
-                                    <a href="{{ url_for('report_card', student_id=student.id) }}{% if display_year %}?academic_year_id={{ display_year.id }}{% endif %}"
-                                       class="btn btn-sm btn-outline-secondary me-1" title="View report card">
-                                        <i class="fas fa-file-alt"></i>
-                                    </a>
                                     <button type="button" class="btn btn-sm btn-outline-info me-1 btn-log-incident"
                                         data-student-id="{{ student.id }}"
                                         data-student-name="{{ student.full_name }}"
@@ -482,7 +486,7 @@
                     </div>
                     <div id="officialSuspensionLetterPrintContainer" class="letter-preview p-4 border rounded">
                         <div class="text-center border-bottom pb-3 mb-3">
-                            <h5 class="fw-bold text-uppercase mb-1">SoftnetAfrica Academic Institution</h5>
+                            <h5 class="fw-bold text-uppercase mb-1"><a href="https://francistechschoolmanagement.pythonanywhere.com" target="_blank" rel="noopener" class="text-decoration-none text-reset">Future Leaders Preparatory Academy</a></h5>
                             <small class="text-muted">Office of the Dean of Students</small>
                         </div>
                         <p class="small">To the parents/guardians of <strong id="printStudentName">—</strong>,</p>

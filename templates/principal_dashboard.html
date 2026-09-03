@@ -497,10 +497,17 @@
         color: #1f1b18;
         line-height: 1.2;
     }
+    .finance-audit-panel {
+        min-width: 0;
+        overflow: hidden;
+    }
     .finance-audit-entries {
         display: flex;
         flex-direction: column;
         gap: 0.55rem;
+        min-width: 0;
+        width: 100%;
+        max-width: 100%;
     }
     .finance-entry-row {
         border: 1px solid rgba(16, 24, 32, 0.14);
@@ -508,21 +515,39 @@
         background: #fff;
         padding: 0.55rem 0.65rem;
         display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 0.5rem;
+        grid-template-columns: minmax(0, 1fr) max-content;
+        align-items: start;
+        gap: 0.55rem 0.7rem;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+    }
+    .finance-entry-copy {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        word-break: break-word;
     }
     .finance-entry-row .desc {
         font-size: 0.79rem;
         color: #2b2623;
         font-weight: 700;
+        line-height: 1.35;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: unset;
         max-width: 100%;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
     }
     .finance-entry-row .meta {
         font-size: 0.7rem;
         color: #6f625a;
+        margin-top: 0.15rem;
+        white-space: normal;
+    }
+    .finance-entry-money {
+        flex-shrink: 0;
+        text-align: right;
+        white-space: nowrap;
     }
     .finance-entry-row .amount {
         font-size: 0.82rem;
@@ -731,7 +756,35 @@
     .principal-terminal label[for="academic_year_id"] {
         color: var(--primary-brand, #c82828) !important;
     }
+
+    /* Class roster: student name + Actions button stay red on white cells.
+       Beats .principal-terminal div / .text-white / .btn-outline-secondary white-on-white.
+       Do not target Run Sync (.btn-primary). */
+    .principal-terminal.pro-dashboard .table-cyber tbody tr td div.roster-student-name,
+    .principal-terminal.pro-dashboard .table-cyber tbody tr td div.fw-bold.roster-student-name,
+    .principal-terminal.pro-dashboard .table-cyber tbody tr td .roster-student-name.text-white,
+    .principal-terminal.pro-dashboard .table-cyber tbody tr td .fw-bold.roster-student-name.text-white,
+    .principal-terminal div.roster-student-name {
+        color: #dc2626 !important;
+        -webkit-text-fill-color: #dc2626 !important;
+    }
+    .principal-terminal.pro-dashboard .table-cyber tbody tr td a.btn.btn-outline-secondary.roster-action-btn,
+    .principal-terminal.pro-dashboard .table-cyber tbody tr td a.btn.btn-sm.roster-action-btn,
+    .principal-terminal.pro-dashboard .table-cyber tbody tr td a.roster-action-btn,
+    .principal-terminal.pro-dashboard .table-cyber tbody tr td a.roster-action-btn:hover,
+    .principal-terminal.pro-dashboard .table-cyber tbody tr td a.roster-action-btn:focus,
+    .principal-terminal.pro-dashboard .table-cyber tbody tr td a.roster-action-btn:visited,
+    .principal-terminal.pro-dashboard .table-cyber tbody tr td a.roster-action-btn:active,
+    .principal-terminal.pro-dashboard .table-cyber tbody tr td a.roster-action-btn.text-white,
+    .principal-terminal.pro-dashboard .table-cyber tbody tr td a.roster-action-btn i {
+        color: #dc2626 !important;
+        -webkit-text-fill-color: #dc2626 !important;
+        --bs-btn-color: #dc2626;
+        --bs-btn-hover-color: #dc2626;
+        --bs-btn-active-color: #dc2626;
+    }
 </style>
+{% include 'partials/roster_status_styles.html' %}
 
 <div class="container-fluid py-4 px-md-4 principal-terminal pro-dashboard">
     {% set year_param = {'academic_year_id': display_year.id} if display_year else {} %}
@@ -990,6 +1043,16 @@
                             </div>
                         </div>
                     </a>
+
+                    <a href="{{ url_for('vpa_transcript_releases') }}" class="btn-command cmd-amber text-decoration-none">
+                        <div class="d-flex align-items-center w-100">
+                            <div class="cmd-icon-box text-amber me-3"><i class="fas fa-scroll fa-lg"></i></div>
+                            <div>
+                                <div class="fw-bold text-white small">Approve Transcripts</div>
+                                <div class="cmd-desc text-blue small" style="font-size:0.75rem;">Release Official Transcript to students and parents</div>
+                            </div>
+                        </div>
+                    </a>
                 </div>
             </div>
         </div> <div class="col-12 col-lg-7 col-xl-8 d-flex flex-column gap-4 fade-glide-in delay-2 principal-main">
@@ -1082,6 +1145,7 @@
                     </div>
                     {% endif %}
 
+                    {% set class_portfolios_by_division = class_portfolios_by_division if class_portfolios_by_division is defined else [] %}
                     {% for group in class_portfolios_by_division %}
                     <div class="col-12 pt-2">
                         <div class="text-cyan small fw-semibold text-uppercase" style="font-size:0.72rem; letter-spacing:0.08em;">{{ group.label }}</div>
@@ -1115,7 +1179,7 @@
                     {% else %}
                     {% if not unallocated_portfolio %}
                     <div class="col-12 text-center py-5 text-white small">
-                        <i class="fas fa-folder-open opacity-25 me-1.5"></i>No classes match your filter. Try a different search or provision a class first.
+                        <i class="fas fa-folder-open opacity-25 me-1.5"></i><span style="color:#dc2626;">No classes match your filter. Try a different search or provision a class first.</span>
                     </div>
                     {% endif %}
                     {% endfor %}
@@ -1196,10 +1260,10 @@
                             {% for student in students %}
                             <tr>
                                 <td>
-                                    <div class="fw-bold text-white">{{ student.full_name }}</div>
-                                    <div class="text-white small" style="font-size:0.75rem;">ID: #{{ student.student_id }}</div>
+                                    <div class="fw-bold roster-student-name" style="color:#dc2626 !important;-webkit-text-fill-color:#dc2626 !important;">{{ student.full_name }}</div>
+                                    <div class="small" style="font-size:0.75rem;">ID: #{{ student.student_id }}</div>
                                     {% if viewing_archived and student.status in ('ALUMNI', 'GRADUATED') %}
-                                    <span class="badge bg-secondary bg-opacity-25 text-white border border-secondary border-opacity-25 mt-1" style="font-size:0.65rem;">{{ student.status|title }}</span>
+                                    {% include 'partials/roster_status_pill.html' %}
                                     {% endif %}
                                 </td>
                                 <td>
@@ -1207,19 +1271,29 @@
                                         {{ student.average }}%
                                     </span>
                                 </td>
-                                <td>
-                                    {% if student.status == 'SUSPENDED' %}
-                                        <span class="badge bg-rose bg-opacity-10 text-rose border border-rose border-opacity-10 rounded-pill px-2.5 py-1">Suspended</span>
-                                    {% elif student.status == 'FAILED' %}
-                                        <span class="badge bg-rose bg-opacity-10 text-rose border border-rose border-opacity-10 rounded-pill px-2.5 py-1">Failed — Repeat Year</span>
+                                <td class="roster-status-cell">
+                                    <div class="roster-status-cluster">
+                                    {% if student.status in ('SUSPENDED', 'FAILED', 'REPEAT', 'SUMMER_SCHOOL', 'WITHDRAWN', 'ALUMNI', 'GRADUATED') %}
+                                        {% if student.status == 'FAILED' %}
+                                        {% with status_pill_label='Failed — Repeat Year' %}{% include 'partials/roster_status_pill.html' %}{% endwith %}
+                                        {% else %}
+                                        {% include 'partials/roster_status_pill.html' %}
+                                        {% endif %}
                                     {% elif student.average < 70 %}
-                                        <span class="badge bg-amber bg-opacity-10 text-amber border border-amber border-opacity-10 rounded-pill px-2.5 py-1">At Risk</span>
+                                        <span class="badge bg-amber bg-opacity-10 text-amber border border-amber border-opacity-10 rounded-pill roster-status-pill">At Risk</span>
                                     {% else %}
-                                        <span class="badge bg-emerald bg-opacity-10 text-emerald border border-emerald border-opacity-10 rounded-pill px-2.5 py-1">Optimal</span>
+                                        <span class="badge bg-emerald bg-opacity-10 text-emerald border border-emerald border-opacity-10 rounded-pill roster-status-pill">Optimal</span>
                                     {% endif %}
+                                        <a href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}" class="roster-grade-sheet-link" title="Grade sheet" aria-label="Grade sheet">
+                                            <i class="fas fa-file-alt" aria-hidden="true"></i>
+                                        </a>
+                                        <a href="{{ url_for('transcript', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}" class="roster-grade-sheet-link" title="Official Transcript" aria-label="Official Transcript" target="_blank" rel="noopener">
+                                            <i class="fas fa-scroll" aria-hidden="true"></i>
+                                        </a>
+                                    </div>
                                 </td>
                                 <td class="text-end">
-                                    <a href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}" class="btn btn-sm btn-outline-secondary text-white rounded-3 px-2.5 py-1" style="font-size:0.75rem;"><i class="fas fa-chart-line me-1"></i>Analysis</a>
+                                    <a href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}" class="btn btn-sm btn-outline-secondary roster-action-btn rounded-3 px-2.5 py-1" style="font-size:0.75rem;color:#dc2626 !important;-webkit-text-fill-color:#dc2626 !important;--bs-btn-color:#dc2626;--bs-btn-hover-color:#dc2626;"><i class="fas fa-chart-line me-1" style="color:#dc2626 !important;-webkit-text-fill-color:#dc2626 !important;"></i>Analysis</a>
                                 </td>
                             </tr>
                             {% else %}
@@ -1243,8 +1317,8 @@
 
             <div class="row g-4 fade-glide-in delay-3">
                 
-                <div class="col-md-6">
-                    <div class="card sec-card p-4 h-100">
+                <div class="col-md-6" style="min-width:0;">
+                    <div class="card sec-card p-4 h-100 finance-audit-panel">
                         <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
                             <h6 class="text-white font-weight-bold mb-0"><i class="fas fa-receipt text-emerald me-2"></i>Financial Audit Command Center</h6>
                             <a href="{{ url_for('business_dashboard', **year_param) }}" class="btn btn-sm btn-outline-secondary">Open Finance</a>
@@ -1308,14 +1382,14 @@
                         <div class="finance-audit-entries">
                             {% for transaction in recent_transactions %}
                             <div class="finance-entry-row">
-                                <div>
+                                <div class="finance-entry-copy">
                                     <div class="desc">{{ transaction.description }}</div>
                                     <div class="meta">
                                         {{ transaction.date }}
                                         {% if transaction.category %} · {{ transaction.category }}{% endif %}
                                     </div>
                                 </div>
-                                <div>
+                                <div class="finance-entry-money">
                                     <div class="amount text-{{ 'emerald' if transaction.type == 'income' else 'rose' }}">
                                         {{ '+' if transaction.type == 'income' else '-' }}${{ "{:,.2f}".format(transaction.amount) }}
                                     </div>
@@ -1329,7 +1403,7 @@
                     </div>
                 </div>
 
-                <div class="col-md-6">
+                <div class="col-md-6" style="min-width:0;">
                     <div class="card sec-card p-4 h-100 border-rose border-opacity-10">
                         <h6 class="text-white font-weight-bold mb-3"><i class="fas fa-triangle-exclamation text-rose me-2"></i>Security Intercept Vectors</h6>
                         <div class="d-flex flex-column gap-2.5">

@@ -84,10 +84,12 @@
 
   .status-pill {
     border-radius: 999px;
-    padding: 0.18rem 0.6rem;
+    padding: 0.3rem 0.7rem;
     font-size: 0.72rem;
     font-weight: 700;
     border: 1px solid transparent;
+    white-space: nowrap;
+    overflow: visible;
   }
 
   .status-pill.subject {
@@ -337,6 +339,7 @@
     }
 
     .navbar,
+    .site-footer,
     .dashboard-welcome-banner,
     .grade-sheet-header,
     .grade-sheet-toolbar,
@@ -432,6 +435,7 @@
     }
   }
 </style>
+{% include 'partials/roster_status_styles.html' %}
 
 <div class="teacher-grade-sheet">
   <a href="{{ url_for('teacher_dashboard', tab='classes') }}" class="small text-decoration-none text-muted d-inline-block mb-2">
@@ -525,9 +529,16 @@
     <ul class="step-list">
       <li><span class="step-dot">1</span>Grade activities in the class workspace</li>
       <li><span class="step-dot">2</span>Review the auto-calculated draft standing here</li>
-      <li><span class="step-dot">3</span>Publish the final period grade to student grade sheet</li>
+      <li><span class="step-dot">3</span>Publish to submit this period to the VPA for student release</li>
     </ul>
   </div>
+  {% if grade_release and grade_release.status == 'pending_vpa' %}
+  <div class="alert alert-warning">Submitted to VPA for approval. Students cannot view this period until approved. Previously approved periods remain available.</div>
+  {% elif grade_release and grade_release.status == 'returned' %}
+  <div class="alert alert-danger">Returned by VPA{% if grade_release.review_comment %}: {{ grade_release.review_comment }}{% endif %}. Edit and publish again to resubmit.</div>
+  {% elif grade_release and grade_release.status == 'approved' %}
+  <div class="alert alert-success">VPA approved this period. Students may view the official documents. Publishing again will send it back for review.</div>
+  {% endif %}
 
   <div class="status-strip">
     <span class="status-pill subject">Subject: {{ selected_subject }}</span>
@@ -743,16 +754,19 @@
             <td class="text-center small">
               {% if existing and existing.remarks %}{{ existing.remarks }}{% elif existing and existing.score is not none %}Standing recorded{% else %}--{% endif %}
             </td>
-            <td class="pe-3 text-center small">
+            <td class="pe-3 text-center small roster-status-cell">
+              <div class="roster-status-cluster justify-content-center">
               {% if existing and existing.submitted %}
-              <span class="badge bg-success">Published</span>
-              <div class="text-muted small mt-1">Visible on report card</div>
+              <span class="badge bg-success roster-status-pill">Published</span>
               {% elif existing and existing.score is not none %}
-              <span class="badge bg-warning text-dark">Draft Standing</span>
-              <div class="text-muted small mt-1">Visible on student dashboard</div>
+              <span class="badge bg-warning text-dark roster-status-pill">Draft Standing</span>
               {% else %}
-              <span class="badge bg-secondary">Pending</span>
+              <span class="badge bg-secondary roster-status-pill">Pending</span>
               {% endif %}
+              <a href="{{ url_for('report_card', student_id=student.id) }}" class="roster-grade-sheet-link" title="Grade sheet" aria-label="Grade sheet">
+                <i class="fas fa-file-alt" aria-hidden="true"></i>
+              </a>
+              </div>
             </td>
           </tr>
           {% endfor %}
@@ -763,7 +777,7 @@
   </form>
 
   <div class="sheet-footer">
-    <p class="sheet-note mb-0">Enter all period activity scores in this sheet. Save Draft keeps the student's standing updated. Save &amp; Publish confirms the final grade on the student grade sheet and report card.</p>
+    <p class="sheet-note mb-0">Enter all period activity scores in this sheet. Save Draft keeps the student's standing updated. Save &amp; Publish submits the period to the VPA. Students cannot view the official report card or grade sheet until approved.</p>
     <div class="sheet-actions">
       <button type="submit" form="periodActivitySheetForm" name="publish_action" value="draft" class="btn btn-outline-secondary px-4">
         <i class="bi bi-save me-1"></i>Save Draft

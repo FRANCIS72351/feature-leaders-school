@@ -1,0 +1,383 @@
+"""ID card folder PDF — filename and CR80 batch bytes, no student PII."""
+import base64
+import re
+import unittest
+import zlib
+from datetime import date
+from io import BytesIO
+from types import SimpleNamespace
+from unittest import mock
+
+
+def _pdf_content_text(payload):
+    """Decompress ReportLab page streams so tests can see drawn strings."""
+    chunks = []
+    for match in re.finditer(rb'stream\r?\n(.*?)endstream', payload, re.S):
+        raw = match.group(1).strip()
+        decoded = raw
+        try:
+            if raw.endswith(b'~>'):
+                decoded = base64.a85decode(raw, adobe=True)
+        except Exception:
+            decoded = raw
+        try:
+            decoded = zlib.decompress(decoded)
+        except Exception:
+            pass
+        chunks.append(decoded)
+    return b'\n'.join(chunks)
+
+from app import app, persist_student_guardian_name, _id_cards_pdf_attachment_response
+from id_card_pdf import (
+    PHOTO_COVER_SCALE,
+    PHOTO_FIT,
+    PHOTO_POSITION_Y,
+    PHOTO_WELL_MM,
+    id_photo_contain_rect,
+    build_class_id_cards_pdf,
+    id_cards_pdf_filename,
+    resolve_id_card_parent_name,
+)
+from models import resolve_parent_guardian_name
+
+
+class IdCardPdfTestCase(unittest.TestCase):
+    def test_class_folder_filename(self):
+        klass = SimpleNamespace(name='Grade 6A')
+        year = SimpleNamespace(name='2025/2026')
+        self.assertEqual(
+            id_cards_pdf_filename(klass, year),
+            'FLPA_ID_Cards_Grade_6A_2025_2026.pdf',
+        )
+
+    def test_single_card_filename(self):
+        klass = SimpleNamespace(name='KG 1')
+        year = SimpleNamespace(name='2025-2026')
+        self.assertEqual(
+            id_cards_pdf_filename(klass, year, single=True),
+            'FLPA_ID_Card_KG_1_2025-2026.pdf',
+        )
+
+    def test_filename_normalizes_future_endash_year(self):
+        klass = SimpleNamespace(name='12')
+        year = SimpleNamespace(name='2040–2041')
+        self.assertEqual(
+            id_cards_pdf_filename(klass, year),
+            'FLPA_ID_Cards_12_2040_2041.pdf',
+        )
+
+    def test_batch_pdf_has_header_and_pages(self):
+        student = SimpleNamespace(
+            id=1,
+            full_name='Test Student',
+            student_id='FLPA-1001',
+            parent_user=SimpleNamespace(full_name='Test Parent'),
+            parent_phone='0770000000',
+            id_expiration_date=date(2026, 7, 31),
+            official_signature_mark='Student T.',
+            signature_url=None,
+        )
+        cards = [
+            {
+                'student': student,
+                'class_label': 'Grade 6A',
+                'qr_code_data_uri': None,
+            }
+        ]
+        brand = {
+            'name': 'Future Leaders Preparatory Academy',
+            'full_address': 'Center Street, South Beach, Monrovia, Liberia',
+            'phones': '0770000000',
+            'motto': 'Honor, Excellence, Academics, Discipline, Success',
+            'brand_red': '#c82828',
+        }
+        buf = build_class_id_cards_pdf(
+            cards,
+            klass=SimpleNamespace(name='Grade 6A'),
+            display_year=SimpleNamespace(name='2025-2026'),
+            brand=brand,
+        )
+        payload = buf.getvalue()
+        self.assertTrue(payload.startswith(b'%PDF'))
+        self.assertIn(b'/Type /Page', payload)
+        self.assertGreater(len(payload), 2000)
+        self.assertEqual(
+            resolve_id_card_parent_name(student, cards[0]),
+            'Test Parent',
+        )
+
+    def test_batch_pdf_two_students_missing_photos_still_valid(self):
+        """A class PDF must be a complete %PDF with pages even if photos are missing."""
+        def _student(pk, name, sid):
+            return SimpleNamespace(
+                id=pk,
+                full_name=name,
+                student_id=sid,
+                parent_user=SimpleNamespace(full_name='Test Parent'),
+                parent_phone='0770000000',
+                id_expiration_date=date(2027, 7, 31),
+                official_signature_mark='Student T.',
+                signature_url=None,
+            )
+
+        cards = [
+            {
+                'student': _student(1, 'Alpha Student', 'FLPA-1001'),
+                'class_label': '8th',
+                'qr_code_data_uri': None,
+                'photo_path': r'C:\missing\photo_1.jpg',
+            },
+            {
+                'student': _student(2, 'Beta Student', 'FLPA-1002'),
+                'class_label': '8th',
+                'qr_code_data_uri': None,
+                'photo_path': None,
+            },
+        ]
+        buf = build_class_id_cards_pdf(
+            cards,
+            klass=SimpleNamespace(name='8th'),
+            display_year=SimpleNamespace(name='2026-2027'),
+            brand={'name': 'FLPA', 'full_address': 'Monrovia', 'phones': '077', 'motto': 'Honor'},
+        )
+        payload = buf.getvalue()
+        self.assertTrue(payload.startswith(b'%PDF'))
+        self.assertIn(b'/Type /Page', payload)
+        self.assertGreaterEqual(payload.count(b'/Type /Page'), 1)
+        self.assertGreater(len(payload), 2000)
+        self.assertIn(b'%%EOF', payload)
+
+    def test_print_payload_does_not_reprocess_or_rembg(self):
+        from app import _id_card_print_payload
+
+        student = SimpleNamespace(
+            id=3,
+            student_id='FLPA-1003',
+            student_id_code='FLPA-1003',
+            secure_qr_token='tok',
+            academic_year_id=1,
+            guardian_name='Mary Johnson',
+            parent_user=None,
+            photo_url=None,
+        )
+        year = SimpleNamespace(id=1, name='2026-2027')
+        with app.test_request_context('/id-cards/print/class/1'):
+            with mock.patch('app._reprocess_student_id_photo') as recrop, mock.patch(
+                'app._prepare_id_photo_for_print'
+            ) as prep, mock.patch('app.ensure_student_secure_qr_token'), mock.patch(
+                'app.generate_student_scanner_code', return_value=None
+            ), mock.patch(
+                'app.build_student_portal_qr_url', return_value=''
+            ), mock.patch(
+                'app.get_site_base_url', return_value='http://localhost'
+            ), mock.patch(
+                'app.format_student_class_name', return_value='8th'
+            ), mock.patch(
+                'app._student_id_photo_disk_path', return_value=None
+            ), mock.patch(
+                'app._student_signature_disk_path', return_value=None
+            ), mock.patch(
+                'app._cache_busted_photo_url', return_value=None
+            ):
+                payload = _id_card_print_payload(student, year)
+        recrop.assert_not_called()
+        prep.assert_not_called()
+        self.assertIs(payload['student'], student)
+        self.assertEqual(payload['parent_name'], 'Mary Johnson')
+
+    def test_resolve_parent_name_uses_guardian_then_linked_parent(self):
+        typed = SimpleNamespace(
+            guardian_name='Mary Johnson',
+            parent_name=None,
+            parent_user=SimpleNamespace(full_name='Linked Account'),
+        )
+        self.assertEqual(resolve_parent_guardian_name(typed), 'Mary Johnson')
+        self.assertEqual(resolve_id_card_parent_name(typed), 'Mary Johnson')
+
+        linked_only = SimpleNamespace(
+            guardian_name=None,
+            parent_name=None,
+            parent_user=SimpleNamespace(full_name='Linked Account'),
+        )
+        self.assertEqual(resolve_parent_guardian_name(linked_only), 'Linked Account')
+
+        empty = SimpleNamespace(guardian_name='', parent_name=None, parent_user=None)
+        self.assertIsNone(resolve_parent_guardian_name(empty))
+        self.assertIsNone(resolve_id_card_parent_name(empty, {'parent_name': ''}))
+        self.assertEqual(
+            resolve_id_card_parent_name(empty, {'parent_name': 'Payload Guardian'}),
+            'Payload Guardian',
+        )
+
+    def test_pdf_uses_guardian_name_without_parent_user(self):
+        student = SimpleNamespace(
+            id=2,
+            full_name='Child Student',
+            student_id='FLPA-1002',
+            guardian_name='Agnes Kollie',
+            parent_user=None,
+            parent_phone='0771111111',
+            id_expiration_date=date(2026, 7, 31),
+            official_signature_mark='Child S.',
+            signature_url=None,
+        )
+        card = {'student': student, 'class_label': 'Grade 4', 'qr_code_data_uri': None}
+        buf = build_class_id_cards_pdf(
+            [card],
+            klass=SimpleNamespace(name='Grade 4'),
+            display_year=SimpleNamespace(name='2025-2026'),
+            brand={'name': 'FLPA', 'full_address': 'Monrovia', 'phones': '077', 'motto': 'Honor'},
+        )
+        payload = buf.getvalue()
+        drawn = _pdf_content_text(payload)
+        self.assertTrue(payload.startswith(b'%PDF'))
+        self.assertIn(b'Agnes Kollie', drawn)
+        self.assertIn(b'Parent / Guardian:', drawn)
+        self.assertEqual(resolve_id_card_parent_name(student, card), 'Agnes Kollie')
+
+    def test_print_payload_includes_guardian_name(self):
+        student = SimpleNamespace(
+            guardian_name='Mary Johnson',
+            parent_name=None,
+            parent_user=None,
+        )
+        card = {
+            'student': student,
+            'parent_name': resolve_parent_guardian_name(student) or '',
+        }
+        self.assertEqual(card['parent_name'], 'Mary Johnson')
+        self.assertEqual(resolve_id_card_parent_name(student, card), 'Mary Johnson')
+
+    def test_persist_guardian_name_from_request_and_form(self):
+        student = SimpleNamespace(guardian_name=None)
+        form = SimpleNamespace(guardian_name=SimpleNamespace(data='Form Guardian'))
+        with app.test_request_context(
+            '/edit-student/1',
+            method='POST',
+            data={'guardian_name': 'Posted Guardian'},
+        ):
+            self.assertEqual(persist_student_guardian_name(student, form), 'Posted Guardian')
+            self.assertEqual(student.guardian_name, 'Posted Guardian')
+
+        leftover = SimpleNamespace(guardian_name='Keep Me')
+        with app.test_request_context('/edit-student/1', method='POST', data={}):
+            self.assertEqual(persist_student_guardian_name(leftover, form), 'Form Guardian')
+            self.assertEqual(leftover.guardian_name, 'Form Guardian')
+
+        empty = SimpleNamespace(guardian_name='Was Set')
+        with app.test_request_context(
+            '/edit-student/1',
+            method='POST',
+            data={'guardian_name': '   '},
+        ):
+            self.assertIsNone(persist_student_guardian_name(empty, form))
+            self.assertIsNone(empty.guardian_name)
+
+    def test_download_response_is_attachment_not_inline(self):
+        filename = 'FLPA_ID_Cards_Grade_6A_2025_2026.pdf'
+        with app.test_request_context('/id-cards/download/class/1'):
+            response = _id_cards_pdf_attachment_response(BytesIO(b'%PDF-1.4 test'), filename)
+        disposition = response.headers.get('Content-Disposition', '')
+        self.assertEqual(response.mimetype, 'application/pdf')
+        self.assertEqual(disposition, f'attachment; filename="{filename}"')
+        self.assertNotIn('inline', disposition.lower())
+        self.assertTrue(disposition.startswith('attachment;'))
+        self.assertEqual(response.headers.get('Content-Length'), str(len(b'%PDF-1.4 test')))
+
+    def test_portrait_contain_matches_css_square_well(self):
+        self.assertEqual(PHOTO_FIT, 'contain')
+        self.assertEqual(PHOTO_COVER_SCALE, 1.0)
+        self.assertEqual(PHOTO_WELL_MM, 24.0)
+        self.assertGreaterEqual(PHOTO_POSITION_Y, 0.45)
+        self.assertLessEqual(PHOTO_POSITION_Y, 0.55)
+
+    def test_contain_rect_fills_square_with_square_jpeg(self):
+        px, py, dw, dh = id_photo_contain_rect(800, 800, 24, 24)
+        self.assertAlmostEqual(px, 0.0)
+        self.assertAlmostEqual(py, 0.0)
+        self.assertAlmostEqual(dw, 24.0)
+        self.assertAlmostEqual(dh, 24.0)
+
+    def test_square_hs_jpeg_fully_visible_in_layout(self):
+        """800×800 with head in the upper half and chest in the lower third.
+
+        Contain in the 24mm square maps every source row into the well.
+        Cover+top in a tall well (the Safari regression) would not.
+        """
+        img_w = img_h = 800
+        head_y = 160  # upper half
+        chest_y = 640  # lower third
+        box = 24.0
+        px, py, dw, dh = id_photo_contain_rect(img_w, img_h, box, box)
+
+        def dest_y(src_y):
+            return py + dh * (src_y / float(img_h))
+
+        self.assertGreaterEqual(dest_y(0), py)
+        self.assertLessEqual(dest_y(img_h), py + dh)
+        self.assertGreaterEqual(dest_y(head_y), py)
+        self.assertLessEqual(dest_y(head_y), py + dh)
+        self.assertGreaterEqual(dest_y(chest_y), py)
+        self.assertLessEqual(dest_y(chest_y), py + dh)
+        # Chest is in the lower third of the well, not clipped.
+        self.assertGreater(dest_y(chest_y), py + dh * 0.6)
+
+        from PIL import Image, ImageDraw
+
+        src = Image.new('RGB', (800, 800), (255, 255, 255))
+        draw = ImageDraw.Draw(src)
+        draw.ellipse((280, 80, 520, 360), fill=(180, 70, 40))
+        draw.rectangle((180, 530, 620, 799), fill=(16, 20, 80))
+        well_px = 96
+        bpx, bpy, bdw, bdh = id_photo_contain_rect(800, 800, well_px, well_px)
+        dest = Image.new('RGB', (well_px, well_px), (200, 200, 200))
+        dest.paste(src.resize((int(round(bdw)), int(round(bdh)))), (int(round(bpx)), int(round(bpy))))
+        head = dest.getpixel((48, 26))
+        chest = dest.getpixel((48, 80))
+        self.assertGreater(head[0], head[2] + 40)
+        self.assertLess(head[1], 120)
+        self.assertGreater(chest[2], chest[0])
+        self.assertLess(chest[1], 80)
+
+        # Tall well (Safari stretch): contain letterboxes; chest still maps inside dest image.
+        tall_w, tall_h = 24.0, 40.0
+        tpx, tpy, tdw, tdh = id_photo_contain_rect(img_w, img_h, tall_w, tall_h)
+        self.assertAlmostEqual(tdw, 24.0)
+        self.assertAlmostEqual(tdh, 24.0)
+        self.assertGreater(tpy, 0.0)
+        chest_in_tall = tpy + tdh * (chest_y / float(img_h))
+        self.assertLessEqual(chest_in_tall, tpy + tdh)
+        self.assertGreaterEqual(chest_in_tall, tpy)
+
+        # Cover+top in a landscape well slices the lower third (why we do not use it).
+        cover_scale = max(40.0 / img_w, 24.0 / img_h)
+        cover_dh = img_h * cover_scale
+        visible_src_h = img_h * (24.0 / cover_dh)
+        self.assertLess(visible_src_h, chest_y)
+
+    def test_print_batch_css_square_contain_not_cover_top(self):
+        from pathlib import Path
+
+        html = Path(__file__).with_name('templates').joinpath('id_cards', 'print_batch.html').read_text(
+            encoding='utf-8'
+        )
+        start = html.find('.photo-ring img {')
+        self.assertGreater(start, 0)
+        block = html[start:html.find('}', start) + 1]
+        self.assertIn('object-fit: contain', block)
+        self.assertIn('object-position: center center', block)
+        self.assertIn('height: auto !important', block)
+        self.assertNotIn('object-fit: cover', block)
+        self.assertNotIn('center top', block)
+        self.assertNotIn('22%', block)
+        self.assertNotIn('position: absolute', block)
+        well = html[html.find('.photo-ring {'):html.find('.photo-ring img {')]
+        self.assertIn('aspect-ratio: 1 / 1 !important', well)
+        self.assertIn('height: auto !important', well)
+        self.assertIn('min-height: 0 !important', well)
+        self.assertIn('overflow: hidden', well)
+        self.assertIn('width: 100%', well)
+
+
+if __name__ == '__main__':
+    unittest.main()

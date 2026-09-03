@@ -12,11 +12,11 @@
   }
 
   .full-center {
-    min-height: calc(100vh - 85px);
+    min-height: calc(100vh - 22rem);
     display: flex;
     justify-content: center;
     align-items: center;
-    padding: 2rem 1rem 3rem;
+    padding: 2rem 1rem 1.5rem;
   }
 
   .login-card {
@@ -82,7 +82,7 @@
     padding: 0.38rem 0.9rem;
     border-radius: 999px;
     background: rgba(200, 40, 40, 0.1);
-    color: var(--primary-dark);
+    color: #dc2626 !important;
     font-size: 0.78rem;
     font-weight: 700;
     letter-spacing: 0.12em;
@@ -148,7 +148,7 @@
     <div class="login-card-art" aria-hidden="true"></div>
 
     <div class="text-center mb-3">
-      <span class="login-kicker">Future Leaders Preparatory Academy</span>
+      <span class="login-kicker" style="color: #dc2626 !important;">Future Leaders Preparatory Academy</span>
     </div>
 
     <!-- LOGO -->
@@ -173,6 +173,7 @@
 
     <form method="post">
       {{ form.hidden_tag() }}
+      <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
 
       <div class="mb-3">
         {{ form.email.label(class_="form-label") }}
@@ -196,7 +197,7 @@
     </form>
 
     <div class="login-motto">
-      Character. Community. Excellence. Service. Discipline. Success.
+      Honor, Excellence, Academics, Discipline, Success
     </div>
 
   </div>

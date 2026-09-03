@@ -1,15 +1,68 @@
 # app.py — Future Leaders Academy Management System
-from flask import Flask, render_template, redirect, url_for, flash, request, Response, jsonify, send_file, send_from_directory, current_app, abort, session
+from flask import Flask, render_template, redirect, url_for, flash, request, Response, jsonify, send_file, send_from_directory, current_app, abort, session, g, has_app_context, has_request_context
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
-from models import db, User, Student, Teacher, Class, Announcement, Grade, AcademicYear, ClassSubjectTeacher, Room, Suspension, Discipline, StudentPayment
+from models import db, User, Student, Teacher, Class, Announcement, Grade, GradeRelease, TranscriptRelease, AcademicYear, ClassSubjectTeacher, Room, Suspension, Discipline, StudentPayment, StudentRegistryDocument, default_static_photo_url, school_logo_static_url, liberia_seal_static_url, resolve_parent_guardian_name
 from itsdangerous import URLSafeTimedSerializer
 import pyotp
 from reportlab.pdfgen import canvas
+from difflib import SequenceMatcher
 import re
 from decorators import role_required  # Adjust this import to match your layout
-from constants import ROLE_ADMIN, GRADING_PERIODS, grading_period_label
+from constants import (
+    ROLE_ADMIN,
+    GRADING_PERIODS,
+    grading_period_label,
+    PERIOD_COMPONENT_SPECS,
+    PERIOD_COMPONENT_MAXIMA,
+    PERIOD_COMPONENT_CEILINGS,
+    PERIOD_COMPONENT_SCHEME_NOTE,
+    PERIOD_COMPONENT_ACTIVITY_TYPES,
+    PERIOD_COMPONENT_EXTRA_CREDIT_FACTOR,
+    PERIOD_COMPONENT_FIELD_MAX,
+    PERIOD_TOTAL_LISTED_MAX,
+    PERIOD_TOTAL_EXTRA_CREDIT_MAX,
+    period_component_ceiling,
+)
+from school_divisions import (
+    academic_year_span_key,
+    canonical_grade_value,
+    canonical_subject_name,
+    class_document_context,
+    class_sort_key_from_klass,
+    display_report_score,
+    division_document_titles,
+    academic_level_for_student,
+    division_label_for_class,
+    division_legend_rows,
+    division_score_remark,
+    division_subject_heading,
+    format_academic_year_label,
+    GRADE_LEVEL_GROUPS_FOR_TEMPLATE,
+    group_classes,
+    group_items_by_class,
+    is_conduct_subject,
+    is_report_summary_subject,
+    next_academic_year_label,
+    next_canonical_grade,
+    normalize_academic_year_name,
+    numeric_report_score,
+    official_subject_score_row,
+    order_subjects_by_catalog,
+    parse_academic_year_span,
+    parse_grade_number,
+    report_card_footer_rows,
+    resolve_from_class,
+    division_subjects,
+    school_print_brand,
+    subject_match_key,
+    build_transcript_grade_groups,
+    transcript_conduct_cells,
+    transcript_grade_heading,
+    transcript_letterhead,
+    transcript_promotion_fields,
+)
 from utils import (
     build_student_financials,
     parse_currency_amount,
@@ -17,14 +70,19 @@ from utils import (
     currency_to_float,
 )
 from io import BytesIO, StringIO
-from sqlalchemy import func, text, or_
+from sqlalchemy import func, text, or_, case
+from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.exc import IntegrityError
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from models import Student, AcademicYear, Class, BusinessTransaction, StudentPayment, SchoolFee
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, date, timezone, timedelta
 import csv
+import glob
+import json
 import os
+import shutil
 import sys
 from functools import wraps
 try:
@@ -33,6 +91,7 @@ try:
 except ImportError:
     pass
 from account_lifecycle import (
+    ACTIVE_ENROLLMENT_STATUSES,
     ALUMNI_STATUSES,
     activate_student_registration,
     mark_student_alumni,
@@ -56,20 +115,28 @@ from ocr_scanner import (
 )
 from student_scanner import (
     build_parent_report_url,
+    build_student_portal_qr_url,
     build_student_verify_url,
     generate_parent_report_qr_code,
     generate_student_scanner_code,
     get_site_base_url,
+    site_url_is_loopback,
 )
+from id_card_pdf import build_class_id_cards_pdf, id_cards_pdf_filename
 import secrets
 try:
-    import pytesseract
-    from PIL import Image, ImageEnhance, ImageFilter
+    from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 except ImportError:
-    pytesseract = None
     Image = None
+    ImageChops = None
+    ImageDraw = None
     ImageEnhance = None
     ImageFilter = None
+    ImageOps = None
+try:
+    import pytesseract
+except ImportError:
+    pytesseract = None
 
 import logging
 
@@ -79,6 +146,115 @@ logger = logging.getLogger(__name__)
 def normalize_role(user):
     """Return lowercase stripped role string for consistent access checks."""
     return (getattr(user, 'role', None) or '').strip().lower()
+
+
+DASHBOARD_ROLE_LABELS = {
+    'principal': 'Principal',
+    'registrar': 'Registrar',
+    'registry': 'Registrar',
+    'admin': 'Admin',
+    'business': 'Business Office',
+    'teacher': 'Teacher',
+    'dean': 'Dean',
+    'vpi': 'VPI — Finance & Operations',
+    'vpa': 'VPA — Academics',
+    'student': 'Student',
+    'parent': 'Parent',
+    'sponsor': 'Sponsor',
+}
+
+ROLE_HOME_ENDPOINTS = {
+    'principal': 'principal_dashboard',
+    'teacher': 'teacher_dashboard',
+    'dean': 'dean_dashboard',
+    'vpi': 'vpi_dashboard',
+    'vpa': 'vpa_dashboard',
+    'student': 'student_dashboard',
+    'sponsor': 'teacher_dashboard',
+    'business': 'business_dashboard',
+    'registrar': 'registrar_dashboard',
+    'registry': 'registrar_dashboard',
+    'admin': 'dashboard',
+    'parent': 'dashboard',
+}
+
+ROLE_ALIASES = {
+    'registry': 'registrar',
+    'registry officer': 'registrar',
+}
+
+# VPA owns academics. VPI owns finance and campus operations. Do not mix the two offices.
+ACADEMIC_COMMAND_ROLES = frozenset({'admin', 'principal', 'vpa'})
+FISCAL_COMMAND_ROLES = frozenset({'admin', 'business', 'vpi', 'principal'})
+STAFF_INTERNAL_GRADE_ROLES = frozenset({
+    'admin', 'teacher', 'registrar', 'principal', 'vpa', 'vpi', 'dean', 'business',
+})
+OFFICIAL_TRANSCRIPT_STAFF_ROLES = frozenset({'admin', 'registrar', 'principal', 'vpa'})
+GRADE_RELEASE_TEACHER_FLASH = (
+    'Submitted to VPA for approval. Students cannot view this period until approved. '
+    'Previously approved periods remain available.'
+)
+STUDENT_GRADE_HOLD_MESSAGE = (
+    'Your report is being reviewed by the Vice Principal for Academics. '
+    'It will appear here after approval.'
+)
+STUDENT_TRANSCRIPT_HOLD_MESSAGE = 'Official Transcript is not released yet.'
+STUDENT_GRADE_AWAITING_VPA_NOTE = (
+    'Official scores are shown for periods already approved by the Vice Principal '
+    'for Academics. Later marking periods will appear here after VPA approval.'
+)
+CLASS_STRUCTURE_ROLES = frozenset({'admin', 'principal', 'registrar', 'vpa', 'vpi', 'lead developer'})
+FACILITY_ROLES = frozenset({'admin', 'principal', 'registrar', 'vpi', 'lead developer'})
+
+
+def role_home_endpoint(user=None):
+    role = normalize_role(user or current_user)
+    return ROLE_HOME_ENDPOINTS.get(ROLE_ALIASES.get(role, role), 'dashboard')
+
+
+def deny_unless_roles(allowed_roles, *, academic_office=None):
+    """Return a redirect if the current user is outside the office that owns this page."""
+    role = normalize_role(current_user)
+    if role in allowed_roles:
+        return None
+    if academic_office is True:
+        flash(
+            "This is a VPA academic function (curriculum, teachers, grades). "
+            "Tuition, fees, and the ledger belong to the VPI office.",
+            "danger",
+        )
+    elif academic_office is False:
+        flash(
+            "This is a VPI finance and operations function. "
+            "Curriculum, teacher assignment, and grades belong to the VPA office.",
+            "danger",
+        )
+    else:
+        flash("Unauthorized access for your office.", "danger")
+    return redirect(url_for(role_home_endpoint()))
+
+
+def canonical_role(user):
+    """Map stored role strings (e.g. registry) onto the routing role."""
+    role = normalize_role(user)
+    return ROLE_ALIASES.get(role, role)
+
+
+def dashboard_role_label(user):
+    """Human-readable role label for the dashboard welcome banner."""
+    role = canonical_role(user)
+    return DASHBOARD_ROLE_LABELS.get(role, (role or 'user').title())
+
+
+def home_endpoint_for_role(user):
+    """Post-login / home endpoint for a user's stored role."""
+    endpoint = ROLE_HOME_ENDPOINTS.get(canonical_role(user), 'dashboard')
+    try:
+        if endpoint in current_app.view_functions:
+            return endpoint
+    except RuntimeError:
+        pass
+    return 'dashboard'
 
 
 def ensure_student_secure_qr_token(student):
@@ -125,9 +301,11 @@ def build_student_qr_context(student):
     if not student:
         return {'qr_code_data_uri': None, 'student_verify_url': None}
     ensure_student_secure_qr_token(student)
+    base_url = get_site_base_url()
     return {
-        'qr_code_data_uri': generate_student_scanner_code(student),
-        'student_verify_url': build_student_verify_url(student),
+        'qr_code_data_uri': generate_student_scanner_code(student, base_url=base_url),
+        'student_verify_url': build_student_verify_url(student, base_url=base_url),
+        'student_portal_qr_url': build_student_portal_qr_url(student, base_url=base_url),
     }
 
 
@@ -379,7 +557,7 @@ def check_brute_force(ip):
 # Local imports handled in init_db.py to avoid circular imports during app import
 from models import (
     db, User, Student, Teacher, Class, ClassSubject, Enrollment, Grade,
-    Attendance, Sponsor, Announcement, Discipline, Payroll,
+    GradeRelease, TranscriptRelease, Attendance, Sponsor, Announcement, Discipline, Payroll,
     Assessment, AcademicYear, BusinessTransaction, StudentPayment,
     Leader, LeaderCategory, Event, SchoolMedia, SecurityLog, Suspension, Room,
     Asset, MaintenanceTicket, Activity, Submission, RolloverLog,
@@ -390,6 +568,7 @@ from forms import (
     AnnouncementForm, BusinessTransactionForm, AssignTeacherForm, CreateClassForm,
     EventForm, ConfirmDeleteForm, LeaderForm, EnrollmentForm, PaymentForm, TransactionForm,
     DisciplineForm, SchoolMediaForm, RecordClassroomActivityForm,
+    AccountPasswordForm, AccountPhotoForm,
 )
 
 SCHOOL_VIDEO_MAX_DURATION_SEC = int(os.environ.get('SCHOOL_VIDEO_MAX_DURATION_SEC', '180'))
@@ -1247,6 +1426,15 @@ def get_teacher_class_cards(teacher_profile, user, academic_year_id=None):
     for alloc in ClassSubjectTeacher.query.filter_by(teacher_id=teacher_profile.id).all():
         subject_map.setdefault(alloc.class_id, set()).add(alloc.subject_name)
 
+    if academic_year_id is not None:
+        display_year = db.session.get(AcademicYear, academic_year_id)
+    else:
+        display_year = get_active_academic_year()
+    roster_sizes = (
+        _roster_sizes_for_display_year(display_year, viewing_archived=False)
+        if display_year else {}
+    )
+
     cards = []
     for klass in Class.query.filter(Class.id.in_(class_ids)).order_by(
         Class.grade_level.asc(), Class.name.asc()
@@ -1259,23 +1447,7 @@ def get_teacher_class_cards(teacher_profile, user, academic_year_id=None):
         if not role_labels:
             role_labels.append('Subject Teacher')
 
-        if academic_year_id is not None:
-            display_year = db.session.get(AcademicYear, academic_year_id)
-            student_count = len(
-                _principal_students_for_class(
-                    klass, display_year, viewing_archived=False,
-                )
-            ) if display_year else 0
-        else:
-            active = get_active_academic_year()
-            if active:
-                student_count = len(
-                    _principal_students_for_class(
-                        klass, active, viewing_archived=False,
-                    )
-                )
-            else:
-                student_count = 0
+        student_count = roster_sizes.get(klass.id, 0)
         cards.append({
             'id': klass.id,
             'name': klass.name,
@@ -1363,15 +1535,18 @@ def build_teacher_dashboard_context(teacher_profile, user, academic_year_id=None
         1 for s in recent_submissions if not s.is_graded
     )
     activities_with_pending = 0
-    if class_ids:
+    if class_ids and activities:
         try:
-            for act in activities:
-                subs = Submission.query.filter_by(assessment_id=act.id).all()
-                if any(
-                    (sub.file_path or sub.submission_text) and not sub.is_graded
-                    for sub in subs
-                ):
-                    activities_with_pending += 1
+            activity_ids = [act.id for act in activities]
+            pending_subs = Submission.query.filter(
+                Submission.activity_id.in_(activity_ids),
+                Submission.is_graded.is_(False),
+            ).all()
+            activities_with_pending = len({
+                sub.activity_id
+                for sub in pending_subs
+                if (sub.file_path or sub.submission_text)
+            })
         except Exception:
             pass
 
@@ -1785,18 +1960,64 @@ def get_students_for_class_ids(class_ids, academic_year_id=None, *, viewing_arch
     if not display_year:
         active = get_active_academic_year()
         display_year = active
-    if display_year:
-        for class_id in class_ids:
-            klass = db.session.get(Class, class_id)
-            if not klass:
-                continue
-            for student in _principal_students_for_class(
-                klass, display_year, viewing_archived=viewing_archived,
-            ):
-                students_map[student.id] = student
-        return sorted(students_map.values(), key=lambda s: (s.last_name or '', s.first_name or ''))
+    if not display_year:
+        return []
 
-    return []
+    class_rows = {
+        klass.id: klass
+        for klass in Class.query.filter(Class.id.in_(class_ids)).all()
+    }
+    if not class_rows:
+        return []
+
+    if viewing_archived:
+        year_id = display_year.id
+        grade_ids = {
+            row[0] for row in db.session.query(Grade.student_id).filter(
+                Grade.academic_year_id == year_id,
+                Grade.class_id.in_(class_ids),
+                Grade.student_id.isnot(None),
+            ).distinct()
+        }
+        enroll_ids = {
+            row[0] for row in db.session.query(Enrollment.student_id).filter(
+                Enrollment.academic_year_id == year_id,
+                Enrollment.class_id.in_(class_ids),
+                Enrollment.student_id.isnot(None),
+            ).distinct()
+        }
+        live_ids = {
+            row[0] for row in db.session.query(Student.id).filter(
+                Student.academic_year_id == year_id,
+                Student.klass_id.in_(class_ids),
+            )
+        }
+        ids = grade_ids | enroll_ids | live_ids
+        if not ids:
+            return []
+        return (
+            Student.query.filter(Student.id.in_(ids))
+            .order_by(Student.last_name.asc(), Student.first_name.asc())
+            .all()
+        )
+
+    roster = (
+        students_for_academic_year(display_year.id, registered_only=True)
+        .filter(Student.klass_id.in_(class_ids))
+        .filter(~Student.status.in_(list(ALUMNI_STATUSES)))
+        .order_by(Student.last_name.asc(), Student.first_name.asc())
+        .all()
+    )
+    for student in roster:
+        klass = class_rows.get(student.klass_id)
+        if not klass:
+            continue
+        if klass.grade_level is not None:
+            level = _student_grade_level(student)
+            if level is not None and not _grades_match(level, klass.grade_level):
+                continue
+        students_map[student.id] = student
+    return sorted(students_map.values(), key=lambda s: (s.last_name or '', s.first_name or ''))
 
 
 # Single source of truth — see constants.GRADING_PERIODS
@@ -1818,6 +2039,38 @@ def get_teacher_subjects_for_class(teacher_profile, class_id):
     return sorted(subjects, key=str.lower)
 
 
+def official_subjects_for_class(klass):
+    """Official report-card subjects for a class's school division."""
+    if not klass:
+        return []
+    catalog = list(division_subjects(resolve_from_class(klass)) or ())
+    if catalog:
+        return catalog
+    return list(_stream_preset_for_class(klass) or [])
+
+
+def list_classes_grouped():
+    """All classrooms in Kindergarten → Senior High order for admin pickers."""
+    classes = sorted(Class.query.all(), key=class_sort_key_from_klass)
+    return classes, group_classes(classes)
+
+
+def ensure_class_official_subjects(klass, *, commit=False):
+    """Seed ClassSubject rows from the division catalog when a class has none."""
+    if not klass:
+        return 0
+    existing = ClassSubject.query.filter_by(class_id=klass.id).count()
+    if existing:
+        return 0
+    added = 0
+    for name in official_subjects_for_class(klass):
+        db.session.add(ClassSubject(class_id=klass.id, subject_name=name))
+        added += 1
+    if added and commit:
+        db.session.commit()
+    return added
+
+
 def get_class_subject_catalog(class_id):
     """All subject names configured for a class (catalog + teacher allocations)."""
     if not class_id:
@@ -1829,6 +2082,9 @@ def get_class_subject_catalog(class_id):
     for row in ClassSubjectTeacher.query.filter_by(class_id=class_id).all():
         if row.subject_name:
             subjects.add(row.subject_name)
+    if not subjects:
+        klass = db.session.get(Class, class_id)
+        subjects.update(official_subjects_for_class(klass))
     return sorted(subjects, key=str.lower)
 
 
@@ -2042,17 +2298,35 @@ def build_sponsor_hub_context(teacher_profile, user, klass, active_year, attenda
 
 def normalize_grade_period(value):
     """Return an int period (1-8) from stored grade period fields."""
-    if value is None:
+    if value is None or isinstance(value, bool):
         return None
     if isinstance(value, int):
         return value if 1 <= value <= 8 else None
+    if isinstance(value, float) and value == int(value):
+        num = int(value)
+        return num if 1 <= num <= 8 else None
     text = str(value).strip().lower()
+    if not text:
+        return None
     if text.isdigit():
         num = int(text)
         return num if 1 <= num <= 8 else None
-    if 'final' in text and 'exam' in text:
-        return 8
-    if 'semester' in text and 'exam' in text:
+    p_match = re.match(r'^p(?:eriod)?[\s.\-]*(\d+)$', text)
+    if p_match:
+        num = int(p_match.group(1))
+        return num if 1 <= num <= 8 else None
+    is_exam = 'exam' in text
+    is_second = any(token in text for token in (
+        '2nd', 'second', 'sem 2', 'sem2', 'semester 2', 'final',
+    ))
+    is_first = any(token in text for token in (
+        '1st', 'first', 'sem 1', 'sem1', 'semester 1',
+    ))
+    if is_exam:
+        if is_second:
+            return 8
+        if is_first or 'semester' in text:
+            return 7
         return 7
     if text.startswith('period'):
         digits = ''.join(ch for ch in text if ch.isdigit())
@@ -2062,22 +2336,354 @@ def normalize_grade_period(value):
     return None
 
 
+def _grade_period_number(grade):
+    if grade is None:
+        return None
+    # Older rows can carry a stale marking_period while the textual period
+    # correctly identifies a semester exam. Preserve the explicit exam key.
+    period_text = str(getattr(grade, 'period', '') or '').strip()
+    if 'exam' in period_text.lower():
+        stored = normalize_grade_period(period_text)
+        if stored in (7, 8):
+            return stored
+    if grade.marking_period is not None:
+        stored = normalize_grade_period(grade.marking_period)
+        if stored is not None:
+            return stored
+    return normalize_grade_period(grade.period)
+
+
 def find_grade_record(student_id, subject_name, period, class_id=None, academic_year_id=None):
     """Find an existing grade row for a student/subject/period."""
-    query = Grade.query.filter(
-        Grade.student_id == student_id,
-        or_(Grade.subject == subject_name, Grade.subject_name == subject_name),
-    )
-    if class_id is not None:
-        query = query.filter_by(class_id=class_id)
+    query = Grade.query.filter_by(student_id=student_id)
     if academic_year_id is not None:
         query = query.filter_by(academic_year_id=academic_year_id)
 
+    matches = []
     for grade in query.all():
         stored_period = grade.marking_period or normalize_grade_period(grade.period)
-        if stored_period == period:
-            return grade
+        if stored_period != period:
+            continue
+        stored_subject = grade.subject or grade.subject_name
+        if subject_name and stored_subject:
+            if subject_match_key(stored_subject) != subject_match_key(subject_name) and not subjects_match(
+                stored_subject, subject_name
+            ):
+                continue
+        elif subject_name and not stored_subject:
+            continue
+        matches.append(grade)
+
+    if class_id is not None:
+        for grade in matches:
+            if grade.class_id == class_id:
+                return grade
+    return matches[0] if matches else None
+
+
+def _grade_matches_period(grade, period):
+    """True when a grade row carries data for the requested marking period."""
+    if _grade_period_number(grade) == period:
+        return True
+    if 1 <= period <= 6:
+        stored = getattr(grade, f'p{period}', None)
+        if stored is not None and int(stored) != 0:
+            return True
+    return False
+
+
+def _grade_has_period_data(grade, period):
+    """True when a grade row has displayable scores for a period."""
+    if _parse_grade_component_scores(grade):
+        return True
+    if grade.score is not None or grade.ca_score is not None or grade.exam_score is not None:
+        return True
+    if 1 <= period <= 6:
+        stored = getattr(grade, f'p{period}', None)
+        if stored is not None and int(stored) != 0:
+            return True
+    return False
+
+
+def _period_total_from_grade(grade, period):
+    """Best total for a period from a grade row (matches report-card display)."""
+    if grade is None:
+        return None
+    if _grade_period_number(grade) == period and grade.score is not None:
+        return grade.score
+    if 1 <= period <= 6:
+        pval = getattr(grade, f'p{period}', None)
+        if pval is not None and int(pval) != 0:
+            return float(pval)
+    return grade.score
+
+
+def _standing_dict_from_grade(grade, period):
+    if not grade:
+        return None
+    total = _period_total_from_grade(grade, period)
+    if total is None:
+        comps = _component_score_map_from_grade(grade)
+        if comps:
+            total = round(sum(comps.values()), 1)
+        else:
+            return None
+    return {
+        'ca_score': grade.ca_score,
+        'exam_score': grade.exam_score,
+        'total': total,
+        'grade_letter': SchoolEngine.get_grade_letter(total),
+        'remarks': grade.remarks or SchoolEngine.get_remarks(total),
+    }
+
+
+def _student_period_grade_candidates(student_id, subject_name, period, academic_year_id=None):
+    """Grade rows matched by normalized subject and period, with typo fallback."""
+    query = Grade.query.filter_by(student_id=student_id)
+    if academic_year_id is not None:
+        query = query.filter_by(academic_year_id=academic_year_id)
+
+    subject_key = subject_match_key(subject_name) if subject_name else None
+    period_matches = []
+    for grade in query.order_by(Grade.id.desc()).all():
+        if not _grade_matches_period(grade, period):
+            continue
+        period_matches.append(grade)
+
+    if not subject_key:
+        return period_matches
+
+    exact_matches = []
+    fuzzy_matches = []
+    for grade in period_matches:
+        stored_keys = {
+            subject_match_key(stored_name)
+            for stored_name in (grade.subject_name, grade.subject)
+            if stored_name
+        }
+        stored_keys.discard('')
+        if not stored_keys:
+            continue
+        if subject_key in stored_keys:
+            exact_matches.append(grade)
+            continue
+        similarity = max(
+            SequenceMatcher(None, stored_key, subject_key).ratio()
+            for stored_key in stored_keys
+        )
+        if similarity >= 0.88:
+            fuzzy_matches.append((similarity, grade))
+
+    if exact_matches:
+        return exact_matches
+    if not fuzzy_matches:
+        return []
+
+    best_similarity = max(similarity for similarity, _grade in fuzzy_matches)
+    return [
+        grade
+        for similarity, grade in fuzzy_matches
+        if best_similarity - similarity < 0.02
+    ]
+
+
+def find_student_period_grade_pair(student_id, subject_name, period, academic_year_id=None, class_id=None):
+    """Return the latest unpublished and published rows for a dashboard cell."""
+    matches = _student_period_grade_candidates(
+        student_id, subject_name, period, academic_year_id,
+    )
+    if not matches:
+        return None, None
+
+    if class_id is not None:
+        class_matches = [g for g in matches if g.class_id == class_id]
+        if class_matches:
+            matches = class_matches
+
+    exact = [g for g in matches if _grade_period_number(g) == period]
+    pool = exact or matches
+
+    published = next(
+        (g for g in pool if g.submitted and _grade_has_period_data(g, period)),
+        None,
+    )
+    draft = next(
+        (g for g in pool if not g.submitted and _grade_has_period_data(g, period)),
+        None,
+    )
+    return draft, published
+
+
+def _float_or_none(value):
+    if value is None or value == '':
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _visible_submission_score(submission):
+    """Show a teacher-entered mark even if the graded flag was not set."""
+    if not submission:
+        return None
+    return _float_or_none(submission.score)
+
+
+def _component_key_for_assessment(assessment):
+    """Map TEST — Test / ATT — Attendance style activities onto period codes."""
+    if not assessment:
+        return None
+    title = (assessment.title or '').strip().upper()
+    type_label = (assessment.activity_type or '').strip()
+    for key, code, label, _max_score in PERIOD_COMPONENT_SPECS:
+        prefix = (code or '').upper()
+        if not prefix:
+            continue
+        if (
+            title == prefix
+            or title.startswith(prefix + ' ')
+            or title.startswith(prefix + '—')
+            or title.startswith(prefix + '–')
+            or title.startswith(prefix + '-')
+        ):
+            return key
+        if label and label.upper() in title:
+            return key
+    type_keys = {}
+    for key, activity_type in PERIOD_COMPONENT_ACTIVITY_TYPES.items():
+        type_keys.setdefault(activity_type, []).append(key)
+    keys = type_keys.get(type_label)
+    if keys and len(keys) == 1:
+        return keys[0]
     return None
+
+
+def _component_score_map_from_grade(grade):
+    comps = _parse_grade_component_scores(grade) if grade else {}
+    mapped = {}
+    for key in PERIOD_COMPONENT_MAXIMA:
+        score = _float_or_none(comps.get(key))
+        if score is not None:
+            mapped[key] = score
+    return mapped
+
+
+def _component_score_maps_for_student(student, display_year):
+    maps = {}
+    if not student or not display_year:
+        return maps
+    grades = Grade.query.filter_by(
+        student_id=student.id,
+        academic_year_id=display_year.id,
+    ).all()
+    for grade in grades:
+        period = grade.marking_period or normalize_grade_period(grade.period)
+        subject_key = subject_match_key(grade.subject or grade.subject_name)
+        scores = _component_score_map_from_grade(grade)
+        if subject_key and period and scores:
+            maps[(subject_key, period)] = scores
+    return maps
+
+
+def _annotate_activity_item(item, component_map=None):
+    """Fill score/status from the submission or matching period component."""
+    assessment = item.get('assessment')
+    submission = item.get('submission')
+    visible = _visible_submission_score(submission)
+    max_score = (assessment.max_score if assessment and assessment.max_score else 100)
+    key = _component_key_for_assessment(assessment)
+    if visible is None and key and component_map and component_map.get(key) is not None:
+        visible = component_map[key]
+        max_score = PERIOD_COMPONENT_MAXIMA.get(key, max_score)
+    item['score'] = visible
+    item['max_score'] = max_score
+    if visible is not None:
+        item['status'] = 'Graded'
+    elif submission:
+        item['status'] = 'Submitted'
+    elif not item.get('status'):
+        item['status'] = 'Open'
+    return item
+
+
+def _standing_from_activity_scores(rows):
+    total_row = next(
+        (row for row in rows if row.get('key') == 'total' and row.get('score') is not None),
+        None,
+    )
+    if total_row:
+        total = total_row['score']
+    else:
+        parts = [row['score'] for row in rows if row.get('key') != 'total' and row.get('score') is not None]
+        if not parts:
+            return None
+        total = round(sum(parts), 1)
+    return {
+        'ca_score': total,
+        'exam_score': 0.0,
+        'total': total,
+        'grade_letter': SchoolEngine.get_grade_letter(total),
+        'remarks': SchoolEngine.get_remarks(total),
+    }
+
+
+def build_student_period_activity_scores(grade, period, assessment_items=None):
+    """ATT–TEST rows from gradebook components and/or graded class activities."""
+    comps = _component_score_map_from_grade(grade)
+    from_assessments = {}
+    for item in assessment_items or []:
+        assessment = item.get('assessment') if isinstance(item, dict) else None
+        if not assessment:
+            continue
+        key = _component_key_for_assessment(assessment)
+        score = item.get('score')
+        if score is None:
+            score = _visible_submission_score(item.get('submission'))
+        if key and score is not None and key not in comps:
+            from_assessments[key] = score
+
+    rows = []
+    for key, code, label, max_score in PERIOD_COMPONENT_SPECS:
+        score = comps.get(key)
+        if score is None:
+            score = from_assessments.get(key)
+        rows.append({
+            'key': key,
+            'code': code,
+            'name': label,
+            'max_score': max_score,
+            'score': score,
+        })
+
+    total = _period_total_from_grade(grade, period) if grade else None
+    if total is None:
+        parts = [row['score'] for row in rows if row['score'] is not None]
+        if parts:
+            total = round(sum(parts), 1)
+    if total is not None:
+        rows.append({
+            'key': 'total',
+            'code': 'TOT',
+            'name': 'Period Total',
+            'max_score': 100.0,
+            'score': total,
+        })
+    return rows
+
+
+def canonicalize_student_subject_names(student, display_year, raw_names):
+    """Deduplicate subject pills using the division catalog."""
+    if not raw_names:
+        return []
+    year_id = display_year.id if display_year else None
+    klass = get_student_class_for_year(student, year_id) if student else None
+    division_key = resolve_from_class(
+        klass,
+        getattr(student, 'level', None) if student else None,
+        getattr(student, 'grade_level', None) if student else None,
+    )
+    return order_subjects_by_catalog(list(raw_names), division_key, keep_unknown=True)
 
 
 MOE_ACTIVITY_TYPES = ['Assignment', 'Class Work', 'Quiz', 'Test', 'Exam']
@@ -2113,11 +2719,23 @@ def promotion_pass_score():
 
 
 def max_failing_subjects_for_promotion():
-    """Maximum failing subjects allowed for promotion (default 2)."""
+    """Failing YRLY AVE count that assigns Summer School (default 2).
+
+    Printed red marks are subject yearly averages below the MoE pass mark.
+    Fewer than this (0 or 1) may still promote if the overall yearly average
+    also meets the pass mark. Exactly this many → Summer School (retained in
+    the current class, not promoted). More than this → Repeat class,
+    regardless of overall average.
+    """
     try:
         return int(current_app.config.get('MAX_FAILING_SUBJECTS', 2))
     except RuntimeError:
         return 2
+
+
+def repeat_class_failing_subject_threshold():
+    """Failing YRLY AVE count at or above which the student repeats class."""
+    return max_failing_subjects_for_promotion() + 1
 
 
 def _subject_key(name):
@@ -2125,10 +2743,10 @@ def _subject_key(name):
 
 
 def subjects_match(left, right):
-    """Case-insensitive subject name comparison."""
+    """Compare subject names ignoring case, spacing, and catalog aliases."""
     if not left or not right:
         return False
-    return _subject_key(left) == _subject_key(right)
+    return subject_match_key(left) == subject_match_key(right)
 
 
 def find_class_for_student_grade(grade_level, stream=None, old_class_id=None):
@@ -2138,11 +2756,15 @@ def find_class_for_student_grade(grade_level, stream=None, old_class_id=None):
 
     requested_grade_numeric = _parse_grade_level(grade_level)
     requested_grade_key = str(grade_level).strip()
+    requested_canon = canonical_grade_value(grade_level)
 
     def class_matches(klass):
         klass_grade_numeric = _parse_grade_level(klass.grade_level)
         if requested_grade_numeric is not None:
             return klass_grade_numeric == requested_grade_numeric
+        klass_canon = canonical_grade_value(klass.grade_level, klass.name)
+        if requested_canon and klass_canon:
+            return requested_canon == klass_canon
         return klass.grade_level == requested_grade_key
 
     if old_class_id:
@@ -2199,27 +2821,31 @@ def get_active_academic_year():
 
     Prefers the row flagged ``is_active=True``. When none is flagged, falls back
     to the latest year whose end date has not passed, then the latest by start.
+    Cached once per request so dashboards do not re-query the years table.
     """
+    if has_app_context() and hasattr(g, '_flpa_active_year'):
+        return g._flpa_active_year
+
     explicit = (
         AcademicYear.query.filter_by(is_active=True)
         .order_by(AcademicYear.start_date.desc())
         .first()
     )
-    if explicit:
-        return explicit
-
-    today = datetime.now(timezone.utc).date()
-    open_year = (
-        AcademicYear.query.filter(
-            or_(AcademicYear.end_date.is_(None), AcademicYear.end_date >= today)
+    year = explicit
+    if year is None:
+        today = datetime.now(timezone.utc).date()
+        year = (
+            AcademicYear.query.filter(
+                or_(AcademicYear.end_date.is_(None), AcademicYear.end_date >= today)
+            )
+            .order_by(AcademicYear.start_date.desc())
+            .first()
         )
-        .order_by(AcademicYear.start_date.desc())
-        .first()
-    )
-    if open_year:
-        return open_year
-
-    return AcademicYear.query.order_by(AcademicYear.start_date.desc()).first()
+    if year is None:
+        year = AcademicYear.query.order_by(AcademicYear.start_date.desc()).first()
+    if has_app_context():
+        g._flpa_active_year = year
+    return year
 
 
 def resolve_teacher_attendance_year():
@@ -2236,15 +2862,10 @@ def _attendance_year_id(academic_year=None):
 
 
 def apply_attendance_year_filter(query, academic_year_id):
-    """Limit attendance rows to the current session (includes legacy null-year rows)."""
+    """Limit attendance rows to one academic-year folder only."""
     if not academic_year_id:
         return query
-    return query.filter(
-        or_(
-            Attendance.academic_year_id == academic_year_id,
-            Attendance.academic_year_id.is_(None),
-        )
-    )
+    return query.filter(Attendance.academic_year_id == academic_year_id)
 
 
 def _set_active_academic_year(year):
@@ -2255,6 +2876,10 @@ def _set_active_academic_year(year):
         .values(is_active=False)
     )
     year.is_active = True
+    if has_app_context() and hasattr(g, '_flpa_active_year'):
+        delattr(g, '_flpa_active_year')
+    if has_request_context() and hasattr(g, '_flpa_all_years'):
+        delattr(g, '_flpa_all_years')
 
 
 def _active_academic_year():
@@ -2485,6 +3110,10 @@ def sync_student_class_assignment(student, *, commit=False):
     if not student or student_is_alumni(student):
         return False
 
+    status = (student.status or '').upper()
+    if status in ('SUMMER_SCHOOL', 'REPEAT', 'FAILED'):
+        return False
+
     changed = False
     grade = _student_grade_level(student)
 
@@ -2546,6 +3175,9 @@ def get_class_subjects_for_student(student, academic_year_id=None):
         name = grade.subject_name or grade.subject
         if name:
             subjects.add(name)
+    if not subjects:
+        klass = db.session.get(Class, class_id)
+        subjects.update(official_subjects_for_class(klass))
     return sorted(subjects, key=str.lower)
 
 
@@ -2704,33 +3336,62 @@ def sync_draft_period_grade(student, subject_name, marking_period, teacher_id=No
 
 def build_student_academic_portal(student, display_year, selected_subject=None, selected_period=None):
     """Assemble student-facing activity scores and draft/published standings."""
+    empty = {
+        'subjects': [],
+        'selected_subject': None,
+        'selected_period': selected_period or 1,
+        'activity_scores': [],
+        'draft_standing': None,
+        'published_standing': None,
+        'activity_feed': [],
+        'grading_periods': GRADING_PERIODS,
+    }
     if not student or not display_year:
-        return {
-            'subjects': [],
-            'selected_subject': None,
-            'selected_period': selected_period or 1,
-            'activity_scores': [],
-            'draft_standing': None,
-            'published_standing': None,
-            'activity_feed': [],
-        }
+        return empty
 
     if selected_period is None:
         selected_period = 1
 
+    year_id = display_year.id
+    class_id = get_student_class_id(student, year_id)
+    klass = get_student_class_for_year(student, year_id)
+    division_key = resolve_from_class(
+        klass,
+        getattr(student, 'level', None),
+        getattr(student, 'grade_level', None),
+    )
     assessments = get_student_assessments(student, display_year)
-    subjects = set(get_class_subjects_for_student(student, display_year.id))
+
+    raw_subjects = set(get_class_subjects_for_student(student, year_id))
     for assessment in assessments:
         if assessment.subject_name:
-            subjects.add(assessment.subject_name)
-    subjects = sorted(subjects, key=str.lower)
+            raw_subjects.add(assessment.subject_name)
+    for grade in Grade.query.filter_by(student_id=student.id, academic_year_id=year_id).all():
+        name = grade.subject_name or grade.subject
+        if name:
+            raw_subjects.add(name)
+    subjects = canonicalize_student_subject_names(student, display_year, raw_subjects)
+
+    if selected_subject:
+        for name in subjects:
+            if subjects_match(name, selected_subject):
+                selected_subject = name
+                break
+        else:
+            selected_subject = canonical_subject_name(selected_subject, division_key) or selected_subject
 
     if not selected_subject:
         period_assessments = [
             a for a in assessments if (a.marking_period or 1) == selected_period
         ]
         if period_assessments:
-            selected_subject = period_assessments[0].subject_name
+            sel_raw = period_assessments[0].subject_name
+            for name in subjects:
+                if subjects_match(name, sel_raw):
+                    selected_subject = name
+                    break
+            else:
+                selected_subject = canonical_subject_name(sel_raw, division_key) or sel_raw
         elif subjects:
             selected_subject = subjects[0]
 
@@ -2754,124 +3415,846 @@ def build_student_academic_portal(student, display_year, selected_subject=None, 
             'assessment': assessment,
             'submission': submission,
             'type_label': assessment.activity_type or 'Assignment',
-            'score': submission.score if submission and submission.is_graded else None,
+            'score': _visible_submission_score(submission),
             'max_score': assessment.max_score or 100,
             'status': (
-                'Graded' if submission and submission.is_graded
+                'Graded' if _visible_submission_score(submission) is not None
                 else 'Submitted' if submission
-                else 'Pending'
+                else 'Open'
             ),
         })
 
-    draft_grade = find_grade_record(
+    draft_grade, published_grade = find_student_period_grade_pair(
         student.id,
         selected_subject,
         selected_period,
-        class_id=get_student_class_id(student, display_year.id),
-        academic_year_id=display_year.id,
-    ) if selected_subject else None
+        academic_year_id=year_id,
+        class_id=class_id,
+    ) if selected_subject else (None, None)
 
-    published_grade = draft_grade if draft_grade and draft_grade.submitted else None
-    draft_standing = draft_grade if draft_grade and not draft_grade.submitted else None
+    score_source = draft_grade or published_grade
+    component_map = _component_score_map_from_grade(score_source)
+    for item in activity_feed:
+        _annotate_activity_item(item, component_map)
 
-    if draft_standing:
-        draft_standing = {
-            'ca_score': draft_standing.ca_score,
-            'exam_score': draft_standing.exam_score,
-            'total': draft_standing.score,
-            'grade_letter': SchoolEngine.get_grade_letter(draft_standing.score),
-            'remarks': draft_standing.remarks,
-        }
+    activity_scores = build_student_period_activity_scores(
+        score_source, selected_period, activity_feed
+    )
+    filled_map = {
+        row['key']: row['score']
+        for row in activity_scores
+        if row.get('score') is not None
+    }
+    for item in activity_feed:
+        _annotate_activity_item(item, filled_map)
 
-    if published_grade:
-        published_grade = {
-            'ca_score': published_grade.ca_score,
-            'exam_score': published_grade.exam_score,
-            'total': published_grade.score,
-            'grade_letter': SchoolEngine.get_grade_letter(published_grade.score),
-            'remarks': published_grade.remarks,
-        }
+    draft_standing = (
+        _standing_dict_from_grade(draft_grade, selected_period) if draft_grade else None
+    )
+    published_standing = (
+        _standing_dict_from_grade(published_grade, selected_period) if published_grade else None
+    )
+    if published_standing and not is_grade_package_approved(year_id, class_id, selected_period):
+        published_standing = None
+    if not draft_standing and not published_standing:
+        draft_standing = _standing_from_activity_scores(activity_scores)
 
     return {
         'subjects': [{'name': name} for name in subjects],
         'selected_subject': selected_subject,
         'selected_period': selected_period,
         'activity_feed': activity_feed,
+        'activity_scores': activity_scores,
         'draft_standing': draft_standing,
-        'published_standing': published_grade,
+        'published_standing': published_standing,
         'grading_periods': GRADING_PERIODS,
     }
 
 
-def official_grade_records(student_id, academic_year_id=None):
+def official_grade_records(student_id, academic_year_id=None, *, approved_only=False):
     """Grades that may appear on official report cards."""
     query = Grade.query.filter_by(student_id=student_id, submitted=True)
     if academic_year_id:
         query = query.filter_by(academic_year_id=academic_year_id)
-    return query.all()
+    grades = query.all()
+    if approved_only:
+        grades = [grade for grade in grades if grade_period_is_student_visible(grade)]
+    return grades
 
 
-def build_report_card_structured_data(student, year_id=None):
-    """MoE report-card matrix from published grades for one academic year."""
+def _grade_release_period(grade):
+    """VPA package key: the school's marking period number (1–6, exam 7/8)."""
+    return _grade_period_number(grade)
+
+
+def _requested_marking_period():
+    """Optional single-period view from ?period= (same keys as _grade_period_number)."""
+    period = request.args.get('period', type=int)
+    if period in range(1, 9):
+        return period
+    return None
+
+
+def _sort_marking_periods(periods):
+    order = {num: index for index, (num, _label) in enumerate(GRADING_PERIODS)}
+    return sorted(
+        (period for period in periods if period in range(1, 9)),
+        key=lambda period: (order.get(period, 90 + period), period),
+    )
+
+
+def awaiting_vpa_periods_note(pending_periods):
+    """Professional FLPA note when some periods are approved and others are not."""
+    labels = [grading_period_label(period) for period in _sort_marking_periods(pending_periods)]
+    if not labels:
+        return None
+    if len(labels) == 1:
+        return (
+            f'Official scores are shown for periods already approved by the Vice Principal '
+            f'for Academics. {labels[0]} is awaiting VPA approval and is not yet released.'
+        )
+    listed = ', '.join(labels[:-1]) + f', and {labels[-1]}'
+    return (
+        f'Official scores are shown for periods already approved by the Vice Principal '
+        f'for Academics. {listed} are awaiting VPA approval and are not yet released.'
+    )
+
+
+def get_or_create_grade_release(academic_year_id, class_id, period):
+    """One approval package per academic year, class, and marking period."""
+    if not academic_year_id or not class_id or period not in range(1, 9):
+        return None
+    release = GradeRelease.query.filter_by(
+        academic_year_id=academic_year_id,
+        class_id=class_id,
+        period=period,
+    ).first()
+    if release:
+        return release
+    release = GradeRelease(
+        academic_year_id=academic_year_id,
+        class_id=class_id,
+        period=period,
+        status=GradeRelease.STATUS_DRAFT,
+    )
+    db.session.add(release)
+    db.session.flush()
+    return release
+
+
+def class_period_has_submitted_grades(academic_year_id, class_id, period):
+    if not academic_year_id or not class_id or period not in range(1, 9):
+        return False
+    for grade in Grade.query.filter_by(
+        class_id=class_id,
+        academic_year_id=academic_year_id,
+        submitted=True,
+    ).all():
+        if _grade_release_period(grade) == period:
+            return True
+    return False
+
+
+def mark_grade_package_pending_vpa(academic_year_id, class_id, period, actor_id=None):
+    """Teacher/principal publish (or republish) — reset to pending VPA approval."""
+    release = get_or_create_grade_release(academic_year_id, class_id, period)
+    if not release:
+        return None
+    now = datetime.now(timezone.utc)
+    release.status = GradeRelease.STATUS_PENDING_VPA
+    release.published_by_id = actor_id or release.published_by_id
+    release.published_at = now
+    release.approved_by_id = None
+    release.approved_at = None
+    release.returned_by_id = None
+    release.returned_at = None
+    return release
+
+
+def reconcile_grade_package_after_save(
+    academic_year_id, class_id, period, *, published, actor_id=None,
+):
+    """Keep the class/period release in sync after a teacher or principal save."""
+    if published:
+        return mark_grade_package_pending_vpa(
+            academic_year_id, class_id, period, actor_id=actor_id,
+        )
+    release = GradeRelease.query.filter_by(
+        academic_year_id=academic_year_id,
+        class_id=class_id,
+        period=period,
+    ).first()
+    if not release:
+        return None
+    if not class_period_has_submitted_grades(academic_year_id, class_id, period):
+        release.status = GradeRelease.STATUS_DRAFT
+        release.approved_by_id = None
+        release.approved_at = None
+        return release
+    if release.status == GradeRelease.STATUS_APPROVED:
+        return mark_grade_package_pending_vpa(
+            academic_year_id, class_id, period, actor_id=actor_id,
+        )
+    return release
+
+
+def is_grade_package_approved(academic_year_id, class_id, period):
+    if not academic_year_id or not class_id or period not in range(1, 9):
+        return False
+    release = GradeRelease.query.filter_by(
+        academic_year_id=academic_year_id,
+        class_id=class_id,
+        period=period,
+    ).first()
+    return bool(release and release.status == GradeRelease.STATUS_APPROVED)
+
+
+def grade_period_is_student_visible(grade):
+    if not grade or not grade.submitted:
+        return False
+    period = _grade_release_period(grade)
+    class_id = grade.class_id
+    if not class_id and grade.student_id:
+        student = db.session.get(Student, grade.student_id)
+        class_id = get_student_class_id(student, grade.academic_year_id) if student else None
+    return is_grade_package_approved(grade.academic_year_id, class_id, period)
+
+
+def student_official_documents_state(student, year_id, period=None):
+    """Whether official report card / grade sheet may be shown to a student or parent.
+
+    Approval is per marking period. A full-year sheet unlocks when any period is
+    approved; later pending periods stay off the document and are named in a note.
+    A single-period view gates only that period.
+    """
+    empty = {
+        'unlocked': False,
+        'hold': False,
+        'empty': True,
+        'status': None,
+        'class_id': None,
+        'pending_count': 0,
+        'approved_count': 0,
+        'approved_periods': [],
+        'pending_periods': [],
+        'awaiting_note': None,
+        'view_period': period,
+    }
+    if not student or not year_id:
+        return empty
+
+    klass = get_student_class_for_year(student, year_id)
+    class_id = klass.id if klass else get_student_class_id(student, year_id)
+    submitted = official_grade_records(student.id, year_id)
+    if not submitted:
+        return {**empty, 'class_id': class_id}
+
+    periods = set()
+    for grade in submitted:
+        grade_period = _grade_release_period(grade)
+        if grade_period in range(1, 9):
+            periods.add(grade_period)
+    if not periods:
+        return {**empty, 'class_id': class_id, 'empty': True}
+
+    if period in range(1, 9):
+        periods = {period} if period in periods else set()
+        if not periods:
+            return {**empty, 'class_id': class_id, 'empty': True, 'view_period': period}
+
+    pending_periods = []
+    approved_periods = []
+    returned_count = 0
+    for check_period in _sort_marking_periods(periods):
+        pkg_class_id = class_id
+        sample = next(
+            (g for g in submitted if _grade_release_period(g) == check_period and g.class_id),
+            None,
+        )
+        if sample and sample.class_id:
+            pkg_class_id = sample.class_id
+        if is_grade_package_approved(year_id, pkg_class_id, check_period):
+            approved_periods.append(check_period)
+            continue
+        release = GradeRelease.query.filter_by(
+            academic_year_id=year_id, class_id=pkg_class_id, period=check_period,
+        ).first()
+        if release and release.status == GradeRelease.STATUS_RETURNED:
+            returned_count += 1
+        pending_periods.append(check_period)
+
+    approved_count = len(approved_periods)
+    pending_count = len(pending_periods)
+    single_period = period in range(1, 9)
+    if single_period:
+        unlocked = approved_count > 0
+        hold = not unlocked and pending_count > 0
+    else:
+        unlocked = approved_count > 0
+        hold = approved_count == 0 and pending_count > 0
+    awaiting_note = awaiting_vpa_periods_note(pending_periods) if unlocked and pending_count else None
+    return {
+        'unlocked': unlocked,
+        'hold': hold,
+        'empty': False,
+        'status': (
+            GradeRelease.STATUS_APPROVED if unlocked and not pending_count
+            else GradeRelease.STATUS_RETURNED if returned_count and not approved_count
+            else GradeRelease.STATUS_PENDING_VPA if pending_count
+            else GradeRelease.STATUS_APPROVED if unlocked
+            else None
+        ),
+        'class_id': class_id,
+        'pending_count': pending_count,
+        'approved_count': approved_count,
+        'approved_periods': approved_periods,
+        'pending_periods': pending_periods,
+        'awaiting_note': awaiting_note,
+        'view_period': period,
+    }
+
+
+def viewer_can_see_unreleased_official_grades():
+    """Staff may review internally; students and parents must wait for VPA approval."""
+    if not current_user.is_authenticated:
+        return False
+    return normalize_role(current_user) in STAFF_INTERNAL_GRADE_ROLES
+
+
+def render_official_grade_hold(student, display_year, *, parent_qr_view=False, parent_report_token=None):
+    return render_template(
+        'student/report_hold.html',
+        student=student,
+        display_year=display_year,
+        hold_message=STUDENT_GRADE_HOLD_MESSAGE,
+        parent_qr_view=parent_qr_view,
+        parent_report_token=parent_report_token,
+        school_print_brand=school_print_brand(),
+    )
+
+
+def official_transcript_is_released(student_id, academic_year_id):
+    """True when a student-year approval or a school-wide year release exists."""
+    if not academic_year_id:
+        return False
+    year_wide = TranscriptRelease.query.filter(
+        TranscriptRelease.academic_year_id == academic_year_id,
+        TranscriptRelease.student_id.is_(None),
+        TranscriptRelease.status == TranscriptRelease.STATUS_APPROVED,
+    ).first()
+    if year_wide:
+        return True
+    if not student_id:
+        return False
+    return TranscriptRelease.query.filter_by(
+        academic_year_id=academic_year_id,
+        student_id=student_id,
+        status=TranscriptRelease.STATUS_APPROVED,
+    ).first() is not None
+
+
+def viewer_must_wait_for_transcript_release(student, year_id):
+    """Staff printers skip the gate; students and parents wait for administration."""
+    if canonical_role(current_user) in OFFICIAL_TRANSCRIPT_STAFF_ROLES:
+        return False
+    return not official_transcript_is_released(
+        getattr(student, 'id', None), year_id,
+    )
+
+
+def render_official_transcript_hold(student, display_year, *, parent_qr_view=False, parent_report_token=None):
+    return render_template(
+        'student/report_hold.html',
+        student=student,
+        display_year=display_year,
+        hold_page_title='Transcript Not Released',
+        hold_title='Official Transcript is not released yet',
+        hold_message=STUDENT_TRANSCRIPT_HOLD_MESSAGE,
+        hold_meta=(
+            'The registrar, VPA, and Principal may still print internally. '
+            'Your portal copy unlocks after school administration approves this academic year.'
+        ),
+        parent_qr_view=parent_qr_view,
+        parent_report_token=parent_report_token,
+        school_print_brand=school_print_brand(),
+    ), 403
+
+
+def get_or_create_transcript_release(academic_year_id, student_id=None):
+    query = TranscriptRelease.query.filter_by(academic_year_id=academic_year_id)
+    if student_id is None:
+        release = query.filter(TranscriptRelease.student_id.is_(None)).first()
+    else:
+        release = query.filter_by(student_id=student_id).first()
+    if release:
+        return release
+    release = TranscriptRelease(
+        academic_year_id=academic_year_id,
+        student_id=student_id,
+        status=TranscriptRelease.STATUS_APPROVED,
+    )
+    db.session.add(release)
+    return release
+
+
+def approve_official_transcript(academic_year_id, student_id=None, user=None, comment=None):
+    release = get_or_create_transcript_release(academic_year_id, student_id)
+    release.status = TranscriptRelease.STATUS_APPROVED
+    release.approved_by_id = getattr(user, 'id', None)
+    release.approved_at = datetime.now(timezone.utc)
+    if comment:
+        release.review_comment = comment
+    db.session.commit()
+    return release
+
+
+def count_pending_transcript_releases(display_year):
+    """Students in the year still waiting for an Official Transcript release."""
+    if not display_year:
+        return 0
+    if TranscriptRelease.query.filter(
+        TranscriptRelease.academic_year_id == display_year.id,
+        TranscriptRelease.student_id.is_(None),
+        TranscriptRelease.status == TranscriptRelease.STATUS_APPROVED,
+    ).first():
+        return 0
+    student_ids = [
+        row[0]
+        for row in _students_for_display_year(display_year, history_mode=True)
+        .with_entities(Student.id)
+        .all()
+    ]
+    if not student_ids:
+        return 0
+    approved_ids = {
+        row[0]
+        for row in TranscriptRelease.query.filter(
+            TranscriptRelease.academic_year_id == display_year.id,
+            TranscriptRelease.student_id.in_(student_ids),
+            TranscriptRelease.status == TranscriptRelease.STATUS_APPROVED,
+        ).with_entities(TranscriptRelease.student_id).all()
+        if row[0]
+    }
+    return max(0, len(set(student_ids) - approved_ids) )
+
+
+def _ordinal_rank(n):
+    """1st, 2nd, 3rd, 4th — used on the official rank line."""
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return ''
+    if n <= 0:
+        return ''
+    if 10 <= (n % 100) <= 20:
+        suffix = 'th'
+    else:
+        suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')
+    return f'{n}{suffix}'
+
+
+def _competition_ranks(averages_by_id):
+    """Map student_id → rank using standard competition ranking (1, 2, 2, 4).
+
+    Highest average is rank 1. Tied averages share a rank; the next rank
+    skips ahead by the size of the tie (school-typical 1224, not dense 1223).
+    """
+    ranked = sorted(
+        ((sid, avg) for sid, avg in (averages_by_id or {}).items() if avg is not None),
+        key=lambda item: (-item[1], item[0]),
+    )
+    ranks = {}
+    index = 0
+    while index < len(ranked):
+        avg = ranked[index][1]
+        end = index + 1
+        while end < len(ranked) and ranked[end][1] == avg:
+            end += 1
+        rank = index + 1
+        for pos in range(index, end):
+            ranks[ranked[pos][0]] = rank
+        index = end
+    return ranks
+
+
+def _collect_official_period_scores(sub_grades, visible_periods=None):
+    """Period cells for one subject, matching the official grade sheet.
+
+    visible_periods=None includes every period (staff / unpublished-visible views).
+    When set, only those period numbers are used — the student VPA-approved view.
+    """
+    def _period_allowed(period_num):
+        if visible_periods is None:
+            return True
+        return period_num in visible_periods
+
+    scores = {}
+    for grade in sub_grades or []:
+        period_num = _grade_period_number(grade)
+        if period_num is None or not _period_allowed(period_num):
+            continue
+        displayed = display_report_score(getattr(grade, 'score', None))
+        if displayed == '' and period_num in (7, 8):
+            displayed = display_report_score(getattr(grade, 'exam_score', None))
+        if displayed != '' and period_num not in scores:
+            scores[period_num] = displayed
+    for grade in sub_grades or []:
+        for period_num in range(1, 7):
+            if period_num in scores or not _period_allowed(period_num):
+                continue
+            stored = numeric_report_score(getattr(grade, f'p{period_num}', None))
+            if stored is not None and stored != 0:
+                scores[period_num] = display_report_score(stored)
+    return scores
+
+
+def _sheet_overall_average_from_subjects(subjects):
+    """Mean of the yearly averages printed on the grade sheet / report card."""
+    yearlies = []
+    for subject in subjects or []:
+        if not isinstance(subject, dict) or subject.get('is_summary'):
+            continue
+        yearly = numeric_report_score(subject.get('final_avg') or subject.get('yearly'))
+        if yearly is not None:
+            yearlies.append(yearly)
+    if not yearlies:
+        return None
+    return round(sum(yearlies) / len(yearlies), 1)
+
+
+def _sheet_overall_average_from_grades(grades, visible_periods=None, division_key=None):
+    """Same overall average as the printed sheet, from raw grade rows."""
+    yearlies = _subject_yearly_averages_for_decision(
+        grades, visible_periods=visible_periods, division_key=division_key,
+    )
+    if not yearlies:
+        return None
+    return round(sum(yearlies) / len(yearlies), 1)
+
+
+def evaluate_class_rank(
+    student,
+    year_id,
+    *,
+    approved_only=False,
+    subjects=None,
+    visible_periods=None,
+    division_key=None,
+):
+    """Rank this student among classmates in the same klass_id for this year.
+
+    Uses the same yearly average the grade sheet prints (mean of subject
+    yearly averages from visible periods). Rank 1 is the highest average.
+
+    Ties use standard competition ranking (1, 2, 2, 4). Students with no
+    comparable visible average are omitted from the pool. If this student
+    has no scores, returns None so the sheet keeps "—".
+
+    When approved_only is True, unpublished / unapproved periods are excluded
+    so rank matches what the student can see on the sheet.
+    """
+    if not student or not year_id:
+        return None
+
+    klass = get_student_class_for_year(student, year_id)
+    if not klass:
+        # No class assignment — cannot place the student in a ranking pool.
+        return None
+
+    display_year = db.session.get(AcademicYear, year_id)
+    if not display_year:
+        return None
+
+    if approved_only:
+        if visible_periods is None:
+            release_state = student_official_documents_state(student, year_id)
+            visible_periods = set(release_state.get('approved_periods') or [])
+        else:
+            visible_periods = set(visible_periods)
+        if not visible_periods:
+            # No VPA-approved periods — same blank averages the sheet prints.
+            return None
+    else:
+        visible_periods = None
+
+    if division_key is None:
+        division_key = resolve_from_class(
+            klass,
+            getattr(student, 'level', None),
+            getattr(student, 'grade_level', None),
+        )
+
+    viewing_archived = not _is_current_academic_year(year_id)
+    roster = list(get_class_students_for_year(
+        klass.id, display_year, viewing_archived=viewing_archived,
+    ))
+    if not any(peer.id == student.id for peer in roster):
+        roster.append(student)
+
+    student_ids = [peer.id for peer in roster]
+    grades = Grade.query.filter(
+        Grade.student_id.in_(student_ids),
+        Grade.academic_year_id == year_id,
+        Grade.submitted.is_(True),
+    ).all()
+
+    by_student = {}
+    for grade in grades:
+        by_student.setdefault(grade.student_id, []).append(grade)
+
+    averages = {}
+    for sid, rows in by_student.items():
+        avg = _sheet_overall_average_from_grades(
+            rows, visible_periods, division_key,
+        )
+        if avg is not None:
+            averages[sid] = avg
+
+    # Prefer the already-rendered subject rows so this student's average
+    # matches the yearly figures printed on the sheet.
+    if subjects is not None:
+        focus_avg = _sheet_overall_average_from_subjects(subjects)
+        if focus_avg is not None:
+            averages[student.id] = focus_avg
+        elif student.id not in averages:
+            return None
+
+    if student.id not in averages:
+        return None
+
+    ranks = _competition_ranks(averages)
+    rank = ranks.get(student.id)
+    if not rank:
+        return None
+    of = len(averages)
+    return {
+        'rank': rank,
+        'of': of,
+        'average': averages[student.id],
+        'label': f'{_ordinal_rank(rank)} / {of}',
+        'method': 'competition',
+    }
+
+
+def build_report_card_structured_data(student, year_id=None, *, approved_only=False):
+    """MoE report-card matrix from published grades for one academic year.
+
+    When approved_only is True, only VPA-approved marking periods appear. Later
+    pending periods stay blank and are named in awaiting_vpa_note.
+    """
+    empty = {
+        'student_name': '',
+        'student_id': '',
+        'level': '',
+        'class_name': '',
+        'academic_year': '',
+        'subjects': [],
+        'legend_rows': division_legend_rows(None),
+        'subject_heading': 'SUBJECTS',
+        'class_rank': None,
+    }
     if not student:
-        return {
-            'student_name': '',
-            'student_id': '',
-            'level': '',
-            'class_name': '',
-            'academic_year': '',
-            'subjects': [],
-        }
+        return empty
 
     display_year = db.session.get(AcademicYear, year_id) if year_id else None
-    grades_records = official_grade_records(student.id, year_id)
-    subjects_list = sorted({g.subject for g in grades_records if g.subject}, key=lambda x: x.lower())
+    klass = get_student_class_for_year(student, year_id)
+    division_key = resolve_from_class(
+        klass,
+        getattr(student, 'level', None),
+        getattr(student, 'grade_level', None),
+    )
+    doc_ctx = class_document_context(klass)
+    if division_key and division_key != doc_ctx.get('division'):
+        doc_ctx = {
+            **doc_ctx,
+            'division': division_key,
+            'division_sheet_title': division_document_titles(division_key, 'sheet'),
+            'division_report_title': division_document_titles(division_key, 'report'),
+            'subject_heading': division_subject_heading(division_key),
+        }
+
+    grades_records = official_grade_records(student.id, year_id, approved_only=approved_only)
+    release_state = (
+        student_official_documents_state(student, year_id) if student and year_id else None
+    )
+    visible_periods = None
+    if approved_only and release_state:
+        visible_periods = set(release_state.get('approved_periods') or [])
+    grouped = {}
+    first_names = {}
+    conduct_grades = []
+    for grade in grades_records:
+        raw_name = (grade.subject or grade.subject_name or '').strip()
+        if not raw_name:
+            continue
+        # Group by the catalog name when possible so punctuation, abbreviation,
+        # and legacy naming variants produce one row (for example Comp.
+        # Science, Comp.Science, Computer Science, and ICT).
+        official_name = canonical_subject_name(raw_name, division_key)
+        key = subject_match_key(official_name or raw_name)
+        if not key:
+            continue
+        if is_report_summary_subject(official_name or raw_name):
+            if is_conduct_subject(official_name or raw_name):
+                conduct_grades.append(grade)
+            continue
+        grouped.setdefault(key, []).append(grade)
+        first_names.setdefault(key, official_name or raw_name)
+
+    ordered_names = order_subjects_by_catalog(
+        list(first_names.values()),
+        division_key,
+        keep_unknown=True,
+    )
     structured_subjects = []
+    used_keys = set()
 
-    for sub_name in subjects_list:
-        sub_grades = [g for g in grades_records if g.subject == sub_name]
-
-        def _period_score(period_num):
-            match = next(
-                (
-                    g.score for g in sub_grades
-                    if (g.marking_period or normalize_grade_period(g.period)) == period_num
-                ),
-                '',
+    def _append_subject_row(display_name, sub_grades):
+        official_name = canonical_subject_name(display_name, division_key) or display_name
+        structured_subjects.append(
+            official_subject_score_row(
+                official_name,
+                _collect_official_period_scores(sub_grades, visible_periods),
+                division_key,
             )
-            return match
+        )
 
-        p1, p2, p3 = _period_score(1), _period_score(2), _period_score(3)
-        p4, p5, p6 = _period_score(4), _period_score(5), _period_score(6)
-        sem1_exam = _period_score(7)
-        sem2_exam = _period_score(8)
+    for display_name in ordered_names:
+        key = subject_match_key(display_name)
+        if not key or key in used_keys:
+            continue
+        used_keys.add(key)
+        _append_subject_row(display_name, grouped.get(key, []))
 
-        sem1_scores = [s for s in [p1, p2, p3, sem1_exam] if isinstance(s, (int, float))]
-        sem1_avg = round(sum(sem1_scores) / len(sem1_scores), 1) if sem1_scores else ''
-        sem2_scores = [s for s in [p4, p5, p6, sem2_exam] if isinstance(s, (int, float))]
-        sem2_avg = round(sum(sem2_scores) / len(sem2_scores), 1) if sem2_scores else ''
-        all_scores = sem1_scores + sem2_scores
-        final_avg = round(sum(all_scores) / len(all_scores), 1) if all_scores else ''
-        remarks = '; '.join({g.remarks for g in sub_grades if g.remarks})
+    for key, sub_grades in grouped.items():
+        if key in used_keys:
+            continue
+        used_keys.add(key)
+        _append_subject_row(first_names.get(key, key), sub_grades)
 
-        structured_subjects.append({
-            'name': sub_name,
-            'p1': p1, 'p2': p2, 'p3': p3,
-            'exam': sem1_exam,
-            'avg': sem1_avg,
-            'p4': p4, 'p5': p5, 'p6': p6,
-            'final_exam': sem2_exam,
-            'final_avg': final_avg,
-            'remarks': remarks,
-        })
+    structured_subjects.extend(
+        report_card_footer_rows(
+            structured_subjects,
+            _collect_official_period_scores(conduct_grades, visible_periods),
+            division_key,
+        )
+    )
+
+    year_label = ''
+    if display_year:
+        year_label = format_academic_year_label(display_year.name) or display_year.name
 
     return {
         'student_name': student.full_name,
         'student_id': student.student_id,
         'level': format_student_school_level(student),
         'class_name': format_student_class_name(student, year_id),
-        'academic_year': display_year.name if display_year else '',
+        'academic_year': year_label,
         'subjects': structured_subjects,
+        'legend_rows': division_legend_rows(division_key),
+        'subject_heading': doc_ctx.get('subject_heading') or 'SUBJECTS',
+        'division': division_key,
+        'division_sheet_title': doc_ctx.get('division_sheet_title'),
+        'division_report_title': doc_ctx.get('division_report_title'),
+        'school': doc_ctx.get('school'),
+        'promotion': evaluate_year_promotion_from_subject_rows(
+            structured_subjects, student, academic_year_id=year_id,
+        ),
+        'class_rank': evaluate_class_rank(
+            student,
+            year_id,
+            approved_only=approved_only,
+            subjects=structured_subjects,
+            visible_periods=visible_periods,
+            division_key=division_key,
+        ),
+        'awaiting_vpa_note': (
+            (release_state or {}).get('awaiting_note') if approved_only else None
+        ),
+        'approved_periods': list((release_state or {}).get('approved_periods') or []),
+        'pending_periods': list((release_state or {}).get('pending_periods') or []),
+    }
+
+
+def build_class_period_grade_sheet_data(class_id, period, year_id, *, approved_only=False):
+    """One class, one marking period, every student — the printable class roster.
+
+    Mirrors build_report_card_structured_data's subject matching so the
+    figures printed here always agree with each student's own report card.
+    """
+    empty = {
+        'klass': None, 'display_year': None, 'division': None, 'subjects': [],
+        'rows': [], 'period_label': grading_period_label(period), 'release': None,
+        'school': school_print_brand(),
+    }
+    klass = db.session.get(Class, class_id) if class_id else None
+    display_year = db.session.get(AcademicYear, year_id) if year_id else None
+    if not klass or not display_year or period not in range(1, 9):
+        return empty
+
+    division_key = resolve_from_class(klass)
+    doc_ctx = class_document_context(klass)
+    subject_names = order_subjects_by_catalog(
+        list(division_subjects(division_key)), division_key, keep_unknown=False,
+    )
+
+    roster = get_class_students_for_year(class_id, display_year)
+    student_ids = [s.id for s in roster]
+    visible_periods = {period} if approved_only else None
+
+    grades = Grade.query.filter(
+        Grade.class_id == class_id,
+        Grade.academic_year_id == year_id,
+        Grade.submitted.is_(True),
+        Grade.student_id.in_(student_ids or [0]),
+    ).all()
+
+    by_student = {}
+    for grade in grades:
+        raw_name = (grade.subject or grade.subject_name or '').strip()
+        if not raw_name or is_report_summary_subject(raw_name):
+            continue
+        official_name = canonical_subject_name(raw_name, division_key) or raw_name
+        key = subject_match_key(official_name)
+        if not key:
+            continue
+        by_student.setdefault(grade.student_id, {}).setdefault(key, []).append(grade)
+
+    rows = []
+    for student in roster:
+        subject_scores = by_student.get(student.id, {})
+        cells = []
+        numeric_values = []
+        for name in subject_names:
+            key = subject_match_key(name)
+            period_scores = _collect_official_period_scores(subject_scores.get(key, []), visible_periods)
+            value = period_scores.get(period, '')
+            cells.append(value)
+            numeric = numeric_report_score(value)
+            if numeric is not None:
+                numeric_values.append(numeric)
+        average = round(sum(numeric_values) / len(numeric_values), 1) if numeric_values else None
+        rows.append({
+            'student': student,
+            'scores': cells,
+            'average': average,
+        })
+
+    release = GradeRelease.query.filter_by(
+        academic_year_id=year_id, class_id=class_id, period=period,
+    ).first()
+
+    return {
+        'klass': klass,
+        'display_year': display_year,
+        'division': division_key,
+        'division_label': doc_ctx.get('division_label'),
+        'school': doc_ctx.get('school'),
+        'subjects': subject_names,
+        'rows': rows,
+        'period_label': grading_period_label(period),
+        'release': release,
+        'grading_periods': GRADING_PERIODS,
     }
 
 
@@ -2881,6 +4264,7 @@ def build_full_activity_record(student, display_year, selected_subject=None, sel
         return []
 
     assessments = get_student_assessments(student, display_year)
+    component_maps = _component_score_maps_for_student(student, display_year)
     records = []
     for assessment in assessments:
         if selected_subject and not subjects_match(assessment.subject_name, selected_subject):
@@ -2892,21 +4276,23 @@ def build_full_activity_record(student, display_year, selected_subject=None, sel
             assessment_id=assessment.id,
             student_id=student.id,
         ).first()
-        records.append({
+        item = {
             'assessment': assessment,
             'submission': submission,
             'type_label': assessment.activity_type or 'Assignment',
             'period_label': grading_period_label(period_num),
-            'score': submission.score if submission and submission.is_graded else None,
+            'score': _visible_submission_score(submission),
             'max_score': assessment.max_score or 100,
-            'status': (
-                'Graded' if submission and submission.is_graded
-                else 'Submitted' if submission
-                else 'Open'
-            ),
+            'status': 'Open',
             'submitted_at': submission.submitted_at if submission else None,
             'feedback': submission.teacher_feedback if submission else None,
-        })
+        }
+        cmap = component_maps.get(
+            (subject_match_key(assessment.subject_name), period_num),
+            {},
+        )
+        _annotate_activity_item(item, cmap)
+        records.append(item)
     return records
 
 
@@ -2915,7 +4301,7 @@ def build_student_published_grade_summary(student, display_year):
     if not student or not display_year:
         return []
 
-    grades = official_grade_records(student.id, display_year.id)
+    grades = official_grade_records(student.id, display_year.id, approved_only=True)
     summary = []
     for grade in sorted(
         grades,
@@ -2963,10 +4349,47 @@ def get_class_period_publish_stats(class_id, subject_name, period, academic_year
     }
 
 
-def provision_student_portal_account(student, email, password=None, full_name=None):
+def generate_initial_portal_password(length=8):
+    """Readable 8-character password (no ambiguous 0/O/1/l)."""
+    alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
+    size = max(8, int(length or 8))
+    return ''.join(secrets.choice(alphabet) for _ in range(size))
+
+
+REGISTRAR_CREDENTIAL_SLIP_SESSION_KEY = 'registrar_credential_slip'
+
+
+def stash_registrar_credential_password(student_id, password):
+    """Store the one-time initial password in session (never in the URL)."""
+    if not student_id or not password:
+        return
+    session[REGISTRAR_CREDENTIAL_SLIP_SESSION_KEY] = {
+        'student_id': int(student_id),
+        'password': password,
+    }
+
+
+def pop_registrar_credential_password(student_id):
+    """Read and clear the one-time initial password for this student."""
+    payload = session.pop(REGISTRAR_CREDENTIAL_SLIP_SESSION_KEY, None)
+    if not isinstance(payload, dict):
+        return None
+    try:
+        stored_id = int(payload.get('student_id'))
+    except (TypeError, ValueError):
+        return None
+    if stored_id != int(student_id):
+        return None
+    password = payload.get('password')
+    return password if password else None
+
+
+def provision_student_portal_account(student, email, password=None, full_name=None, *, must_change_password=None):
     """
     Create or update the login User for a student and link student.user_id.
-    Email is required; password defaults to 'student123' when omitted.
+    Email is required. New accounts get a secure auto-generated password when
+    none is supplied. The plaintext is attached as user._issued_initial_password
+    for the registrar credential slip (never persisted).
     """
     if not student:
         return None
@@ -2986,28 +4409,37 @@ def provision_student_portal_account(student, email, password=None, full_name=No
         if existing and existing.id != student.id:
             return None
 
+    supplied = (password or '').strip() or None
+    issued = None
+
     if not user:
+        issued = supplied or generate_initial_portal_password()
         user = User(
             email=email,
             role='student',
             full_name=display_name,
         )
-        user.set_password(password or 'student123')
+        user.set_password(issued)
+        user.must_change_password = True if must_change_password is None else bool(must_change_password)
         db.session.add(user)
         db.session.flush()
     else:
         user.role = 'student'
         user.full_name = display_name
-        if password:
-            user.set_password(password)
+        if supplied:
+            user.set_password(supplied)
+            issued = supplied
+            user.must_change_password = True if must_change_password is None else bool(must_change_password)
 
     student.user_id = user.id
-    if student.student_id:
-        username_owner = User.query.filter_by(username=student.student_id).first()
+    login_username = student.student_id or student.student_id_code
+    if login_username:
+        username_owner = User.query.filter_by(username=login_username).first()
         if not username_owner or username_owner.id == user.id:
-            user.username = student.student_id
+            user.username = login_username
     if student.photo and not user.photo:
         user.photo = student.photo
+    user._issued_initial_password = issued
     return user
 
 
@@ -3168,7 +4600,7 @@ def repair_student_portal_links():
     return repaired
 
 
-def link_student_portal_from_form(student, email, password=None):
+def link_student_portal_from_form(student, email, password=None, **kwargs):
     """Helper used by registrar registration flows."""
     if not email:
         return None
@@ -3177,7 +4609,30 @@ def link_student_portal_from_form(student, email, password=None):
         email,
         password=password,
         full_name=f"{student.first_name} {student.last_name}".strip(),
+        **kwargs,
     )
+
+
+def find_academic_year_by_name(name):
+    """Find a year by exact label or equivalent span (hyphen / en-dash / slash / 2-digit)."""
+    raw = (name or '').strip()
+    if not raw:
+        return None
+    exact = AcademicYear.query.filter_by(name=raw).first()
+    if exact:
+        return exact
+    normalized = normalize_academic_year_name(raw)
+    if normalized and normalized != raw:
+        exact = AcademicYear.query.filter_by(name=normalized).first()
+        if exact:
+            return exact
+    key = academic_year_span_key(raw)
+    if not key:
+        return None
+    for year in AcademicYear.query.all():
+        if academic_year_span_key(year.name) == key:
+            return year
+    return None
 
 
 def _academic_year_id_prefix(academic_year):
@@ -3189,9 +4644,10 @@ def _academic_year_id_prefix(academic_year):
     if not year_name:
         return str(academic_year.id)
 
-    parts = [part.strip() for part in year_name.replace('/', '-').split('-') if part.strip()]
-    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
-        return f"{parts[0][-2:]}{parts[1][-2:]}"
+    span = parse_academic_year_span(year_name)
+    if span:
+        start_y, end_y = span
+        return f'{start_y % 100:02d}{end_y % 100:02d}'
 
     digits = ''.join(char for char in year_name if char.isdigit())
     return digits[:4] or str(academic_year.id)
@@ -3422,6 +4878,11 @@ def compile_student_dashboard_context(student, display_year, request_args=None, 
             .all()
         )
 
+    official_documents = (
+        student_official_documents_state(student, year_id)
+        if student and display_year else {'unlocked': False, 'hold': False, 'empty': True}
+    )
+
     return {
         'student': student,
         'display_year': display_year,
@@ -3445,6 +4906,8 @@ def compile_student_dashboard_context(student, display_year, request_args=None, 
             selected_period if active_tab == 'activities' else portal.get('selected_period', 1)
         ),
         'activity_feed': portal.get('activity_feed', []),
+        'activity_scores': portal.get('activity_scores', []),
+        'period_scheme_note': PERIOD_COMPONENT_SCHEME_NOTE,
         'draft_standing': portal.get('draft_standing'),
         'published_standing': portal.get('published_standing'),
         'grading_periods': portal.get('grading_periods', GRADING_PERIODS),
@@ -3459,6 +4922,13 @@ def compile_student_dashboard_context(student, display_year, request_args=None, 
         'published_grade_summary': build_student_published_grade_summary(
             student, display_year
         ) if student and display_year else [],
+        'official_documents': official_documents,
+        'approved_periods': official_documents.get('approved_periods', []),
+        'pending_periods': official_documents.get('pending_periods', []),
+        'transcript_released': (
+            official_transcript_is_released(student.id, display_year.id)
+            if student and display_year else False
+        ),
         'attendance_self': build_student_self_attendance_context(student, display_year),
         **build_student_qr_context(student),
     }
@@ -3580,6 +5050,8 @@ db_path = os.path.abspath(os.path.join(INSTANCE_PATH, 'future_leaders_full.db'))
 # Assign SQLALCHEMY configuration parameters
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', f'sqlite:///{db_path}')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+from scale import apply_database_engine_options, ensure_scale_indexes, clamp_page, DASHBOARD_PAGE_SIZE, seal_academic_year_folders, recommended_waitress_threads, env_int
+apply_database_engine_options(app)
 app.config['PROMOTION_PASS_SCORE'] = int(os.environ.get('PROMOTION_PASS_SCORE', '70'))
 app.config['MAX_FAILING_SUBJECTS'] = int(os.environ.get('MAX_FAILING_SUBJECTS', '2'))
 MOE_PASSING_SCORE = app.config['PROMOTION_PASS_SCORE']
@@ -3605,39 +5077,22 @@ class AcademicManager:
 
     @staticmethod
     def calculate_annual_result(student_id):
-        """
-        Logic for Promotion/Retention at year-end.
-        Criteria: Must have 70+ average AND fail no more than 2 core subjects.
-        """
-        # Fetch all grades for the year
-        all_grades = Grade.query.filter_by(student_id=student_id).all()
-        
-        # Group by course to get the average per subject
-        subject_averages = {}
-        for g in all_grades:
-            course_id = getattr(g, 'course_id', None) or getattr(g, 'subject', None)
-            if course_id not in subject_averages:
-                subject_averages[course_id] = []
-            subject_averages[course_id].append(g.score)
-
-        failed_count = 0
-        grand_total = 0
-        subject_count = 0
-
-        for course_id, scores in subject_averages.items():
-            avg = sum(scores) / len(scores)
-            grand_total += avg
-            subject_count += 1
-            if avg < 70:  # Liberian passing mark
-                failed_count += 1
-
-        final_gpa = grand_total / subject_count if subject_count > 0 else 0
-
-        # PROMOTION LOGIC
-        if failed_count > 2 or final_gpa < 70:
-            return {"status": "RETAINED", "gpa": final_gpa, "failed_subjects": failed_count}
-        else:
-            return {"status": "PROMOTED", "gpa": final_gpa, "failed_subjects": failed_count}
+        """Year-end promotion / summer school / repeat from printed YRLY AVE marks."""
+        student = db.session.get(Student, student_id)
+        year = get_active_academic_year()
+        decision = evaluate_year_promotion_decision(student, year)
+        status_map = {
+            'PROMOTED': 'PROMOTED',
+            'GRADUATED': 'GRADUATED',
+            'SUMMER_SCHOOL': 'SUMMER_SCHOOL',
+            'REPEAT': 'RETAINED',
+            'INCOMPLETE': 'RETAINED',
+        }
+        return {
+            'status': status_map.get(decision.get('code'), 'RETAINED'),
+            'gpa': decision.get('overall_average') or 0,
+            'failed_subjects': decision.get('failing_subject_count') or 0,
+        }
 
 
 # -------------------------------------------------------------------
@@ -3838,8 +5293,12 @@ def ensure_legacy_sqlite_schema():
             "secure_qr_token": "VARCHAR(128)",
             "parent_id": "INTEGER",
             "parent_phone": "VARCHAR(20)",
+            "guardian_name": "VARCHAR(120)",
             "parent_report_token": "VARCHAR(128)",
             "parent_report_pin_hash": "VARCHAR(200)",
+            "signature_filename": "VARCHAR(200)",
+            "id_card_ready": "BOOLEAN DEFAULT 0",
+            "id_expiration_date": "DATE",
         },
         "student_payments": {
             "installment": "INTEGER",
@@ -3849,6 +5308,7 @@ def ensure_legacy_sqlite_schema():
             "academic_year_id": "INTEGER",
             "class_id": "INTEGER",
             "marking_period": "INTEGER",
+            "component_scores": "TEXT",
         },
         "assessments": {
             "subject_name": "VARCHAR(100)",
@@ -3889,6 +5349,11 @@ def ensure_legacy_sqlite_schema():
             "totp_secret": "VARCHAR(32)",
             "home_address": "VARCHAR(255)",
             "telephone_number": "VARCHAR(20)",
+            "must_change_password": "BOOLEAN DEFAULT 0",
+            "id_card_photo_path": "VARCHAR(200)",
+            "id_card_signature_path": "VARCHAR(200)",
+            "id_expiration_date": "DATE",
+            "staff_id_card_ready": "BOOLEAN DEFAULT 0",
         },
         "announcements": {
             "content": "TEXT DEFAULT ''",
@@ -3943,6 +5408,171 @@ def ensure_legacy_sqlite_schema():
         db.session.commit()
     except Exception:
         db.session.rollback()
+
+
+def ensure_grade_releases_table():
+    """Create grade_releases if missing and grandfather previously published packages."""
+    existing = {
+        row[1]
+        for row in db.session.execute(text('PRAGMA table_info("grade_releases")')).fetchall()
+    }
+    if not existing:
+        db.session.execute(text(
+            """
+            CREATE TABLE IF NOT EXISTS grade_releases (
+                id INTEGER PRIMARY KEY,
+                academic_year_id INTEGER NOT NULL,
+                class_id INTEGER NOT NULL,
+                period INTEGER NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'draft',
+                published_by_id INTEGER,
+                published_at DATETIME,
+                approved_by_id INTEGER,
+                approved_at DATETIME,
+                returned_by_id INTEGER,
+                returned_at DATETIME,
+                review_comment TEXT,
+                FOREIGN KEY(academic_year_id) REFERENCES academic_years(id) ON DELETE CASCADE,
+                FOREIGN KEY(class_id) REFERENCES classes(id) ON DELETE CASCADE,
+                FOREIGN KEY(published_by_id) REFERENCES users(id) ON DELETE SET NULL,
+                FOREIGN KEY(approved_by_id) REFERENCES users(id) ON DELETE SET NULL,
+                FOREIGN KEY(returned_by_id) REFERENCES users(id) ON DELETE SET NULL,
+                UNIQUE(academic_year_id, class_id, period)
+            )
+            """
+        ))
+        db.session.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_grade_releases_status ON grade_releases(status)'
+        ))
+        db.session.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_grade_releases_year_class '
+            'ON grade_releases(academic_year_id, class_id)'
+        ))
+        db.session.execute(text(
+            'CREATE UNIQUE INDEX IF NOT EXISTS uq_grade_release_year_class_period '
+            'ON grade_releases(academic_year_id, class_id, period)'
+        ))
+        db.session.commit()
+        existing = {
+            row[1]
+            for row in db.session.execute(text('PRAGMA table_info("grade_releases")')).fetchall()
+        }
+
+    columns = {
+        "academic_year_id": "INTEGER",
+        "class_id": "INTEGER",
+        "period": "INTEGER",
+        "status": "VARCHAR(20) DEFAULT 'draft'",
+        "published_by_id": "INTEGER",
+        "published_at": "DATETIME",
+        "approved_by_id": "INTEGER",
+        "approved_at": "DATETIME",
+        "returned_by_id": "INTEGER",
+        "returned_at": "DATETIME",
+        "review_comment": "TEXT",
+    }
+    for column_name, column_type in columns.items():
+        if column_name not in existing:
+            db.session.execute(
+                text(f'ALTER TABLE grade_releases ADD COLUMN {column_name} {column_type}')
+            )
+    db.session.commit()
+    try:
+        db.session.execute(text(
+            'CREATE UNIQUE INDEX IF NOT EXISTS uq_grade_release_year_class_period '
+            'ON grade_releases(academic_year_id, class_id, period)'
+        ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    _grandfather_existing_grade_releases()
+
+
+def _grandfather_existing_grade_releases():
+    """Existing submitted class/period packages stay visible until a teacher republishes."""
+    now = datetime.now(timezone.utc)
+    seen = set()
+    for grade in Grade.query.filter_by(submitted=True).all():
+        period = _grade_release_period(grade)
+        class_id = grade.class_id
+        year_id = grade.academic_year_id
+        if not class_id or not year_id or period not in range(1, 9):
+            continue
+        key = (year_id, class_id, period)
+        if key in seen:
+            continue
+        seen.add(key)
+        existing = GradeRelease.query.filter_by(
+            academic_year_id=year_id, class_id=class_id, period=period,
+        ).first()
+        if existing:
+            continue
+        db.session.add(GradeRelease(
+            academic_year_id=year_id,
+            class_id=class_id,
+            period=period,
+            status=GradeRelease.STATUS_APPROVED,
+            published_at=now,
+            approved_at=now,
+            review_comment='Backfilled from previously published grades.',
+        ))
+    db.session.commit()
+
+
+def ensure_transcript_releases_table():
+    """Create transcript_releases if missing so portal gates work on existing databases."""
+    existing = {
+        row[1]
+        for row in db.session.execute(text('PRAGMA table_info("transcript_releases")')).fetchall()
+    }
+    if not existing:
+        db.session.execute(text(
+            """
+            CREATE TABLE IF NOT EXISTS transcript_releases (
+                id INTEGER PRIMARY KEY,
+                academic_year_id INTEGER NOT NULL,
+                student_id INTEGER,
+                status VARCHAR(20) NOT NULL DEFAULT 'approved',
+                approved_by_id INTEGER,
+                approved_at DATETIME,
+                review_comment TEXT,
+                FOREIGN KEY(academic_year_id) REFERENCES academic_years(id) ON DELETE CASCADE,
+                FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE,
+                FOREIGN KEY(approved_by_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+        ))
+        db.session.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_transcript_releases_status ON transcript_releases(status)'
+        ))
+        db.session.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_transcript_releases_year_student '
+            'ON transcript_releases(academic_year_id, student_id)'
+        ))
+        db.session.commit()
+        existing = {
+            row[1]
+            for row in db.session.execute(text('PRAGMA table_info("transcript_releases")')).fetchall()
+        }
+
+    columns = {
+        "academic_year_id": "INTEGER",
+        "student_id": "INTEGER",
+        "status": "VARCHAR(20) DEFAULT 'approved'",
+        "approved_by_id": "INTEGER",
+        "approved_at": "DATETIME",
+        "review_comment": "TEXT",
+    }
+    for column_name, column_type in columns.items():
+        if column_name not in existing:
+            db.session.execute(
+                text(f'ALTER TABLE transcript_releases ADD COLUMN {column_name} {column_type}')
+            )
+    db.session.commit()
+    try:
+        db.session.execute(text('PRAGMA wal_checkpoint(PASSIVE)'))
+    except Exception:
+        pass
 
 
 def repair_submission_legacy_links():
@@ -4012,6 +5642,22 @@ def activity_file_icon_filter(filename):
 def marking_period_label_filter(period_num):
     return grading_period_label(period_num)
 
+@app.template_filter('subjects_match')
+def subjects_match_filter(left, right):
+    return subjects_match(left, right)
+
+
+@app.template_filter('score_mark_class')
+def score_mark_class_filter(value):
+    """Pass (blue) vs fail (red) class for official grade-sheet cells."""
+    num = numeric_report_score(value)
+    if num is None:
+        return 'mark-empty'
+    threshold = promotion_pass_score()
+    if num < threshold:
+        return 'mark-fail'
+    return 'mark-pass'
+
 SYSTEM_ARCHITECT_NAME = os.environ.get('SYSTEM_ARCHITECT_NAME', 'Francis Brownell')
 
 
@@ -4068,6 +5714,27 @@ def enforce_system_license():
     ), 503
 
 
+_PASSWORD_CHANGE_EXEMPT_ENDPOINTS = frozenset({
+    'account_settings', 'logout', 'login', 'static',
+})
+
+
+@app.before_request
+def enforce_initial_password_change():
+    """Students issued an initial password must change it before using the portal."""
+    if not getattr(current_user, 'is_authenticated', False):
+        return None
+    if not getattr(current_user, 'must_change_password', False):
+        return None
+    endpoint = request.endpoint
+    if not endpoint or endpoint in _PASSWORD_CHANGE_EXEMPT_ENDPOINTS:
+        return None
+    if request.path.startswith('/static'):
+        return None
+    flash('Please change your initial password before continuing.', 'warning')
+    return redirect(url_for('account_settings'))
+
+
 @app.context_processor
 def inject_nav_flags():
     role = getattr(current_user, "role", None)
@@ -4079,7 +5746,9 @@ def inject_nav_flags():
         settings = None
         system_is_active = True
     return {
-        "announcements_link": role_lower in {"admin", "teacher", "principal", "vpa", "dean"},
+        "announcements_link": role_lower in {"admin", "teacher", "principal", "vpa", "vpi", "dean"},
+        "is_vpa_office": role_lower == "vpa",
+        "is_vpi_office": role_lower == "vpi",
         "can_manage_leaders": role_lower in {"admin", "principal"},
         "can_manage_events": role_lower in COMMUNICATIONS_MANAGER_ROLES,
         "can_manage_school_media": role_lower in SCHOOL_MEDIA_MANAGER_ROLES,
@@ -4097,6 +5766,19 @@ def inject_nav_flags():
         "school_video_max_mb": SCHOOL_VIDEO_MAX_MB,
         "video_mime_type": _school_media_video_mime,
         "format_video_duration": _format_video_duration,
+        "current_year": datetime.now(timezone.utc).year,
+        "school_print_brand": school_print_brand(),
+        "school_logo_url": school_logo_static_url(),
+        "liberia_seal_url": liberia_seal_static_url(),
+        "default_avatar_url": default_static_photo_url(),
+        "can_issue_id_cards": (
+            getattr(current_user, "is_authenticated", False)
+            and canonical_role(current_user) in {"admin", "principal", "registrar"}
+        ),
+        "can_print_official_transcript": (
+            getattr(current_user, "is_authenticated", False)
+            and canonical_role(current_user) in OFFICIAL_TRANSCRIPT_STAFF_ROLES
+        ),
     }
 
 # -------------------------------------------------------------------
@@ -4190,13 +5872,20 @@ def login():
                 flash('The system is on hold. Contact the administrator to renew service.', 'danger')
                 return render_template('login.html', form=form)
             login_user(user)
-            flash('Login successful.', 'success')
             log_incident('SUCCESSFUL_LOGIN')
-            if (user.role or '').strip().lower() == 'teacher':
-                return redirect(url_for('teacher_dashboard'))
-            if normalize_role(user) == 'dean':
-                return redirect(url_for('dean_dashboard'))
-            return redirect(url_for('login'))
+            if getattr(user, 'must_change_password', False):
+                flash('Please change your initial password before continuing.', 'warning')
+                return redirect(url_for('account_settings'))
+            flash('Login successful.', 'success')
+            home_ep = home_endpoint_for_role(user)
+            next_url = (request.args.get('next') or request.form.get('next') or '').strip()
+            next_path = next_url.split('?', 1)[0].rstrip('/')
+            # /dashboard is the shared business gateway — never send registrar/registry there via ?next=
+            if next_path in ('/dashboard', '/business_dashboard'):
+                return redirect(url_for(home_ep))
+            if next_url.startswith('/') and not next_url.startswith('//'):
+                return redirect(next_url)
+            return redirect(url_for(home_ep))
 
         track_failed_attempt(ip, identifier)
         if user:
@@ -4333,7 +6022,7 @@ def _render_business_dashboard():
                     flash('Student record not found.', 'danger')
                 else:
                     paid_amount = parse_currency_amount(payment_form.amount_paid.data)
-                    record_student_payment_with_income(
+                    payment = record_student_payment_with_income(
                         student,
                         payment_form.academic_year.data,
                         payment_form.term.data,
@@ -4346,6 +6035,8 @@ def _render_business_dashboard():
                         f"Payment of ${float(paid_amount):,.2f} recorded for {student.full_name}.",
                         'success',
                     )
+                    if payment:
+                        return redirect(url_for('print_business_payment_receipt', payment_id=payment.id))
                     redirect_kwargs = {
                         'tab': 'tuition',
                         'class_id': request.form.get('class_id', type=int),
@@ -4408,6 +6099,7 @@ def _render_business_dashboard():
 
 @app.route('/dashboard', methods=['GET', 'POST'], endpoint='dashboard')
 @app.route('/dashboard', methods=['GET', 'POST'], endpoint='business_dashboard')
+@app.route('/business/dashboard', methods=['GET', 'POST'], endpoint='business_dashboard_path')
 @login_required
 def core_dashboard_gateway():
     """
@@ -4415,7 +6107,7 @@ def core_dashboard_gateway():
     Evaluates active user roles and dispatches request contexts to appropriate 
     operational dashboards.
     """
-    user_role = normalize_role(current_user)
+    user_role = canonical_role(current_user)
 
     # 1. Handle Principal Role First
     if user_role == 'principal':
@@ -4426,13 +6118,13 @@ def core_dashboard_gateway():
         return _render_business_dashboard()
 
     # 2. Handle Registry / Registrar Role explicitly
-    if user_role in ('registrar', 'registry'):
-        for ep in ('registry_dashboard', 'registrar_dashboard', 'registry', 'registrar'):
+    if user_role == 'registrar':
+        for ep in ('registrar_dashboard', 'registry_dashboard', 'register_student'):
             if ep in app.view_functions:
-                return redirect(url_for(ep))
-        for func_name in ('registry_dashboard', 'registrar_dashboard'):
-            if func_name in globals() and callable(globals()[func_name]):
-                return globals()[func_name]()
+                return redirect(url_for(ep, **registrar_dashboard_redirect_kwargs()))
+        form = RegisterStudentForm()
+        context = build_registrar_dashboard_context(form=form)
+        return render_template('dashboard_registrar.html', **context)
 
     # 3. Handle Other Roles
     role_route_map = {
@@ -4595,6 +6287,11 @@ def registrar_class_students(class_id):
         klass, display_year, viewing_archived=viewing_archived,
     )
     _attach_display_class(students, display_year, viewing_archived=viewing_archived)
+    roster_folder_ctx = _build_registrar_roster_folders(
+        display_year,
+        viewing_archived=viewing_archived,
+        open_class_id=klass.id,
+    )
 
     # 4. Secure Context Response Delivery
     # Photo URLs are now handled via the photo_url property on the Student model
@@ -4607,6 +6304,7 @@ def registrar_class_students(class_id):
         display_year=display_year,
         viewing_archived=viewing_archived,
         years=years,
+        **roster_folder_ctx,
     )
 
 
@@ -4905,6 +6603,11 @@ def grade_entry_class(class_id):
         teacher_class_tabs=teacher_class_tabs,
         activity_sheet_items=activity_sheet_items,
         activity_submission_map=activity_submission_map,
+        grade_release=GradeRelease.query.filter_by(
+            academic_year_id=active_year.id,
+            class_id=class_id,
+            period=selected_period,
+        ).first() if active_year else None,
     )
 
 
@@ -5041,6 +6744,14 @@ def save_period_activity_sheet(class_id):
             grade.submitted = True
             published_count += 1
 
+    if publish_to_report and (saved_count or published_count):
+        reconcile_grade_package_after_save(
+            active_year.id, class_id, period, published=True, actor_id=current_user.id,
+        )
+    elif not publish_to_report:
+        reconcile_grade_package_after_save(
+            active_year.id, class_id, period, published=False, actor_id=current_user.id,
+        )
     db.session.commit()
     period_label = grading_period_label(period)
     if publish_to_report:
@@ -5048,7 +6759,7 @@ def save_period_activity_sheet(class_id):
             flash(
                 f'Saved {saved_count} activity score{"s" if saved_count != 1 else ""} and '
                 f'published {published_count} final grade{"s" if published_count != 1 else ""} '
-                f'for {subject_name} · {period_label}.',
+                f'for {subject_name} · {period_label}. {GRADE_RELEASE_TEACHER_FLASH}',
                 'success',
             )
         else:
@@ -5069,6 +6780,256 @@ def save_period_activity_sheet(class_id):
         subject=subject_name,
         period=period,
     ))
+
+
+def _parse_grade_component_scores(grade):
+    """Return stored component breakdown from a Grade row."""
+    if not grade or not grade.component_scores:
+        return {}
+    try:
+        data = json.loads(grade.component_scores)
+        return data if isinstance(data, dict) else {}
+    except (TypeError, json.JSONDecodeError):
+        return {}
+
+
+def build_grade_component_rows(grade_rows):
+    """Map student_id -> component field values for grade-entry templates."""
+    rows = {}
+    for student_id, grade in (grade_rows or {}).items():
+        comps = _parse_grade_component_scores(grade)
+        row = {}
+        for key in PERIOD_COMPONENT_MAXIMA:
+            val = comps.get(key)
+            if val is not None and val != '':
+                row[key] = val
+        direct_total = comps.get('direct_total')
+        if direct_total is not None and direct_total != '':
+            row['direct_total'] = direct_total
+        if row:
+            rows[student_id] = row
+    return rows
+
+
+def _period_component_label(component_key):
+    for spec_key, _code, label, _max_score in PERIOD_COMPONENT_SPECS:
+        if spec_key == component_key:
+            return label
+    return component_key.replace('_', ' ').title()
+
+
+def _positive_float(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number <= 0:
+        return None
+    return number
+
+
+def _listed_max_for_component(component_key, form=None):
+    """Listed activity max from the official sheet; never below the UI-posted max."""
+    listed_max = PERIOD_COMPONENT_MAXIMA.get(component_key)
+    posted = _positive_float(form.get(f'component_max_{component_key}')) if form is not None else None
+    if listed_max is None and posted is None:
+        return None
+    if listed_max is None:
+        return posted
+    listed_max = float(listed_max)
+    if posted is not None:
+        listed_max = max(listed_max, posted)
+    return listed_max
+
+
+def _component_field_max(form=None):
+    """Hard cap for an activity input. Teachers may exceed the listed weight up to this."""
+    posted = _positive_float(form.get('component_field_max')) if form is not None else None
+    if posted is not None:
+        return max(posted, PERIOD_COMPONENT_FIELD_MAX)
+    return PERIOD_COMPONENT_FIELD_MAX
+
+
+def _validate_period_component_score(component_key, score_val, student_name, form=None):
+    field_max = _component_field_max(form)
+    if score_val < 0:
+        return f'Invalid {_period_component_label(component_key)} score for {student_name}.'
+    if score_val > field_max:
+        return (
+            f'Invalid {_period_component_label(component_key)} score for {student_name}. '
+            f'Max in this field is {field_max:g}.'
+        )
+    return None
+
+
+def _redirect_after_save_grades(class_id, subject_name, period):
+    """Stay on the sheet the teacher posted from (dashboard vs grade-entry)."""
+    return_to = (request.form.get('return_to') or '').strip()
+    if return_to == 'grading_hub':
+        return redirect(
+            url_for(
+                'class_grading_hub',
+                class_id=class_id,
+                subject=subject_name,
+                period=period,
+                hub_tab='moe',
+            )
+        )
+    if return_to == 'manual_activity_grades':
+        return redirect(
+            url_for(
+                'manual_activity_grades',
+                class_id=class_id,
+                subject=subject_name,
+                period=period,
+            )
+        )
+    if return_to in ('teacher_dashboard', 'teacher_grade_sheet'):
+        return redirect(
+            url_for(
+                'teacher_dashboard',
+                grade_class_id=class_id,
+                grade_subject=subject_name,
+                grade_period=period,
+            )
+        )
+    return redirect(
+        url_for(
+            'grade_entry_class',
+            class_id=class_id,
+            subject=subject_name,
+            period=period,
+        )
+    )
+
+
+def _resolve_period_weights(form, klass):
+    scheme = getattr(klass, 'grading_scheme', None)
+    ca_weight_raw = form.get('ca_weight')
+    exam_weight_raw = form.get('exam_weight')
+    if ((ca_weight_raw or '').strip() == '' and (exam_weight_raw or '').strip() == '') and scheme and isinstance(scheme, dict):
+        try:
+            ca_weight = float(scheme.get('ca_weight', 60))
+            exam_weight = float(scheme.get('exam_weight', 40))
+        except Exception:
+            ca_weight, exam_weight = 60.0, 40.0
+    else:
+        try:
+            ca_weight = float(ca_weight_raw or (scheme.get('ca_weight', 60) if scheme else 60))
+            exam_weight = float(exam_weight_raw or (scheme.get('exam_weight', 40) if scheme else 40))
+        except Exception:
+            ca_weight, exam_weight = 60.0, 40.0
+    return ca_weight, exam_weight
+
+
+def _parse_student_period_grade_from_form(student, form, klass, period):
+    """Parse one student's period grade from POST fields."""
+    if period not in range(1, 7):
+        exam_raw = (form.get(f'exam_{student.id}') or '').strip()
+        if exam_raw == '':
+            return {'skip': True}, None
+        try:
+            exam_score = float(exam_raw)
+        except ValueError:
+            return None, f'Invalid exam score for {student.full_name}.'
+        if exam_score < 0 or exam_score > 100:
+            return None, (
+                f'Invalid exam score for {student.full_name}. Score must be between 0 and 100.'
+            )
+        return {
+            'skip': False,
+            'ca_score': 0.0,
+            'exam_score': exam_score,
+            'total': exam_score,
+            'component_scores_json': None,
+        }, None
+
+    direct_raw = (form.get(f'direct_total_{student.id}') or '').strip()
+    ca_raw = (form.get(f'ca_{student.id}') or '').strip()
+    exam_raw = (form.get(f'exam_{student.id}') or '').strip()
+    component_values = {}
+    has_component_input = False
+    for component_key in PERIOD_COMPONENT_MAXIMA:
+        raw_val = (form.get(f'{component_key}_{student.id}') or '').strip()
+        component_values[component_key] = raw_val
+        if raw_val != '':
+            has_component_input = True
+
+    if direct_raw == '' and not has_component_input and ca_raw == '' and exam_raw == '':
+        return {'skip': True}, None
+
+    stored_components = {}
+
+    if direct_raw != '':
+        try:
+            direct_total = float(direct_raw)
+        except ValueError:
+            return None, f'Invalid direct period grade for {student.full_name}.'
+        if direct_total < 0 or direct_total > PERIOD_TOTAL_EXTRA_CREDIT_MAX:
+            return None, (
+                f'Invalid direct period grade for {student.full_name}. '
+                f'Must be between 0 and {int(PERIOD_TOTAL_EXTRA_CREDIT_MAX)}.'
+            )
+        stored_components['direct_total'] = direct_total
+        total = direct_total
+        ca_score = direct_total
+        exam_score = 0.0
+        if has_component_input:
+            for component_key, raw_val in component_values.items():
+                if raw_val == '':
+                    continue
+                try:
+                    score_val = float(raw_val)
+                except ValueError:
+                    return None, f'Invalid {_period_component_label(component_key)} score for {student.full_name}.'
+                err = _validate_period_component_score(
+                    component_key, score_val, student.full_name, form,
+                )
+                if err:
+                    return None, err
+                stored_components[component_key] = score_val
+    elif has_component_input:
+        ca_score = 0.0
+        for component_key, raw_val in component_values.items():
+            if raw_val == '':
+                continue
+            try:
+                score_val = float(raw_val)
+            except ValueError:
+                return None, f'Invalid {_period_component_label(component_key)} score for {student.full_name}.'
+            err = _validate_period_component_score(
+                component_key, score_val, student.full_name, form,
+            )
+            if err:
+                return None, err
+            stored_components[component_key] = score_val
+            ca_score += score_val
+        total = ca_score
+        exam_score = 0.0
+    else:
+        try:
+            ca_score = float(ca_raw or 0)
+            exam_score = float(exam_raw or 0)
+        except ValueError:
+            return None, f'Invalid scores for {student.full_name}.'
+        ca_weight, exam_weight = _resolve_period_weights(form, klass)
+        total = SchoolEngine.calculate_period_total(
+            ca_score, exam_score, ca_weight=ca_weight, exam_weight=exam_weight,
+        )
+        if total is None:
+            return None, (
+                f'Invalid scores for {student.full_name}. CA must be ≤ 60 and Exam ≤ 40.'
+            )
+
+    component_scores_json = json.dumps(stored_components) if stored_components else None
+    return {
+        'skip': False,
+        'ca_score': ca_score,
+        'exam_score': exam_score,
+        'total': total,
+        'component_scores_json': component_scores_json,
+    }, None
+
 
 @app.route('/save-grades/<int:class_id>', methods=['POST'])
 @login_required
@@ -5112,119 +7073,17 @@ def save_grades(class_id):
     period_label = grading_period_label(period)
     saved_count = 0
 
-    component_specs = {
-        'assignment': 15.0,
-        'quiz': 10.0,
-        'test': 10.0,
-        'classwork': 10.0,
-        'participation': 5.0,
-        'attendance': 5.0,
-        'other': 5.0,
-    }
-
     for student in students:
-        if period in range(1, 7):
-            ca_key = f'ca_{student.id}'
-            exam_key = f'exam_{student.id}'
-            ca_raw = request.form.get(ca_key, '').strip()
-            exam_raw = request.form.get(exam_key, '').strip()
-            component_values = {}
-            has_component_input = False
-            for component_name, component_max in component_specs.items():
-                raw_val = (request.form.get(f'{component_name}_{student.id}') or '').strip()
-                component_values[component_name] = raw_val
-                if raw_val != '':
-                    has_component_input = True
+        parsed, err = _parse_student_period_grade_from_form(student, request.form, klass, period)
+        if err:
+            flash(err, 'danger')
+            return _redirect_after_save_grades(class_id, subject_name, period)
+        if parsed.get('skip'):
+            continue
 
-            if not has_component_input and ca_raw == '' and exam_raw == '':
-                continue
-
-            if has_component_input:
-                ca_score = 0.0
-                for component_name, component_max in component_specs.items():
-                    raw_val = component_values[component_name]
-                    try:
-                        score_val = float(raw_val or 0)
-                    except ValueError:
-                        flash(
-                            f'Invalid {component_name} score for {student.full_name}.',
-                            'danger',
-                        )
-                        return redirect(
-                            url_for(
-                                'grade_entry_class',
-                                class_id=class_id,
-                                subject=subject_name,
-                                period=period,
-                            )
-                        )
-                    if score_val < 0 or score_val > component_max:
-                        flash(
-                            f'Invalid {component_name} score for {student.full_name}. Max is {int(component_max)}.',
-                            'danger',
-                        )
-                        return redirect(
-                            url_for(
-                                'grade_entry_class',
-                                class_id=class_id,
-                                subject=subject_name,
-                                period=period,
-                            )
-                        )
-                    ca_score += score_val
-            else:
-                ca_score = float(ca_raw or 0)
-
-            exam_score = float(exam_raw or 0)
-            scheme = getattr(klass, 'grading_scheme', None)
-            ca_weight_raw = request.form.get('ca_weight')
-            exam_weight_raw = request.form.get('exam_weight')
-            if ((ca_weight_raw or '').strip() == '' and (exam_weight_raw or '').strip() == '') and scheme and isinstance(scheme, dict):
-                try:
-                    ca_weight = float(scheme.get('ca_weight', 60))
-                    exam_weight = float(scheme.get('exam_weight', 40))
-                except Exception:
-                    ca_weight, exam_weight = 60.0, 40.0
-            else:
-                try:
-                    ca_weight = float(ca_weight_raw or scheme.get('ca_weight', 60) if scheme else 60)
-                    exam_weight = float(exam_weight_raw or scheme.get('exam_weight', 40) if scheme else 40)
-                except Exception:
-                    ca_weight, exam_weight = 60.0, 40.0
-            total = SchoolEngine.calculate_period_total(ca_score, exam_score, ca_weight=ca_weight, exam_weight=exam_weight)
-            if total is None:
-                flash(
-                    f'Invalid scores for {student.full_name}. CA must be ≤ 60 and Exam ≤ 40.',
-                    'danger',
-                )
-                return redirect(
-                    url_for(
-                        'grade_entry_class',
-                        class_id=class_id,
-                        subject=subject_name,
-                        period=period,
-                    )
-                )
-        else:
-            exam_raw = request.form.get(f'exam_{student.id}', '').strip()
-            if exam_raw == '':
-                continue
-            exam_score = float(exam_raw)
-            if exam_score < 0 or exam_score > 100:
-                flash(
-                    f'Invalid exam score for {student.full_name}. Score must be between 0 and 100.',
-                    'danger',
-                )
-                return redirect(
-                    url_for(
-                        'grade_entry_class',
-                        class_id=class_id,
-                        subject=subject_name,
-                        period=period,
-                    )
-                )
-            ca_score = 0.0
-            total = exam_score
+        ca_score = parsed['ca_score']
+        exam_score = parsed['exam_score']
+        total = parsed['total']
 
         grade = find_grade_record(
             student.id,
@@ -5260,6 +7119,7 @@ def save_grades(class_id):
         grade.ca_score = ca_score
         grade.exam_score = exam_score if period in range(1, 7) else total
         grade.score = total
+        grade.component_scores = parsed.get('component_scores_json')
         grade.remarks = SchoolEngine.get_remarks(total)
         grade.submitted = publish_to_report
 
@@ -5268,51 +7128,24 @@ def save_grades(class_id):
 
         saved_count += 1
 
+    if saved_count:
+        reconcile_grade_package_after_save(
+            active_year.id, class_id, period, published=publish_to_report,
+            actor_id=current_user.id,
+        )
     db.session.commit()
     if saved_count:
         if publish_to_report:
-            flash(f'{period_label} grades published to report cards for {subject_name}.', 'success')
+            flash(
+                f'{period_label} grades published for {subject_name}. {GRADE_RELEASE_TEACHER_FLASH}',
+                'success',
+            )
         else:
             flash(f'{period_label} draft saved for {subject_name}. Students can see their standing; report cards unchanged.', 'success')
     else:
         flash('No grade values were entered.', 'warning')
 
-    if request.form.get('return_to') == 'grading_hub':
-        return redirect(
-            url_for(
-                'class_grading_hub',
-                class_id=class_id,
-                subject=subject_name,
-                period=period,
-                hub_tab='moe',
-            )
-        )
-    if request.form.get('return_to') == 'manual_activity_grades':
-        return redirect(
-            url_for(
-                'manual_activity_grades',
-                class_id=class_id,
-                subject=subject_name,
-                period=period,
-            )
-        )
-    if request.form.get('return_to') in ('teacher_dashboard', 'teacher_grade_sheet'):
-        return redirect(
-            url_for(
-                'teacher_dashboard',
-                grade_class_id=class_id,
-                grade_subject=subject_name,
-                grade_period=period,
-            )
-        )
-    return redirect(
-        url_for(
-            'grade_entry_class',
-            class_id=class_id,
-            subject=subject_name,
-            period=period,
-        )
-    )
+    return _redirect_after_save_grades(class_id, subject_name, period)
 
 
 def _persist_period_grades_from_form(
@@ -5330,91 +7163,20 @@ def _persist_period_grades_from_form(
     if not active_year:
         return 0, 'No active academic year found. Please contact the administrator.'
 
+    klass = Class.query.get(class_id)
     students = get_class_students_for_year(class_id, active_year)
     saved_count = 0
-    component_specs = {
-        'assignment': 15.0,
-        'quiz': 10.0,
-        'test': 10.0,
-        'classwork': 10.0,
-        'participation': 5.0,
-        'attendance': 5.0,
-        'other': 5.0,
-    }
 
     for student in students:
-        if period in range(1, 7):
-            ca_raw = request.form.get(f'ca_{student.id}', '').strip()
-            exam_raw = request.form.get(f'exam_{student.id}', '').strip()
-            component_values = {}
-            has_component_input = False
-            for component_name in component_specs:
-                raw_val = (request.form.get(f'{component_name}_{student.id}') or '').strip()
-                component_values[component_name] = raw_val
-                if raw_val != '':
-                    has_component_input = True
+        parsed, err = _parse_student_period_grade_from_form(student, request.form, klass, period)
+        if err:
+            return 0, err
+        if parsed.get('skip'):
+            continue
 
-            if not has_component_input and ca_raw == '' and exam_raw == '':
-                continue
-
-            if has_component_input:
-                ca_score = 0.0
-                for component_name, component_max in component_specs.items():
-                    raw_val = component_values[component_name]
-                    try:
-                        score_val = float(raw_val or 0)
-                    except ValueError:
-                        return 0, f'Invalid {component_name} score for {student.full_name}.'
-                    if score_val < 0 or score_val > component_max:
-                        return 0, (
-                            f'Invalid {component_name} score for {student.full_name}. '
-                            f'Max is {int(component_max)}.'
-                        )
-                    ca_score += score_val
-            else:
-                ca_score = float(ca_raw or 0)
-
-            exam_score = float(exam_raw or 0)
-            # Determine weights: prefer explicit form inputs, then class grading scheme, then MoE defaults
-            ca_weight_raw = request.form.get('ca_weight')
-            exam_weight_raw = request.form.get('exam_weight')
-            if ca_weight_raw is not None or exam_weight_raw is not None:
-                try:
-                    ca_weight = float(ca_weight_raw or 60)
-                    exam_weight = float(exam_weight_raw or 40)
-                except Exception:
-                    ca_weight, exam_weight = 60.0, 40.0
-            else:
-                scheme = None
-                try:
-                    from models import Class as ClassModel
-                    scheme = ClassModel.query.get(class_id).grading_scheme
-                except Exception:
-                    scheme = None
-                if scheme and isinstance(scheme, dict):
-                    try:
-                        ca_weight = float(scheme.get('ca_weight', 60))
-                        exam_weight = float(scheme.get('exam_weight', 40))
-                    except Exception:
-                        ca_weight, exam_weight = 60.0, 40.0
-                else:
-                    ca_weight, exam_weight = 60.0, 40.0
-            total = SchoolEngine.calculate_period_total(ca_score, exam_score, ca_weight=ca_weight, exam_weight=exam_weight)
-            if total is None:
-                return 0, (
-                    f'Invalid scores for {student.full_name}. CA must be ≤ 60 and Exam ≤ 40.'
-                )
-        else:
-            exam_raw = request.form.get(f'exam_{student.id}', '').strip()
-            if exam_raw == '':
-                continue
-            exam_score = float(exam_raw)
-            if exam_score < 0 or exam_score > 100:
-                return 0, (
-                    f'Invalid exam score for {student.full_name}. Score must be between 0 and 100.'
-                )
-            ca_score = 0.0
-            total = exam_score
+        ca_score = parsed['ca_score']
+        exam_score = parsed['exam_score']
+        total = parsed['total']
 
         grade = find_grade_record(
             student.id,
@@ -5448,6 +7210,7 @@ def _persist_period_grades_from_form(
         grade.ca_score = ca_score
         grade.exam_score = exam_score if period in range(1, 7) else total
         grade.score = total
+        grade.component_scores = parsed.get('component_scores_json')
         grade.remarks = SchoolEngine.get_remarks(total)
         grade.submitted = publish_to_report
         if entered_by_user_id is not None:
@@ -5458,6 +7221,14 @@ def _persist_period_grades_from_form(
             setattr(grade, f'p{period}', int(round(total)))
         saved_count += 1
 
+    if saved_count:
+        reconcile_grade_package_after_save(
+            active_year.id,
+            class_id,
+            period,
+            published=publish_to_report,
+            actor_id=entered_by_user_id,
+        )
     db.session.commit()
     return saved_count, None
 
@@ -5516,12 +7287,16 @@ def publish_period_grades(class_id):
         grade.submitted = True
         published_count += 1
 
+    if published_count:
+        reconcile_grade_package_after_save(
+            active_year.id, class_id, period, published=True, actor_id=current_user.id,
+        )
     db.session.commit()
     period_label = grading_period_label(period)
     if published_count:
         flash(
             f'Published {published_count} {period_label} grade{"s" if published_count != 1 else ""} '
-            f'for {subject_name}. Students can now see them on their grade sheet.',
+            f'for {subject_name}. {GRADE_RELEASE_TEACHER_FLASH}',
             'success',
         )
     else:
@@ -5568,7 +7343,7 @@ def download_grades(class_id):
             return redirect(url_for('login'))
 
     year_name = request.args.get('year')
-    active_year = AcademicYear.query.filter_by(name=year_name).first() if year_name else None
+    active_year = find_academic_year_by_name(year_name) if year_name else None
     if not active_year:
         active_year = get_active_academic_year()
     if not active_year:
@@ -5922,7 +7697,17 @@ def report_card(student_id):
     active_year = get_active_academic_year()
     year_id = request.args.get('academic_year_id', type=int) or (active_year.id if active_year else None)
     display_year = db.session.get(AcademicYear, year_id) if year_id else None
-    data = build_report_card_structured_data(student, year_id)
+    student_facing = (
+        user_role in ('student', 'parent') or not viewer_can_see_unreleased_official_grades()
+    )
+    view_period = _requested_marking_period()
+    if student_facing:
+        doc_state = student_official_documents_state(student, year_id, period=view_period)
+        if doc_state.get('hold'):
+            return render_official_grade_hold(student, display_year)
+    data = build_report_card_structured_data(
+        student, year_id, approved_only=student_facing,
+    )
 
     return render_template(
         'report_card.html',
@@ -5930,6 +7715,7 @@ def report_card(student_id):
         data=data,
         display_year=display_year,
         parent_qr_view=False,
+        school_print_brand=school_print_brand(),
         **build_parent_report_qr_context(student, year_id),
     )
 
@@ -5940,6 +7726,7 @@ def download_report_card(student_id):
     staff_roles = {'admin', 'teacher', 'registrar', 'principal', 'vpa', 'vpi', 'dean', 'business'}
     active_year = get_active_academic_year()
     year_id = request.args.get('academic_year_id', type=int) or (active_year.id if active_year else None)
+    data = build_report_card_structured_data(student, year_id)
     parent_qr_access = has_parent_report_access(student.id, year_id)
 
     if not parent_qr_access:
@@ -5957,192 +7744,63 @@ def download_report_card(student_id):
         if not student.tuition_cleared and user_role not in {'admin', 'teacher', 'registrar', 'principal'}:
             pass
 
-    # Generate PDF
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT
-    from reportlab.lib.units import mm
-    from io import BytesIO
-    
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        leftMargin=15 * mm,
-        rightMargin=15 * mm,
-        topMargin=15 * mm,
-        bottomMargin=15 * mm,
+    is_staff_preview = viewer_can_see_unreleased_official_grades() and not parent_qr_access
+    view_period = _requested_marking_period()
+    if not is_staff_preview:
+        doc_state = student_official_documents_state(student, year_id, period=view_period)
+        if doc_state.get('hold'):
+            display_year = db.session.get(AcademicYear, year_id) if year_id else None
+            return render_official_grade_hold(student, display_year)
+
+    return build_official_grade_sheet_pdf(
+        student, year_id, kind='report', approved_only=not is_staff_preview,
     )
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        'Title',
-        parent=styles['Heading1'],
-        fontName='Helvetica-Bold',
-        fontSize=18,
-        leading=22,
-        alignment=TA_CENTER,
-        textColor=colors.HexColor('#002d62'),
-        spaceAfter=4,
+
+
+@app.route('/grades/period-sheet/<int:class_id>/<int:period>')
+@login_required
+def class_period_grade_sheet(class_id, period):
+    """Printable roster: every student in one class, one marking period.
+
+    VPA/principal/admin see the sheet as soon as the teacher submits it, so
+    they can review before approving. Teachers see only their own classes.
+    Once approved it stays visible; a return/edit puts it back on hold.
+    """
+    role = normalize_role(current_user)
+    if period not in range(1, 9):
+        flash('Unknown marking period.', 'danger')
+        return redirect(url_for('login'))
+
+    klass = Class.query.get_or_404(class_id)
+    if role == 'teacher':
+        teacher = Teacher.query.filter_by(user_id=current_user.id).first()
+        if not teacher or not teacher_can_access_class(teacher, current_user, class_id):
+            flash('You may only view the grade sheet for your assigned classes.', 'danger')
+            return redirect(url_for('teacher_dashboard'))
+    elif role not in ACADEMIC_COMMAND_ROLES:
+        flash('Access denied.', 'danger')
+        return redirect(url_for('login'))
+
+    active_year = get_active_academic_year()
+    year_id = request.args.get('academic_year_id', type=int) or (active_year.id if active_year else None)
+    if not year_id:
+        flash('No active academic year found.', 'danger')
+        return redirect(url_for('login'))
+
+    data = build_class_period_grade_sheet_data(class_id, period, year_id, approved_only=False)
+    if not data.get('klass'):
+        flash('No roster found for that class and academic year.', 'danger')
+        return redirect(url_for('login'))
+
+    return render_template(
+        'class_period_grade_sheet.html',
+        data=data,
+        klass=klass,
+        period=period,
+        display_year=data.get('display_year'),
+        school_print_brand=school_print_brand(),
+        can_review=role in ACADEMIC_COMMAND_ROLES,
     )
-    subtitle_style = ParagraphStyle(
-        'Subtitle',
-        parent=styles['Heading2'],
-        fontName='Helvetica',
-        fontSize=10,
-        leading=12,
-        alignment=TA_CENTER,
-        textColor=colors.HexColor('#1a202c'),
-        spaceAfter=6,
-    )
-    badge_style = ParagraphStyle(
-        'Badge',
-        parent=styles['Normal'],
-        fontName='Helvetica-Bold',
-        fontSize=8,
-        leading=10,
-        alignment=TA_CENTER,
-        textColor=colors.HexColor('#002d62'),
-        backColor=colors.HexColor('#f0f4f8'),
-        borderPadding=(2, 2, 2),
-        spaceAfter=8,
-    )
-    label_style = ParagraphStyle(
-        'Label',
-        parent=styles['Normal'],
-        fontName='Helvetica-Bold',
-        fontSize=8,
-        leading=10,
-        textColor=colors.HexColor('#4a5568'),
-        alignment=TA_LEFT,
-    )
-    value_style = ParagraphStyle(
-        'Value',
-        parent=styles['Normal'],
-        fontName='Helvetica',
-        fontSize=9,
-        leading=11,
-        textColor=colors.HexColor('#1a202c'),
-        alignment=TA_LEFT,
-    )
-    elements = []
-    logo_path = os.path.join(app.root_path, 'static', 'images', 'LOGO.png')
-    logo = None
-    if os.path.exists(logo_path):
-        try:
-            logo = Image(logo_path, width=26 * mm, height=26 * mm)
-        except Exception:
-            logo = None
-
-    header_rows = []
-    if logo:
-        header_rows.append([logo, Paragraph('STANDARD SCHOOL MANAGEMENT', title_style)])
-    else:
-        header_rows.append(['', Paragraph('STANDARD SCHOOL MANAGEMENT', title_style)])
-    header_table = Table(header_rows, colWidths=[30 * mm, 140 * mm])
-    header_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('ALIGN', (0, 0), (0, 0), 'LEFT'),
-        ('ALIGN', (1, 0), (1, 0), 'CENTER'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-        ('TOPPADDING', (0, 0), (-1, -1), 0),
-    ]))
-    elements.append(header_table)
-    elements.append(Paragraph('MINISTRY OF EDUCATION', subtitle_style))
-    elements.append(Paragraph('STUDENT PROGRESS REPORT', badge_style))
-
-    student_info = [
-        [Paragraph('Student:', label_style), Paragraph(student.full_name, value_style), Paragraph('ID Number:', label_style), Paragraph(student.student_id, value_style)],
-        [Paragraph('Academic Year:', label_style), Paragraph(data.get('academic_year', ''), value_style), Paragraph('Academic Level:', label_style), Paragraph(data.get('level', ''), value_style)],
-        [Paragraph('Class:', label_style), Paragraph(format_student_class_name(student, year_id), value_style), Paragraph('Date:', label_style), Paragraph(datetime.utcnow().strftime('%Y-%m-%d'), value_style)],
-    ]
-    info_table = Table(student_info, colWidths=[28 * mm, 62 * mm, 20 * mm, 40 * mm])
-    info_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 3),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
-        ('TOPPADDING', (0, 0), (-1, -1), 3),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
-        ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#e2e8f0')),
-    ]))
-    elements.append(info_table)
-    elements.append(Spacer(1, 10))
-    
-    # Query published grades for the selected academic year
-    grades = official_grade_records(student_id, year_id)
-
-    # Table header
-    data = [
-        ['Period', 'Subject', 'CA Score', 'Exam Score', 'Total Score', 'Grade Letter', 'Remarks']
-    ]
-
-    # Loop through grades and build rows
-    for grade in grades:
-        grade_letter = SchoolEngine.get_grade_letter(grade.score or 0)
-        remarks = SchoolEngine.get_remarks(grade.score or 0)
-
-        data.append([
-            grade.period,
-            grade.subject or 'N/A',
-            grade.ca_score or '',
-            grade.exam_score or '',
-            grade.score or '',
-            grade_letter,
-            remarks
-        ])
-
-    table = Table(data, colWidths=[20 * mm, 55 * mm, 22 * mm, 22 * mm, 22 * mm, 20 * mm, 40 * mm])
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d3748')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-        ('ALIGN', (0, 1), (-2, -1), 'CENTER'),
-        ('ALIGN', (-1, 1), (-1, -1), 'LEFT'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 9),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 5),
-        ('TOPPADDING', (0, 0), (-1, 0), 5),
-        ('FONTSIZE', (0, 1), (-1, -1), 7.5),
-        ('BOTTOMPADDING', (0, 1), (-1, -1), 3),
-        ('TOPPADDING', (0, 1), (-1, -1), 3),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8fafc')),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#f8fafc'), colors.HexColor('#e2e8f0')]),
-        ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#a0aec0')),
-    ]))
-    elements.append(table)
-
-    # GPA
-    scores = [g.score for g in grades if g.score is not None]
-    gpa = SchoolEngine.calculate_gpa(scores) if scores else 0.0
-    elements.append(Spacer(1, 8))
-    gpa_paragraph = Paragraph(f"<b>GPA:</b> {gpa:.2f}", ParagraphStyle('Gpa', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#1a202c')))
-    elements.append(gpa_paragraph)
-    elements.append(Spacer(1, 16))
-
-    sign_table = Table([
-        [Paragraph("Teacher's Signature", label_style), '', Paragraph("Principal's Signature", label_style), ''],
-        ['', '', '', ''],
-    ], colWidths=[40 * mm, 20 * mm, 40 * mm, 20 * mm])
-    sign_table.setStyle(TableStyle([
-        ('LINEBEFORE', (0, 0), (0, 0), 0.25, colors.black),
-        ('LINEBEFORE', (2, 0), (2, 0), 0.25, colors.black),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-        ('TOPPADDING', (0, 0), (-1, -1), 0),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-    ]))
-    elements.append(sign_table)
-    elements.append(Spacer(1, 8))
-    elements.append(Paragraph('This document is an official student report card and is valid only when signed by authorised school staff.', ParagraphStyle('FooterNote', parent=styles['Normal'], fontSize=7, leading=9, textColor=colors.HexColor('#6b7280'))))
-
-    doc.build(elements)
-    buffer.seek(0)
-    
-    return send_file(buffer, as_attachment=True, download_name=f'report_card_{student.student_id}.pdf', mimetype='application/pdf')
 
 
 def build_student_record_summaries(student):
@@ -6168,13 +7826,16 @@ def build_student_record_summaries(student):
         year = db.session.get(AcademicYear, year_id)
         if not year:
             continue
-        grades = official_grade_records(student.id, year_id)
+        if not student_official_documents_state(student, year_id).get('unlocked'):
+            continue
+        grades = official_grade_records(student.id, year_id, approved_only=True)
         scores = [g.score for g in grades if g.score is not None]
         gpa = SchoolEngine.calculate_gpa(scores) if scores else 0.0
         summaries.append({
             'year': year,
             'gpa': gpa,
             'subject_count': len({g.subject for g in grades if g.subject}),
+            'transcript_released': official_transcript_is_released(student.id, year.id),
         })
     summaries.sort(key=lambda item: item['year'].name, reverse=True)
     return summaries
@@ -6189,13 +7850,11 @@ def compile_registration_held_context(student, display_year=None):
         requested_id = request.args.get('academic_year_id', type=int)
         if requested_id:
             display_year = db.session.get(AcademicYear, requested_id)
-        elif record_summaries:
-            display_year = record_summaries[0]['year']
 
     grades = []
     gpa = 0.0
     if display_year:
-        grades = official_grade_records(student.id, display_year.id)
+        grades = official_grade_records(student.id, display_year.id, approved_only=True)
         scores = [g.score for g in grades if g.score is not None]
         gpa = SchoolEngine.calculate_gpa(scores) if scores else 0.0
 
@@ -6215,7 +7874,7 @@ def compile_registration_held_context(student, display_year=None):
 
 def compile_alumni_portal_context(student, display_year=None):
     """Template context for the alumni read-only student portal."""
-    past_years = AcademicYear.query.order_by(AcademicYear.name.desc()).all()
+    past_years = all_academic_years()
     graduation_year = db.session.get(AcademicYear, student.academic_year_id) if student.academic_year_id else None
 
     if display_year is None:
@@ -6230,7 +7889,7 @@ def compile_alumni_portal_context(student, display_year=None):
     grades = []
     gpa = 0.0
     if display_year:
-        grades = official_grade_records(student.id, display_year.id)
+        grades = official_grade_records(student.id, display_year.id, approved_only=True)
         scores = [g.score for g in grades if g.score is not None]
         gpa = SchoolEngine.calculate_gpa(scores) if scores else 0.0
 
@@ -6241,6 +7900,10 @@ def compile_alumni_portal_context(student, display_year=None):
         'past_years': past_years,
         'grades': grades,
         'gpa': gpa,
+        'transcript_released': (
+            official_transcript_is_released(student.id, display_year.id)
+            if student and display_year else False
+        ),
     }
 
 
@@ -6275,7 +7938,7 @@ def student_dashboard():
             return render_template('student/registration_held.html', current_user=current_user, **ctx)
         
         # 2. Extract full chronological record catalog for dropdown historical tracking
-        past_years = AcademicYear.query.order_by(AcademicYear.name.desc()).all()
+        past_years = all_academic_years()
 
         # 3. Handle historical continuity selection logic
         selected_year_id = request.args.get('academic_year_id', type=int)
@@ -6347,18 +8010,13 @@ def student_academic_records(academic_year_id):
         flash('Academic year not found.', 'warning')
         return redirect(url_for('student_dashboard'))
 
-    if student_is_alumni(student):
-        ctx = compile_alumni_portal_context(student, display_year=display_year)
-        return render_template('student/alumni_portal.html', current_user=current_user, **ctx)
-
-    if student_registration_gate_active(student):
-        ctx = compile_registration_held_context(student, display_year=display_year)
-        return render_template('student/registration_held.html', current_user=current_user, **ctx)
+    if viewer_must_wait_for_transcript_release(student, display_year.id):
+        return render_official_transcript_hold(student, display_year)
 
     return redirect(url_for(
-        'student_dashboard',
-        academic_year_id=academic_year_id,
-        tab='grades',
+        'transcript',
+        student_id=student.id,
+        academic_year_id=display_year.id,
     ))
 
 
@@ -6403,6 +8061,78 @@ def verify_student(token):
         registration_label=registration_label,
         verify_url=build_student_verify_url(student),
         class_display_name=format_student_class_name(student, year_id) if year_id else None,
+    )
+
+
+def _portal_user_for_student(student):
+    """Linked student portal User for an ID-card QR login."""
+    if not student:
+        return None
+    if student.user_id:
+        user = student.user or db.session.get(User, student.user_id)
+        if user:
+            return user
+    if student.student_id:
+        return resolve_user_for_login(student.student_id)
+    return None
+
+
+@app.route('/student/id-portal/<token>', methods=['GET', 'POST'])
+def student_id_portal(token):
+    """
+    ID-card QR destination: student signs in on their phone and opens the portal.
+    Password is still required so a lost card cannot open the account by itself.
+    """
+    token = (token or '').strip()
+    if not token:
+        abort(404)
+
+    student = Student.query.filter_by(secure_qr_token=token).first()
+    portal_user = _portal_user_for_student(student) if student else None
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+
+    if request.args.get('switch') == '1' and current_user.is_authenticated:
+        logout_user()
+        flash('Signed out. Enter your student portal password to continue.', 'info')
+        return redirect(url_for('student_id_portal', token=token))
+
+    if current_user.is_authenticated and student and portal_user and current_user.id == portal_user.id:
+        return redirect(url_for('student_dashboard'))
+
+    if request.method == 'POST' and student and portal_user:
+        if check_brute_force(ip):
+            flash('Too many failed sign-in attempts. Please try again in 15 minutes.', 'danger')
+            return render_template(
+                'student/id_portal_gate.html',
+                student=student,
+                portal_user=portal_user,
+                valid=True,
+            )
+        password = (request.form.get('password') or '').strip()
+        settings = get_system_settings()
+        if not settings.system_active and normalize_role(portal_user) != 'admin':
+            flash('The system is on hold. Contact the school office.', 'danger')
+        elif not portal_user.is_account_active():
+            track_failed_attempt(ip, student.student_id)
+            flash('This portal account is inactive. See the Registrar.', 'danger')
+        elif portal_user.check_password(password):
+            login_user(portal_user)
+            log_incident('STUDENT_ID_QR_LOGIN')
+            flash('Welcome to your student portal.', 'success')
+            return redirect(url_for('student_dashboard'))
+        else:
+            track_failed_attempt(ip, student.student_id)
+            flash('Incorrect password. Use the password for your student portal account.', 'danger')
+
+    return render_template(
+        'student/id_portal_gate.html',
+        student=student,
+        portal_user=portal_user,
+        valid=bool(student),
+        other_session=bool(
+            current_user.is_authenticated
+            and (not portal_user or current_user.id != portal_user.id)
+        ),
     )
 
 
@@ -6502,7 +8232,13 @@ def parent_report_view(token):
         ))
 
     display_year = db.session.get(AcademicYear, year_id) if year_id else None
-    data = build_report_card_structured_data(student, year_id)
+    view_period = _requested_marking_period()
+    doc_state = student_official_documents_state(student, year_id, period=view_period)
+    if doc_state.get('hold'):
+        return render_official_grade_hold(
+            student, display_year, parent_qr_view=True, parent_report_token=token,
+        )
+    data = build_report_card_structured_data(student, year_id, approved_only=True)
 
     return render_template(
         'report_card.html',
@@ -6511,6 +8247,7 @@ def parent_report_view(token):
         display_year=display_year,
         parent_qr_view=True,
         parent_report_token=token,
+        school_print_brand=school_print_brand(),
         **build_parent_report_qr_context(student, year_id),
     )
 
@@ -6527,7 +8264,7 @@ def student_grade_sheet():
         flash('Student profile not found.', 'danger')
         return redirect(url_for('logout'))
 
-    past_years = AcademicYear.query.order_by(AcademicYear.name.desc()).all()
+    past_years = all_academic_years()
     selected_year_id = request.args.get('academic_year_id', type=int)
     if selected_year_id:
         display_year = db.session.get(AcademicYear, selected_year_id)
@@ -6537,9 +8274,15 @@ def student_grade_sheet():
             display_year = past_years[0]
 
     year_id = display_year.id if display_year else None
-    data = build_report_card_structured_data(student, year_id)
-    published_grades = official_grade_records(student.id, year_id) if year_id else []
+    view_period = _requested_marking_period()
+    doc_state = student_official_documents_state(student, year_id, period=view_period)
+    if doc_state.get('hold'):
+        return render_official_grade_hold(student, display_year)
+    data = build_report_card_structured_data(student, year_id, approved_only=True)
+    published_grades = official_grade_records(student.id, year_id, approved_only=True) if year_id else []
     has_published = bool(published_grades)
+    approved_periods = doc_state.get('approved_periods') or []
+    pending_periods = doc_state.get('pending_periods') or []
 
     return render_template(
         'grade_sheet.html',
@@ -6549,7 +8292,447 @@ def student_grade_sheet():
         past_years=past_years,
         has_published=has_published,
         published_count=len(published_grades),
+        approved_periods=approved_periods,
+        pending_periods=pending_periods,
+        grading_periods=GRADING_PERIODS,
+        school_print_brand=school_print_brand(),
     )
+
+
+def _official_sheet_score_display(value, *, empty_display='—'):
+    if value in (None, ''):
+        return empty_display
+    if isinstance(value, str) and '%' in value:
+        return value.strip()
+    shown = display_report_score(value)
+    if shown in (None, ''):
+        return empty_display
+    return str(shown)
+
+
+def _official_sheet_score_color(value):
+    from reportlab.lib import colors
+    num = numeric_report_score(value)
+    if num is None:
+        return colors.HexColor('#64748b')
+    if num < promotion_pass_score():
+        return colors.HexColor('#b42318')
+    return colors.HexColor('#1d4ed8')
+
+
+def _official_sheet_pick(subject, *keys):
+    for key in keys:
+        if isinstance(subject, dict):
+            value = subject.get(key)
+        else:
+            value = getattr(subject, key, None)
+        if value not in (None, ''):
+            return value
+    return None
+
+
+def build_official_grade_sheet_pdf(student, year_id, kind='sheet', *, approved_only=False):
+    """Landscape official FLPA grade sheet / report card (P1–P6 MoE matrix)."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.lib.units import mm
+    from io import BytesIO
+
+    data = build_report_card_structured_data(student, year_id, approved_only=approved_only)
+    brand = data.get('school') or school_print_brand()
+    display_year = db.session.get(AcademicYear, year_id) if year_id else None
+    year_label = data.get('academic_year') or (display_year.name if display_year else '')
+    if kind == 'report':
+        sheet_title = (data.get('division_report_title') or 'Report Card').upper()
+        file_prefix = 'report_card'
+    else:
+        sheet_title = (data.get('division_sheet_title') or 'Grade Sheet').upper()
+        file_prefix = 'grade_sheet'
+    promotion_statement = (
+        data['promotion']['label']
+        if data.get('promotion') and data['promotion'].get('label')
+        else 'Pending promotion decision'
+    )
+    if data.get('promotion', {}).get('code') == 'PROMOTED' and data['promotion'].get('promoted_to'):
+        promotion_statement = f"Promoted to {data['promotion']['promoted_to']}"
+    if data.get('promotion') and data['promotion'].get('reason'):
+        promotion_statement = f"{promotion_statement} — {data['promotion']['reason']}"
+    rank_label = (
+        data['class_rank']['label']
+        if data.get('class_rank') and data['class_rank'].get('label')
+        else '—'
+    )
+    legend_rows = data.get('legend_rows') or [
+        ('Excellent', '90 – 100', 'A'),
+        ('Good', '80 – 89', 'B'),
+        ('Fair', '70 – 79', 'C'),
+        ('Failure', 'Below 70', 'D'),
+    ]
+
+    ink = colors.HexColor('#111111')
+    brand_red = colors.HexColor(brand.get('brand_red') or '#c82828')
+
+    buffer = BytesIO()
+    page = landscape(A4)
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=page,
+        leftMargin=8 * mm,
+        rightMargin=8 * mm,
+        topMargin=7 * mm,
+        bottomMargin=7 * mm,
+        title=f'{sheet_title} — {student.full_name}',
+    )
+    styles = getSampleStyleSheet()
+    school_style = ParagraphStyle(
+        'SheetSchool',
+        parent=styles['Normal'],
+        fontName='Times-Bold',
+        fontSize=16,
+        leading=19,
+        alignment=TA_CENTER,
+        textColor=brand_red,
+    )
+    contact_style = ParagraphStyle(
+        'SheetContact',
+        parent=styles['Normal'],
+        fontName='Times-Roman',
+        fontSize=8.5,
+        leading=11,
+        alignment=TA_CENTER,
+        textColor=ink,
+    )
+    year_style = ParagraphStyle(
+        'SheetYear',
+        parent=styles['Normal'],
+        fontName='Times-Bold',
+        fontSize=9,
+        leading=11,
+        alignment=TA_CENTER,
+        textColor=brand_red,
+    )
+    title_style = ParagraphStyle(
+        'SheetTitle',
+        parent=styles['Normal'],
+        fontName='Times-Bold',
+        fontSize=10,
+        leading=13,
+        alignment=TA_CENTER,
+        textColor=ink,
+    )
+    meta_style = ParagraphStyle(
+        'SheetMeta',
+        parent=styles['Normal'],
+        fontName='Times-Roman',
+        fontSize=8.5,
+        leading=11,
+        textColor=ink,
+    )
+    motto_style = ParagraphStyle(
+        'SheetMotto',
+        parent=styles['Normal'],
+        fontName='Times-Bold',
+        fontSize=9,
+        leading=12,
+        alignment=TA_CENTER,
+        textColor=brand_red,
+    )
+    sign_style = ParagraphStyle(
+        'SheetSign',
+        parent=styles['Normal'],
+        fontName='Times-Bold',
+        fontSize=8,
+        leading=10,
+        alignment=TA_CENTER,
+        textColor=ink,
+    )
+
+    elements = []
+    logo_path = os.path.join(app.root_path, 'static', 'images', 'LOGO.png')
+    if not os.path.exists(logo_path):
+        alt = os.path.join(app.root_path, 'static', 'images', 'logo.png')
+        if os.path.exists(alt):
+            logo_path = alt
+    logo = None
+    if os.path.exists(logo_path):
+        try:
+            logo = Image(logo_path, width=18 * mm, height=18 * mm)
+        except Exception:
+            logo = None
+
+    center_block = [
+        Paragraph((brand.get('name') or 'Future Leaders Preparatory Academy').upper(), school_style),
+        Paragraph(brand.get('full_address') or '', contact_style),
+        Paragraph(brand.get('phones') or '', contact_style),
+        Paragraph(brand.get('email_address') or brand.get('email') or '', contact_style),
+    ]
+    header_center = Table([[block] for block in center_block], colWidths=[220 * mm])
+    header_center.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    header_row = [[logo or '', header_center, logo or '']]
+    header = Table(header_row, colWidths=[22 * mm, 237 * mm, 22 * mm])
+    header.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN', (0, 0), (0, 0), 'CENTER'),
+        ('ALIGN', (2, 0), (2, 0), 'CENTER'),
+        ('ALIGN', (1, 0), (1, 0), 'CENTER'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    elements.append(header)
+    elements.append(Spacer(1, 3 * mm))
+
+    title_box = Table(
+        [[Paragraph(sheet_title, title_style)]],
+        colWidths=[72 * mm],
+    )
+    title_box.setStyle(TableStyle([
+        ('BOX', (0, 0), (-1, -1), 1, ink),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    title_row = Table(
+        [['', title_box, Paragraph(f'Academic Year: {year_label}', year_style)]],
+        colWidths=[70 * mm, 80 * mm, 131 * mm],
+    )
+    title_row.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN', (1, 0), (1, 0), 'CENTER'),
+        ('ALIGN', (2, 0), (2, 0), 'RIGHT'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    elements.append(title_row)
+    elements.append(Spacer(1, 2.5 * mm))
+
+    def meta_cell(label, value):
+        return Paragraph(
+            f'<b>{label}:</b> {value or "—"}',
+            meta_style,
+        )
+
+    meta = Table([[
+        meta_cell('Name', data.get('student_name')),
+        meta_cell('Class', data.get('class_name')),
+        meta_cell('Gender', getattr(student, 'gender', None)),
+        meta_cell('Promotion Statement', promotion_statement),
+    ]], colWidths=[75 * mm, 55 * mm, 40 * mm, 111 * mm])
+    meta.setStyle(TableStyle([
+        ('BOX', (0, 0), (-1, -1), 0.8, ink),
+        ('INNERGRID', (0, 0), (-1, -1), 0.6, ink),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 5),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]))
+    elements.append(meta)
+    awaiting_note = data.get('awaiting_vpa_note')
+    if awaiting_note:
+        note_style = ParagraphStyle(
+            'SheetAwaitingNote',
+            parent=styles['Normal'],
+            fontName='Times-Italic',
+            fontSize=8,
+            leading=10,
+            textColor=ink,
+        )
+        elements.append(Spacer(1, 1.5 * mm))
+        elements.append(Paragraph(awaiting_note, note_style))
+    elements.append(Spacer(1, 2 * mm))
+
+    headers = [
+        (data.get('subject_heading') or 'SUBJECTS').upper(),
+        'P1', 'P2', 'P3', 'EXAM', 'SEM.AVE',
+        'P4', 'P5', 'P6', 'EXAM', 'SEM.AVE',
+        'YRLY AVE', 'REMARKS',
+    ]
+    score_keys = [
+        ('p1',),
+        ('p2',),
+        ('p3',),
+        ('exam', 'exam1'),
+        ('avg', 'sem1'),
+        ('p4',),
+        ('p5',),
+        ('p6',),
+        ('final_exam', 'exam2'),
+        ('sem2_avg', 'sem2'),
+        ('final_avg', 'yearly'),
+    ]
+    col_widths = [
+        48 * mm, 16 * mm, 16 * mm, 16 * mm, 18 * mm, 22 * mm,
+        16 * mm, 16 * mm, 16 * mm, 18 * mm, 22 * mm,
+        24 * mm, 33 * mm,
+    ]
+
+    table_data = [headers]
+    subjects = data.get('subjects') or []
+    raw_score_grid = []
+    for subject in subjects:
+        row = [subject.get('name') if isinstance(subject, dict) else str(subject)]
+        score_row = []
+        empty_display = '' if isinstance(subject, dict) and subject.get('blank_empty') else '—'
+        for keys in score_keys:
+            raw = _official_sheet_pick(subject, *keys)
+            score_row.append(raw)
+            row.append(_official_sheet_score_display(raw, empty_display=empty_display))
+        remark = _official_sheet_pick(subject, 'remark', 'remarks')
+        if remark in (None, ''):
+            row.append('' if isinstance(subject, dict) and subject.get('is_summary') else '—')
+        else:
+            row.append(remark)
+        table_data.append(row)
+        raw_score_grid.append(score_row + [remark])
+
+    if len(table_data) == 1:
+        table_data.append(['Published grades will appear after your teacher publishes period scores.'] + [''] * 12)
+
+    grade_table = Table(table_data, colWidths=col_widths, repeatRows=1)
+    style_cmds = [
+        ('FONTNAME', (0, 0), (-1, 0), 'Times-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 7.5),
+        ('FONTNAME', (0, 1), (-1, -1), 'Times-Roman'),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ('FONTNAME', (0, 1), (0, -1), 'Times-Bold'),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        ('ALIGN', (1, 1), (-2, -1), 'CENTER'),
+        ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+        ('ALIGN', (-1, 1), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 0.6, ink),
+        ('BOX', (0, 0), (-1, -1), 0.9, ink),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f3f4f6')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), ink),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('LEFTPADDING', (0, 0), (0, -1), 5),
+        ('RIGHTPADDING', (0, 0), (0, -1), 3),
+        ('LEFTPADDING', (1, 0), (-1, -1), 2),
+        ('RIGHTPADDING', (1, 0), (-1, -1), 2),
+    ]
+    for r, score_row in enumerate(raw_score_grid, start=1):
+        for c, raw in enumerate(score_row, start=1):
+            if c >= 12:
+                yearly_raw = score_row[10] if len(score_row) > 10 else raw
+                color = _official_sheet_score_color(yearly_raw)
+            else:
+                color = _official_sheet_score_color(raw)
+            style_cmds.append(('TEXTCOLOR', (c, r), (c, r), color))
+            style_cmds.append(('FONTNAME', (c, r), (c, r), 'Times-Bold'))
+        if subjects and subjects[r - 1].get('is_summary'):
+            style_cmds.append(('BACKGROUND', (0, r), (-1, r), colors.HexColor('#f8fafc')))
+            style_cmds.append(('FONTNAME', (0, r), (-1, r), 'Times-Bold'))
+    grade_table.setStyle(TableStyle(style_cmds))
+    elements.append(grade_table)
+    elements.append(Spacer(1, 3 * mm))
+
+    elements.append(Paragraph(f'RANK IN CLASS: {rank_label}', ParagraphStyle(
+        'Rank', parent=styles['Normal'], fontName='Times-Bold', fontSize=9, textColor=ink, spaceAfter=3,
+    )))
+
+    legend_cells = [
+        Paragraph(f'{label} {band} {letter}'.upper(), ParagraphStyle(
+            f'Leg{i}', parent=styles['Normal'], fontName='Times-Bold', fontSize=7.5,
+            alignment=TA_CENTER, textColor=ink,
+        ))
+        for i, (label, band, letter) in enumerate(legend_rows)
+    ]
+    legend = Table([legend_cells], colWidths=[70 * mm] * max(len(legend_cells), 1) if legend_cells else [281 * mm])
+    if len(legend_cells) == 4:
+        legend = Table([legend_cells], colWidths=[70.25 * mm] * 4)
+    legend.setStyle(TableStyle([
+        ('BOX', (0, 0), (-1, -1), 0.7, ink),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, ink),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    elements.append(Paragraph('GRADING METHOD', ParagraphStyle(
+        'LegCap', parent=styles['Normal'], fontName='Times-Bold', fontSize=8,
+        textColor=ink, spaceAfter=2,
+    )))
+    elements.append(legend)
+    elements.append(Spacer(1, 8 * mm))
+
+    vpi = f"{brand.get('vpi_title') or 'VPI'} {(brand.get('vpi_name') or '').upper()}".strip()
+    signs = Table([[
+        Paragraph(vpi, sign_style),
+        Paragraph((brand.get('sponsor_title') or 'CLASS SPONSOR').upper(), sign_style),
+        Paragraph((brand.get('principal_title') or 'PRINCIPAL').upper(), sign_style),
+    ]], colWidths=[93.6 * mm, 93.6 * mm, 93.8 * mm])
+    signs.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('LINEABOVE', (0, 0), (0, 0), 0.7, ink),
+        ('LINEABOVE', (1, 0), (1, 0), 0.7, ink),
+        ('LINEABOVE', (2, 0), (2, 0), 0.7, ink),
+        ('LEFTPADDING', (0, 0), (-1, -1), 12),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(signs)
+    elements.append(Spacer(1, 4 * mm))
+    elements.append(Paragraph((brand.get('motto') or '').upper(), motto_style))
+
+    def _draw_border(canvas, _doc):
+        canvas.saveState()
+        canvas.setStrokeColor(ink)
+        canvas.setLineWidth(1.2)
+        canvas.rect(6 * mm, 6 * mm, page[0] - 12 * mm, page[1] - 12 * mm)
+        canvas.restoreState()
+
+    doc.build(elements, onFirstPage=_draw_border, onLaterPages=_draw_border)
+    buffer.seek(0)
+    safe_id = (student.student_id or str(student.id)).replace('/', '-')
+    year_slug = (year_label or 'year').replace('/', '-')
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=f'{file_prefix}_{safe_id}_{year_slug}.pdf',
+        mimetype='application/pdf',
+    )
+
+
+@app.route('/student/grade-sheet/pdf', methods=['GET'], endpoint='student_grade_sheet_pdf')
+@login_required
+def student_grade_sheet_pdf():
+    """PDF download of the official landscape grade sheet."""
+    if (current_user.role or '').lower() != 'student':
+        abort(403)
+
+    student = get_student_for_user(current_user)
+    if not student:
+        flash('Student profile not found.', 'danger')
+        return redirect(url_for('logout'))
+
+    past_years = all_academic_years()
+    selected_year_id = request.args.get('academic_year_id', type=int)
+    if selected_year_id:
+        display_year = db.session.get(AcademicYear, selected_year_id)
+    else:
+        display_year = get_active_academic_year()
+        if not display_year and past_years:
+            display_year = past_years[0]
+    year_id = display_year.id if display_year else None
+    view_period = _requested_marking_period()
+    doc_state = student_official_documents_state(student, year_id, period=view_period)
+    if doc_state.get('hold'):
+        return render_official_grade_hold(student, display_year)
+    return build_official_grade_sheet_pdf(student, year_id, kind='sheet', approved_only=True)
+
 
 @app.route('/update-tuition/<int:student_id>', methods=['POST'])
 @login_required
@@ -6604,55 +8787,129 @@ def verify_transcript(token):
     )
 
 
-@app.route('/transcript/<int:student_id>')
+def user_can_view_official_transcript(user, student):
+    """Registrar, VPA, principal, admin, the student, or the linked parent."""
+    if not user or not getattr(user, 'is_authenticated', False) or not student:
+        return False
+    role = canonical_role(user)
+    if role in OFFICIAL_TRANSCRIPT_STAFF_ROLES:
+        return True
+    if student.user_id and student.user_id == user.id:
+        return True
+    if role == 'parent' and student.parent_email and student.parent_email == user.email:
+        return True
+    return False
+
+
+def student_transcript_year_span_labels(student):
+    """First and last attendance years printed in the certified paragraph."""
+    year_ids = set()
+    if getattr(student, 'academic_year_id', None):
+        year_ids.add(student.academic_year_id)
+    for (year_id,) in db.session.query(Grade.academic_year_id).filter(
+        Grade.student_id == student.id,
+        Grade.academic_year_id.isnot(None),
+    ).distinct():
+        year_ids.add(year_id)
+    for (year_id,) in db.session.query(Enrollment.academic_year_id).filter(
+        Enrollment.student_id == student.id,
+        Enrollment.academic_year_id.isnot(None),
+    ).distinct():
+        year_ids.add(year_id)
+    if not year_ids:
+        return 'N/A', 'N/A'
+    years = AcademicYear.query.filter(AcademicYear.id.in_(year_ids)).all()
+
+    def sort_key(year):
+        span = parse_academic_year_span(year.name)
+        if span:
+            return (span[0], span[1], year.id)
+        start = year.start_date.year if year.start_date else 0
+        return (start, start, year.id)
+
+    years.sort(key=sort_key)
+    first = format_academic_year_label(years[0].name) or years[0].name
+    last = format_academic_year_label(years[-1].name) or years[-1].name
+    return first, last
+
+
+def build_official_transcript_page_data(student, year_id, *, approved_only=False):
+    """Portrait Official Transcript from the same SEM.AVE / YRLY AVE grid."""
+    report = build_report_card_structured_data(
+        student, year_id, approved_only=approved_only,
+    )
+    groups, average_row, conduct_row = build_transcript_grade_groups(
+        report.get('subjects') or [],
+        report.get('division'),
+    )
+    first_year, last_year = student_transcript_year_span_labels(student)
+    klass = get_student_class_for_year(student, year_id)
+    grade_parts = (
+        getattr(klass, 'grade_level', None) if klass else None,
+        getattr(student, 'grade_level', None),
+        getattr(student, 'level', None),
+    )
+    promoted_to, conditioned_in, retained_in = transcript_promotion_fields(
+        report.get('promotion'),
+        *grade_parts,
+    )
+    yearly_average = ''
+    if average_row:
+        yearly_average = average_row.get('final_avg') or average_row.get('yearly') or ''
+    return {
+        **report,
+        'groups': groups,
+        'yearly_average': yearly_average,
+        'conduct': transcript_conduct_cells(conduct_row),
+        'first_year': first_year,
+        'last_year': last_year,
+        'grade_heading': transcript_grade_heading(*grade_parts),
+        'promoted_to': promoted_to,
+        'conditioned_in': conditioned_in,
+        'retained_in': retained_in,
+        'print_date': datetime.now().strftime('%B %d, %Y'),
+        'letterhead': transcript_letterhead(),
+    }
+
+
+@app.route('/transcript/<int:student_id>', methods=['GET'], strict_slashes=False)
 @login_required
 def transcript(student_id):
+    """Official FLPA portrait transcript (not the 6-period report card)."""
     student = Student.query.get_or_404(student_id)
-    
-    # Check permissions
-    user_role = (current_user.role or '').lower()
-    is_owner = student.user_id == current_user.id
-    is_parent = user_role == 'parent' and student.parent_email == current_user.email
-    if user_role not in ['admin', 'registrar'] and not is_owner and not is_parent:
+    if not user_can_view_official_transcript(current_user, student):
         flash('Access denied.', 'danger')
-        return redirect(url_for('login'))
-    
-    all_grades = official_grade_records(student_id)
+        return redirect(url_for(role_home_endpoint()))
 
-    grades_by_year = {}
-    for grade in all_grades:
-        year_record = grade.academic_year
-        if not year_record and grade.academic_year_id:
-            year_record = db.session.get(AcademicYear, grade.academic_year_id)
-        year_name = year_record.name if year_record else 'Unknown'
-        grades_by_year.setdefault(year_name, []).append(grade)
-
-    all_scores = [g.score for g in all_grades if g.score is not None]
-    overall_gpa = SchoolEngine.calculate_gpa(all_scores) if all_scores else 0.0
-    
-    # QR must encode a URL so phone scanners open our verify page (not a web search).
-    import qrcode
-    import base64
-
-    verify_token = generate_transcript_verify_token(student.id)
-    verify_url = url_for('verify_transcript', token=verify_token, _external=True)
-    qr = qrcode.QRCode(version=1, box_size=10, border=5)
-    qr.add_data(verify_url)
-    qr.make(fit=True)
-    img = qr.make_image(fill='black', back_color='white')
-    
-    buffer = BytesIO()
-    img.save(buffer, format="PNG")
-    qr_code = base64.b64encode(buffer.getvalue()).decode('utf-8')
-    
+    active_year = get_active_academic_year()
+    year_id = request.args.get('academic_year_id', type=int) or (
+        active_year.id if active_year else None
+    )
+    display_year = db.session.get(AcademicYear, year_id) if year_id else None
+    if viewer_must_wait_for_transcript_release(student, year_id):
+        return render_official_transcript_hold(student, display_year)
+    staff_preview = canonical_role(current_user) in OFFICIAL_TRANSCRIPT_STAFF_ROLES
+    data = build_official_transcript_page_data(
+        student, year_id, approved_only=not staff_preview,
+    )
     return render_template(
         'transcript.html',
         student=student,
-        grades_by_year=grades_by_year,
-        overall_gpa=overall_gpa,
-        qr_code=qr_code,
-        verify_url=verify_url,
+        data=data,
+        display_year=display_year,
+        school_print_brand=school_print_brand(),
     )
+
+
+@app.route('/transcripts/<int:student_id>', methods=['GET'], strict_slashes=False)
+@app.route('/official-transcript/<int:student_id>', methods=['GET'], strict_slashes=False)
+def official_transcript_alias(student_id):
+    """Canonicalize older/mistyped transcript URLs onto GET /transcript/<id>."""
+    return redirect(url_for(
+        'transcript',
+        student_id=student_id,
+        **request.args.to_dict(flat=True),
+    ))
 
 @app.route("/about")
 def about():
@@ -7473,9 +9730,22 @@ def add_grade():
     if 1 <= marking_period <= 6:
         setattr(grade, f"p{marking_period}", int(round(score)))
 
+    if submitted and student_class_id:
+        reconcile_grade_package_after_save(
+            active_year.id, student_class_id, marking_period,
+            published=True, actor_id=current_user.id,
+        )
+    elif student_class_id:
+        reconcile_grade_package_after_save(
+            active_year.id, student_class_id, marking_period,
+            published=False, actor_id=current_user.id,
+        )
     db.session.commit()
 
-    flash("Grade saved successfully.", "success")
+    if submitted:
+        flash(f"Grade saved. {GRADE_RELEASE_TEACHER_FLASH}", "success")
+    else:
+        flash("Grade saved successfully.", "success")
     return_class_id = request.form.get('grade_class_id', type=int)
     if return_class_id:
         return redirect(url_for('teacher_dashboard', tab='grades', grade_class_id=return_class_id))
@@ -7998,7 +10268,7 @@ def teacher_dashboard():
         "school": "Future Leaders Preparatory Academy",
         "sheet_title": "Teacher Dashboard",
         "status": "Active Session",
-        "academic_year": "2025-2026",
+        "academic_year": "",
         "logo_left": "images/logo1.png",
         "logo_right": "images/logo2.png"
     }
@@ -8006,6 +10276,9 @@ def teacher_dashboard():
     try:
         display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
             session_key=TEACHER_YEAR_SESSION_KEY,
+        )
+        header["academic_year"] = (
+            display_year.name if display_year else (active_year.name if active_year else "")
         )
         work_year_id = display_year.id if display_year else None
 
@@ -8246,6 +10519,13 @@ def teacher_dashboard():
             grade_subject=grade_subject,
             grade_period=grade_period,
             grade_rows=grade_rows,
+            component_rows=build_grade_component_rows(grade_rows),
+            period_component_specs=PERIOD_COMPONENT_SPECS,
+            period_scheme_note=PERIOD_COMPONENT_SCHEME_NOTE,
+            period_component_ceilings=PERIOD_COMPONENT_CEILINGS,
+            period_component_field_max=PERIOD_COMPONENT_FIELD_MAX,
+            period_total_listed_max=PERIOD_TOTAL_LISTED_MAX,
+            period_total_extra_max=PERIOD_TOTAL_EXTRA_CREDIT_MAX,
             period_label=period_label,
             published_grade_count=published_grade_count,
             active_tab=active_tab,
@@ -8253,6 +10533,14 @@ def teacher_dashboard():
             grade_graded_count=grade_graded_count,
             grade_published_count=grade_published_count,
             grade_pending_count=grade_pending_count,
+            grade_release=(
+                GradeRelease.query.filter_by(
+                    academic_year_id=display_year.id,
+                    class_id=grade_class_id,
+                    period=grade_period,
+                ).first()
+                if display_year and grade_class_id else None
+            ),
             activity_class_id=activity_class_id,
             selected_activity_class=selected_activity_class,
             activity_subjects=activity_subjects,
@@ -8488,8 +10776,8 @@ def attendance_overview():
         'principal': (url_for('principal_dashboard'), 'Principal Dashboard'),
         'registrar': (url_for('dashboard'), 'Registrar Dashboard'),
         'business': (url_for('business_dashboard'), 'Business Dashboard'),
-        'vpi': (url_for('dashboard'), 'VPI Dashboard'),
-        'vpa': (url_for('dashboard'), 'VPA Dashboard'),
+        'vpi': (url_for('vpi_dashboard'), 'VPI Finance Dashboard'),
+        'vpa': (url_for('vpa_dashboard'), 'VPA Academic Dashboard'),
         'dean': (url_for('dean_dashboard'), 'Dean Dashboard'),
     }
     back_url, back_label = back_map.get(role, (url_for('dashboard'), 'Dashboard'))
@@ -8563,23 +10851,27 @@ def grade_entry_attribution(grade):
     return None
 
 
-def build_principal_grade_class_cards(active_year, search_class=''):
+def build_principal_grade_class_cards(display_year, search_class='', *, viewing_archived=False):
     """Class portfolio summaries for principal grade-entry landing."""
-    if not active_year:
+    if not display_year:
         return []
-    query = Class.query.order_by(Class.grade_level.asc(), Class.name.asc())
-    if search_class:
-        term = f'%{search_class.strip()}%'
-        query = query.filter(
-            or_(
-                Class.name.ilike(term),
-                Class.stream.ilike(term),
-                db.cast(Class.grade_level, db.String).ilike(term),
-            )
-        )
     cards = []
-    for klass in query.all():
-        student_count = len(get_class_students_for_year(klass.id, active_year))
+    for klass in Class.query.order_by(Class.name.asc()).all():
+        if search_class:
+            term = search_class.strip().lower()
+            haystack = ' '.join(filter(None, [
+                klass.name,
+                klass.stream,
+                str(klass.grade_level or ''),
+            ])).lower()
+            if term not in haystack:
+                continue
+        try:
+            student_count = len(get_class_students_for_year(
+                klass.id, display_year, viewing_archived=viewing_archived,
+            ))
+        except Exception:
+            student_count = 0
         subjects = get_class_subject_catalog(klass.id)
         allocations = get_class_teacher_allocations(klass.id)
         cards.append({
@@ -8589,6 +10881,7 @@ def build_principal_grade_class_cards(active_year, search_class=''):
             'teacher_count': len({a['teacher_id'] for a in allocations if a['teacher_id']}),
             'allocations': allocations,
         })
+    cards.sort(key=lambda card: class_sort_key_from_klass(card.get('klass')))
     return cards
 
 
@@ -8600,20 +10893,36 @@ def principal_grade_entry():
         flash('Access denied.', 'danger')
         return redirect(url_for('login'))
 
-    active_year = get_active_academic_year()
-    if not active_year:
-        flash('No active academic year is configured.', 'danger')
+    display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
+        session_key=PRINCIPAL_YEAR_SESSION_KEY,
+    )
+    if not display_year:
+        flash('No academic year is configured.', 'danger')
         return redirect(url_for('principal_dashboard'))
 
     search_class = (request.args.get('search_class') or '').strip()
-    class_cards = build_principal_grade_class_cards(active_year, search_class)
+    class_cards = build_principal_grade_class_cards(
+        display_year, search_class, viewing_archived=viewing_archived,
+    )
+    class_cards_by_division = group_items_by_class(
+        class_cards, lambda card: card.get('klass'),
+    )
+    if not class_cards_by_division and class_cards:
+        class_cards_by_division = [{
+            'key': 'all',
+            'label': 'Classes',
+            'classes': class_cards,
+        }]
 
     return render_template(
         'principal_grade_entry.html',
         active_year=active_year,
-        display_year=active_year,
+        display_year=display_year,
+        viewing_archived=viewing_archived,
+        years=years,
         search_class=search_class,
         class_cards=class_cards,
+        class_cards_by_division=class_cards_by_division,
     )
 
 
@@ -8690,6 +10999,11 @@ def principal_class_grading(class_id):
         allocations=allocations,
         publish_stats=publish_stats,
         grade_entry_attribution=grade_entry_attribution,
+        grade_release=GradeRelease.query.filter_by(
+            academic_year_id=active_year.id,
+            class_id=class_id,
+            period=selected_period,
+        ).first() if active_year else None,
     )
 
 
@@ -8751,7 +11065,8 @@ def principal_save_grades(class_id):
     if saved_count:
         if publish_to_report:
             flash(
-                f'Principal backup: {period_label} grades published for {subject_name}.',
+                f'Principal backup: {period_label} grades published for {subject_name}. '
+                f'{GRADE_RELEASE_TEACHER_FLASH}',
                 'success',
             )
         else:
@@ -8809,12 +11124,16 @@ def principal_publish_period_grades(class_id):
         grade.submitted = True
         published_count += 1
 
+    if published_count:
+        reconcile_grade_package_after_save(
+            active_year.id, class_id, period, published=True, actor_id=current_user.id,
+        )
     db.session.commit()
     period_label = grading_period_label(period)
     if published_count:
         flash(
             f'Published {published_count} {period_label} grade{"s" if published_count != 1 else ""} '
-            f'for {subject_name}.',
+            f'for {subject_name}. {GRADE_RELEASE_TEACHER_FLASH}',
             'success',
         )
     else:
@@ -9323,6 +11642,7 @@ def _apply_activity_score(teacher_profile, assessment, student, score, feedback=
 
     submission.score = score
     submission.is_graded = True
+    submission.score_published = True
     if feedback:
         submission.teacher_feedback = feedback
 
@@ -10046,11 +12366,9 @@ def administrative_password_reset():
 @app.route('/class/edit/<int:class_id>', methods=['GET', 'POST'])
 @login_required
 def class_edit(class_id):
-    # --- FIXED SECURITY GUARD: CASE-INSENSITIVE MULTI-ROLE VALIDATION ---
-    user_role = current_user.role.lower() if current_user.role else ""
-    if user_role not in ['admin', 'principal']:
-        flash("Unauthorized access. Administrative privileges required.", "danger")
-        return redirect(url_for('login'))
+    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES | {'vpi'})
+    if blocked:
+        return blocked
 
     # Modern SQLAlchemy 2.0 implementation fallback for query
     klass = Class.query.get_or_404(class_id)
@@ -10150,10 +12468,9 @@ def _build_class_sponsor_matrix(classes):
 @login_required
 def principal_class_sponsors():
     """Full class sponsor command center for principal/admin."""
-    user_role = (current_user.role or '').lower()
-    if user_role not in ['admin', 'principal']:
-        flash('Unauthorized access.', 'danger')
-        return redirect(url_for('login'))
+    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    if blocked:
+        return blocked
 
     classes = Class.query.order_by(Class.grade_level.asc(), Class.name.asc()).all()
     teachers = Teacher.query.filter_by(status='ACTIVE').order_by(
@@ -10170,11 +12487,9 @@ def principal_class_sponsors():
 @app.route('/class/<int:class_id>/sponsor', methods=['POST'])
 @login_required
 def class_set_sponsor(class_id):
-    # --- FIXED SECURITY GUARD: CASE-INSENSITIVE CHECKING ---
-    user_role = current_user.role.lower() if current_user.role else ""
-    if user_role not in ['admin', 'principal']:
-        flash("Unauthorized access. Administrative privileges required.", "danger")
-        return redirect(url_for('login'))
+    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    if blocked:
+        return blocked
 
     klass = Class.query.get_or_404(class_id)
     sponsor_id = request.form.get('sponsor_id', type=int)
@@ -10214,20 +12529,12 @@ def class_set_sponsor(class_id):
 
 # ------------------------ ACADEMIC YEAR ROLLOVER WIZARD ---------------------------
 def _parse_grade_level(grade_level):
-    """Return an integer grade level from numeric strings or ints, else None."""
-    if grade_level is None:
+    """Return an integer grade 1–12 from stored labels (10, '10th', 'Grade 12')."""
+    if grade_level is None or grade_level == '':
         return None
-    if isinstance(grade_level, int):
-        return grade_level
-    text = str(grade_level).strip()
-    if not text:
+    if isinstance(grade_level, bool):
         return None
-    if text.isdigit():
-        return int(text)
-    match = re.match(r'^(?:Grade\s*)?(\d+)$', text, re.IGNORECASE)
-    if match:
-        return int(match.group(1))
-    return None
+    return parse_grade_number(grade_level)
 
 
 def _grades_match(grade_a, grade_b):
@@ -10238,6 +12545,10 @@ def _grades_match(grade_a, grade_b):
     parsed_b = _parse_grade_level(grade_b)
     if parsed_a is not None and parsed_b is not None:
         return parsed_a == parsed_b
+    canon_a = canonical_grade_value(grade_a)
+    canon_b = canonical_grade_value(grade_b)
+    if canon_a and canon_b:
+        return canon_a == canon_b
     return str(grade_a).strip().lower() == str(grade_b).strip().lower()
 
 
@@ -10254,61 +12565,273 @@ def _student_grade_level(student):
     return None
 
 
-def check_promotion_criteria(student, academic_year=None):
+def _subject_yearly_averages_for_decision(grades, visible_periods=None, division_key=None):
+    """Printed YRLY AVE per academic subject (not CONDUCT, not footer AVERAGE)."""
+    grouped = {}
+    for grade in grades or []:
+        raw_name = (grade.subject or grade.subject_name or '').strip()
+        if not raw_name:
+            continue
+        official = canonical_subject_name(raw_name, division_key) or raw_name
+        if is_report_summary_subject(official) or is_conduct_subject(official):
+            continue
+        key = subject_match_key(official)
+        if not key:
+            continue
+        grouped.setdefault(key, []).append(grade)
+
+    averages = []
+    for sub_grades in grouped.values():
+        scores = _collect_official_period_scores(sub_grades, visible_periods)
+        if not scores:
+            continue
+        row = official_subject_score_row('', scores, division_key)
+        yearly = numeric_report_score(row.get('final_avg') or row.get('yearly'))
+        if yearly is not None:
+            averages.append(float(yearly))
+    return averages
+
+
+def _yearly_averages_from_subject_rows(subjects):
+    """YRLY AVE values from printed academic rows only (skip AVERAGE / CONDUCT)."""
+    averages = []
+    for subject in subjects or []:
+        if not isinstance(subject, dict):
+            continue
+        if subject.get('is_summary') or is_report_summary_subject(subject.get('name')):
+            continue
+        yearly = numeric_report_score(subject.get('final_avg') or subject.get('yearly'))
+        if yearly is not None:
+            averages.append(float(yearly))
+    return averages
+
+
+def _promotion_decision_record(
+    *,
+    passed,
+    code,
+    decision,
+    label,
+    reason,
+    overall_average,
+    failing_count,
+    subject_count,
+    promoted_to=None,
+):
+    return {
+        'passed': passed,
+        'code': code,
+        'decision': decision,
+        'label': label,
+        'reason': reason,
+        'overall_average': overall_average,
+        'failing_subject_count': failing_count,
+        'subject_count': subject_count,
+        'promoted_to': promoted_to,
+    }
+
+
+def _incomplete_promotion_record():
+    return _promotion_decision_record(
+        passed=False,
+        code='INCOMPLETE',
+        decision='repeat',
+        label='Incomplete record',
+        reason=(
+            'No subject scores are on file for this academic year. '
+            'Promotion cannot be certified until a complete grade record is posted.'
+        ),
+        overall_average=None,
+        failing_count=0,
+        subject_count=0,
+    )
+
+
+def _year_promotion_from_averages(averages, student, academic_year_id=None):
+    """Apply MoE red-mark rules to printed subject YRLY AVE values."""
+    empty = _incomplete_promotion_record()
+    if not student or not averages:
+        return empty
+
+    pass_score = promotion_pass_score()
+    summer_failing = max_failing_subjects_for_promotion()
+    repeat_failing = repeat_class_failing_subject_threshold()
+    overall_average = sum(averages) / len(averages)
+    failing_count = sum(1 for avg in averages if avg < pass_score)
+    avg_txt = f'{overall_average:.1f}%'
+    fail_txt = (
+        f'{failing_count} subject yearly average(s) below {pass_score:.0f}%'
+        if failing_count
+        else f'all recorded subjects at or above {pass_score:.0f}%'
+    )
+    grade_level_numeric = _parse_grade_level(_student_grade_level(student))
+    is_grade_12 = grade_level_numeric == 12
+    stats = {
+        'overall_average': round(overall_average, 2),
+        'failing_count': failing_count,
+        'subject_count': len(averages),
+    }
+
+    if failing_count >= repeat_failing:
+        if is_grade_12:
+            reason = (
+                f'{failing_count} subject yearly averages are below the Ministry of Education '
+                f'passing mark of {pass_score:.0f}%. The student is not eligible to graduate '
+                f'and must repeat class, regardless of the overall yearly average ({avg_txt}).'
+            )
+        else:
+            reason = (
+                f'{failing_count} subject yearly averages are below the Ministry of Education '
+                f'passing mark of {pass_score:.0f}%. The student must repeat class, '
+                f'regardless of the overall yearly average ({avg_txt}).'
+            )
+        return _promotion_decision_record(
+            passed=False,
+            code='REPEAT',
+            decision='repeat',
+            label='Repeat class',
+            reason=reason,
+            **stats,
+        )
+
+    if failing_count == summer_failing:
+        if is_grade_12:
+            reason = (
+                f'Two subject yearly averages are below the Ministry of Education passing mark '
+                f'of {pass_score:.0f}% (year average {avg_txt}; {fail_txt}). '
+                'The student is assigned to Summer School and is not eligible to graduate.'
+            )
+        else:
+            reason = (
+                f'Two subject yearly averages are below the Ministry of Education passing mark '
+                f'of {pass_score:.0f}% (year average {avg_txt}; {fail_txt}). '
+                'The student is assigned to Summer School and is not promoted to the next class.'
+            )
+        return _promotion_decision_record(
+            passed=False,
+            code='SUMMER_SCHOOL',
+            decision='summer_school',
+            label='Summer School',
+            reason=reason,
+            **stats,
+        )
+
+    if overall_average < pass_score:
+        return _promotion_decision_record(
+            passed=False,
+            code='REPEAT',
+            decision='repeat',
+            label='Repeat class',
+            reason=(
+                f'Did not meet the Ministry of Education promotion standard of {pass_score:.0f}%. '
+                f'Year average {avg_txt}; {fail_txt}. The student is retained in the same class.'
+            ),
+            **stats,
+        )
+
+    if is_grade_12:
+        return _promotion_decision_record(
+            passed=True,
+            code='GRADUATED',
+            decision='graduate',
+            label='Graduated',
+            reason=(
+                f'Met the promotion standard (year average {avg_txt}; {fail_txt}) '
+                'and completed Grade 12.'
+            ),
+            **stats,
+        )
+
+    promoted_to = None
+    current_class = get_student_class_for_year(student, academic_year_id)
+    if current_class:
+        target_id = build_default_promotion_map(Class.query.all()).get(current_class.id)
+        if isinstance(target_id, int):
+            target_class = db.session.get(Class, target_id)
+            if target_class:
+                promoted_to = target_class.name
+                if target_class.stream:
+                    promoted_to = f'{promoted_to} ({target_class.stream})'
+
+    return _promotion_decision_record(
+        passed=True,
+        code='PROMOTED',
+        decision='promote',
+        label='Promoted',
+        reason=(
+            f'Met the Ministry of Education promotion standard of {pass_score:.0f}% '
+            f'(year average {avg_txt}; {fail_txt}). Eligible to advance to the next class.'
+        ),
+        promoted_to=promoted_to,
+        **stats,
+    )
+
+
+def evaluate_year_promotion_from_subject_rows(subjects, student, academic_year_id=None):
+    """Promotion Statement from the YRLY AVE cells printed on the sheet."""
+    return _year_promotion_from_averages(
+        _yearly_averages_from_subject_rows(subjects),
+        student,
+        academic_year_id=academic_year_id,
+    )
+
+
+def evaluate_year_promotion_decision(student, academic_year=None):
     """
-    MoE promotion standard: configurable average threshold and max failing subjects.
-    Students without grades for the year are not promoted.
+    Official year-end decision from each subject's printed YRLY AVE cell.
+
+    Outcomes: promote | summer_school | repeat | graduate.
+
+    Red marks are academic subjects whose yearly average is below the MoE
+    pass mark (default 70%). CONDUCT and the footer AVERAGE row do not count.
+
+    - 0 or 1 failing YRLY AVE subjects: promote (or graduate in Grade 12)
+      only if the overall yearly average also meets the MoE pass mark.
+    - Exactly 2 failing YRLY AVE subjects: Summer School — retained in the
+      current class, not promoted, and Grade 12 does not graduate.
+    - 3 or more failing YRLY AVE subjects: Repeat class, regardless of the
+      overall yearly average.
     """
+    empty = _incomplete_promotion_record()
     if not student:
-        return False
+        return empty
     if academic_year is None:
         academic_year = get_active_academic_year()
     if not academic_year:
-        return False
+        return empty
 
-    pass_score = promotion_pass_score()
-    max_failing = max_failing_subjects_for_promotion()
-
-    grades = Grade.query.filter_by(
-        student_id=student.id,
-        academic_year_id=academic_year.id,
-    ).all()
+    grades = official_grade_records(student.id, academic_year.id)
     if not grades:
-        return False
+        return empty
 
-    subject_averages = {}
-    for grade in grades:
-        subject_key = (grade.subject_name or grade.subject or '').strip().lower()
-        if not subject_key:
-            continue
-        score = grade.score if grade.score is not None else grade.final_average
-        if score is None:
-            continue
-        subject_averages.setdefault(subject_key, []).append(float(score))
+    klass = get_student_class_for_year(student, academic_year.id)
+    division_key = resolve_from_class(
+        klass,
+        getattr(student, 'level', None),
+        getattr(student, 'grade_level', None),
+    )
+    averages = _subject_yearly_averages_for_decision(grades, division_key=division_key)
+    return _year_promotion_from_averages(averages, student, academic_year_id=academic_year.id)
 
-    if not subject_averages:
-        return False
 
-    failed_count = 0
-    grand_total = 0.0
-    for scores in subject_averages.values():
-        avg = sum(scores) / len(scores)
-        grand_total += avg
-        if avg < pass_score:
-            failed_count += 1
-
-    final_average = grand_total / len(subject_averages)
-    return failed_count <= max_failing and final_average >= pass_score
+def check_promotion_criteria(student, academic_year=None):
+    """True if the student is promoted or graduated (not summer school or repeat)."""
+    return bool(evaluate_year_promotion_decision(student, academic_year).get('passed'))
 
 
 def _next_academic_year_name(name):
-    """Advance labels like 2025-2026 to 2026-2027."""
-    import re
-    match = re.match(r'^(\d{4})\s*[-–/]\s*(\d{4})$', (name or '').strip())
-    if match:
-        start_y, end_y = int(match.group(1)), int(match.group(2))
-        return f"{start_y + 1}-{end_y + 1}"
-    return None
+    """Advance labels like 2025-2026, 2035–36, or 2099/00 to the next span."""
+    return next_academic_year_label(name)
+
+
+def _students_eligible_for_rollover(academic_year):
+    """Students still on the year roster, including REPEAT/FAILED/SUSPENDED."""
+    if not academic_year:
+        return []
+    return Student.query.filter(
+        Student.academic_year_id == academic_year.id,
+        Student.status.in_(list(ACTIVE_ENROLLMENT_STATUSES)),
+    ).all()
 
 
 def _resolve_or_create_next_academic_year(active_year):
@@ -10323,17 +12846,16 @@ def _resolve_or_create_next_academic_year(active_year):
             next_name = f"{y + 1}-{y + 2}"
         else:
             next_name = f"{active_year.name} (Next)"
+    else:
+        next_name = normalize_academic_year_name(next_name)
 
     active_year.is_active = False
     if not active_year.end_date:
         active_year.end_date = datetime.now(timezone.utc).date()
 
-    existing = AcademicYear.query.filter_by(name=next_name).first()
+    existing = find_academic_year_by_name(next_name)
     if existing:
-        db.session.execute(
-            db.update(AcademicYear).where(AcademicYear.id != existing.id).values(is_active=False)
-        )
-        existing.is_active = True
+        _set_active_academic_year(existing)
         return existing
 
     if active_year.start_date:
@@ -10360,10 +12882,7 @@ def _resolve_or_create_next_academic_year(active_year):
     )
     db.session.add(target_year)
     db.session.flush()
-    db.session.execute(
-        db.update(AcademicYear).where(AcademicYear.id != target_year.id).values(is_active=False)
-    )
-    target_year.is_active = True
+    _set_active_academic_year(target_year)
     return target_year
 
 
@@ -10387,6 +12906,7 @@ def record_rollover_audit(
     retained,
     graduated,
     re_registration=0,
+    summer_school=0,
 ):
     """Persist rollover counts and a general activity audit entry."""
     log = RolloverLog(
@@ -10396,7 +12916,7 @@ def record_rollover_audit(
         to_year_id=to_year.id if to_year else None,
         to_year_name=to_year.name if to_year else None,
         promoted=promoted,
-        retained=retained,
+        retained=retained + summer_school,
         graduated=graduated,
         re_registration=re_registration,
         rollover_mode=mode,
@@ -10409,7 +12929,8 @@ def record_rollover_audit(
         user_id=current_user.id,
         action=(
             f"Academic rollover ({mode}): {from_label} → {to_label} — "
-            f"{promoted} promoted, {retained} retained, {graduated} graduated"
+            f"{promoted} promoted, {summer_school} summer school, "
+            f"{retained} repeat class, {graduated} graduated"
         ),
         module='Academic',
         ip_address=request.remote_addr,
@@ -10441,6 +12962,8 @@ def preview_moe_academic_rollover(active_year=None):
         'next_year_name': _compute_next_year_label(active_year),
         'promoted': 0,
         'retained': 0,
+        'failed': 0,
+        'summer_school': 0,
         'graduated': 0,
         're_registration': 0,
         'student_total': 0,
@@ -10449,6 +12972,7 @@ def preview_moe_academic_rollover(active_year=None):
         'already_rolled_today': False,
         'pass_score': promotion_pass_score(),
         'max_failing': max_failing_subjects_for_promotion(),
+        'repeat_failing': repeat_class_failing_subject_threshold(),
         'warnings': [],
         'can_execute': False,
     }
@@ -10466,30 +12990,29 @@ def preview_moe_academic_rollover(active_year=None):
             'Proceed only if you intend to run it again.'
         )
 
-    students = Student.query.filter_by(
-        academic_year_id=active_year.id,
-        status='ACTIVE',
-    ).all()
+    students = _students_eligible_for_rollover(active_year)
     preview['student_total'] = len(students)
     preview['no_students'] = len(students) == 0
     if preview['no_students']:
-        preview['warnings'].append('No active students are enrolled in the current academic year.')
+        preview['warnings'].append(
+            'No enrolled students (active, repeating, or suspended) are tagged to the current academic year.'
+        )
 
     classes = Class.query.order_by(Class.grade_level.asc(), Class.name.asc()).all()
     promotion_map = build_default_promotion_map(classes)
 
     for student in students:
-        passed = check_promotion_criteria(student, active_year)
-        grade_level = _student_grade_level(student)
+        decision = evaluate_year_promotion_decision(student, active_year)
+        code = decision.get('code')
+        grade_level_numeric = _parse_grade_level(_student_grade_level(student))
 
-        if grade_level == 12:
-            if passed:
-                preview['graduated'] += 1
-            else:
-                preview['retained'] += 1
-        elif passed:
+        if code == 'GRADUATED':
+            preview['graduated'] += 1
+        elif code == 'SUMMER_SCHOOL':
+            preview['summer_school'] += 1
+        elif decision.get('passed'):
             target_class = promotion_map.get(student.klass_id) if student.klass_id else None
-            if target_class == 'graduate':
+            if target_class == 'graduate' or grade_level_numeric == 12:
                 preview['graduated'] += 1
             else:
                 preview['promoted'] += 1
@@ -10498,11 +13021,27 @@ def preview_moe_academic_rollover(active_year=None):
 
         preview['re_registration'] += 1
 
+    preview['failed'] = preview['retained']
+
     preview['can_execute'] = (
         not preview['no_active_year']
         and not preview['no_students']
     )
     return preview
+
+
+def _retain_student_in_current_class(student, target_year, status='REPEAT'):
+    """Keep the student in the same class for the next year (repeat or summer school)."""
+    student.status = status
+    student.registration_type = 'Returning'
+    student.tuition_cleared = False
+    if target_year is not None:
+        student.academic_year_id = target_year.id
+    if student.klass_id and target_year is not None:
+        record_student_class_enrollment(
+            student, student.klass_id, academic_year_id=target_year.id,
+        )
+    sync_student_class_assignment(student)
 
 
 def execute_moe_academic_rollover(active_year=None, *, allow_repeat_today=False):
@@ -10521,48 +13060,46 @@ def execute_moe_academic_rollover(active_year=None, *, allow_repeat_today=False)
             'Check the audit log or confirm to run again.'
         )
 
-    students = Student.query.filter_by(
-        academic_year_id=active_year.id,
-        status='ACTIVE',
-    ).all()
+    students = _students_eligible_for_rollover(active_year)
     if not students:
-        raise ValueError('No active students are enrolled in the current academic year.')
+        raise ValueError(
+            'No enrolled students (active, repeating, or suspended) are tagged to the current academic year.'
+        )
 
     target_year = _resolve_or_create_next_academic_year(active_year)
     classes = Class.query.order_by(Class.grade_level.asc(), Class.name.asc()).all()
     promotion_map = build_default_promotion_map(classes)
     class_cache = {c.id: c for c in classes}
 
-    promoted = retained = graduated = re_registration = 0
+    promoted = retained = graduated = re_registration = summer_school = 0
 
     for student in students:
-        passed = check_promotion_criteria(student, active_year)
+        decision = evaluate_year_promotion_decision(student, active_year)
+        code = decision.get('code')
+        passed = bool(decision.get('passed'))
         grade_level = _student_grade_level(student)
         grade_level_numeric = _parse_grade_level(grade_level)
 
         if grade_level_numeric == 12:
-            if passed:
+            if code == 'GRADUATED' or passed:
                 mark_student_alumni(student, active_year.id)
                 graduated += 1
+            elif code == 'SUMMER_SCHOOL':
+                _retain_student_in_current_class(student, target_year, 'SUMMER_SCHOOL')
+                summer_school += 1
+                re_registration += 1
             else:
-                student.status = 'REPEAT'
-                student.registration_type = 'Returning'
-                student.tuition_cleared = False
-                student.academic_year_id = target_year.id
-                if student.klass_id:
-                    record_student_class_enrollment(
-                        student, student.klass_id, academic_year_id=target_year.id,
-                    )
+                _retain_student_in_current_class(student, target_year, 'REPEAT')
                 retained += 1
                 re_registration += 1
-                mark_student_promoted_pending_fee(student)
             continue
 
         student.registration_type = 'Returning'
         student.tuition_cleared = False
         student.academic_year_id = target_year.id
         re_registration += 1
-        mark_student_promoted_pending_fee(student)
+        if passed:
+            mark_student_promoted_pending_fee(student)
 
         if passed:
             old_klass_id = student.klass_id
@@ -10595,8 +13132,34 @@ def execute_moe_academic_rollover(active_year=None, *, allow_repeat_today=False)
                     )
                 else:
                     student.klass_id = None
+            else:
+                nxt = next_canonical_grade(grade_level)
+                if nxt and nxt != 'Graduation':
+                    student.grade_level = nxt
+                    new_klass = find_class_for_student_grade(
+                        nxt,
+                        stream=old_stream,
+                        old_class_id=old_klass_id,
+                    )
+                    if new_klass:
+                        student.klass_id = new_klass.id
+                        student.grade_level = new_klass.grade_level
+                        record_student_class_enrollment(
+                            student, new_klass.id, academic_year_id=target_year.id,
+                        )
+                    else:
+                        student.klass_id = None
+            student.status = 'ACTIVE'
             sync_student_class_assignment(student)
             promoted += 1
+        elif code == 'SUMMER_SCHOOL':
+            student.status = 'SUMMER_SCHOOL'
+            if student.klass_id:
+                record_student_class_enrollment(
+                    student, student.klass_id, academic_year_id=target_year.id,
+                )
+            sync_student_class_assignment(student)
+            summer_school += 1
         else:
             student.status = 'REPEAT'
             if student.klass_id:
@@ -10615,6 +13178,7 @@ def execute_moe_academic_rollover(active_year=None, *, allow_repeat_today=False)
         retained=retained,
         graduated=graduated,
         re_registration=re_registration,
+        summer_school=summer_school,
     )
     reset_dashboard_year_sessions(target_year)
     db.session.commit()
@@ -10623,6 +13187,7 @@ def execute_moe_academic_rollover(active_year=None, *, allow_repeat_today=False)
         'target_year_name': target_year.name,
         'promoted': promoted,
         'retained': retained,
+        'summer_school': summer_school,
         'graduated': graduated,
         're_registration': re_registration,
     }
@@ -10631,10 +13196,12 @@ def execute_moe_academic_rollover(active_year=None, *, allow_repeat_today=False)
 def format_rollover_flash_summary(results):
     """Build a detailed post-rollover flash message."""
     retained = results.get('retained', results.get('repeat', 0))
+    summer_school = results.get('summer_school', 0)
     parts = [
         (
             f"Rollover complete: {results.get('promoted', 0)} promoted, "
-            f"{retained} retained, {results.get('graduated', 0)} graduated."
+            f"{summer_school} summer school, {retained} repeat class, "
+            f"{results.get('graduated', 0)} graduated."
         ),
         f"New year: {results.get('target_year_name', '—')}",
     ]
@@ -10658,11 +13225,26 @@ def _rollover_role_guard():
     return None
 
 
+def _pick_promotion_target(candidates, stream=None):
+    if not candidates:
+        return 'repeat'
+    if stream:
+        stream_matches = [klass for klass in candidates if klass.stream == stream]
+        if stream_matches:
+            return stream_matches[0].id
+    return candidates[0].id
+
+
 def build_default_promotion_map(classes):
-    """Suggest next-class targets from grade level (+1) and stream when possible."""
+    """Suggest next-class targets from grade level (+1), KG sequence, and stream."""
+    classes = list(classes or [])
     by_grade = {}
+    by_canonical = {}
     numeric_classes = []
     for klass in classes:
+        canon = canonical_grade_value(klass.grade_level, klass.name)
+        if canon:
+            by_canonical.setdefault(canon, []).append(klass)
         grade_numeric = _parse_grade_level(klass.grade_level)
         if grade_numeric is None:
             continue
@@ -10675,29 +13257,57 @@ def build_default_promotion_map(classes):
         if next_grade > 12:
             promotion_map[klass.id] = 'graduate'
             continue
-        candidates = by_grade.get(next_grade, [])
-        if not candidates:
-            promotion_map[klass.id] = 'repeat'
+        promotion_map[klass.id] = _pick_promotion_target(
+            by_grade.get(next_grade, []),
+            klass.stream,
+        )
+
+    for klass in classes:
+        if klass.id in promotion_map:
             continue
-        if klass.stream:
-            stream_matches = [c for c in candidates if c.stream == klass.stream]
-            if stream_matches:
-                promotion_map[klass.id] = stream_matches[0].id
-                continue
-        promotion_map[klass.id] = candidates[0].id
+        nxt = next_canonical_grade(klass.grade_level, klass.name)
+        if nxt == 'Graduation':
+            promotion_map[klass.id] = 'graduate'
+            continue
+        if not nxt:
+            continue
+        promotion_map[klass.id] = _pick_promotion_target(
+            by_canonical.get(nxt, []),
+            klass.stream,
+        )
     return promotion_map
 
 
 def build_rollover_preview(active_year, classes, students):
-    """Summarize rollover impact before execution."""
+    """Summarize rollover impact: MoE pass standard first, then class map."""
     promotion_map = build_default_promotion_map(classes)
     counts = {
         'promote': 0,
         'graduate': 0,
         'repeat': 0,
+        'summer_school': 0,
         'unassigned': 0,
+        'incomplete': 0,
     }
     for student in students:
+        status = (student.status or 'ACTIVE').upper()
+        if status in ALUMNI_STATUSES:
+            continue
+        decision = evaluate_year_promotion_decision(student, active_year)
+        code = decision.get('code')
+        if code == 'INCOMPLETE':
+            counts['repeat'] += 1
+            counts['incomplete'] += 1
+            continue
+        if code == 'SUMMER_SCHOOL':
+            counts['summer_school'] += 1
+            continue
+        if not decision.get('passed'):
+            counts['repeat'] += 1
+            continue
+        if code == 'GRADUATED':
+            counts['graduate'] += 1
+            continue
         if not student.klass_id:
             counts['unassigned'] += 1
             continue
@@ -10712,6 +13322,9 @@ def build_rollover_preview(active_year, classes, students):
         'promotion_map': promotion_map,
         'counts': counts,
         'student_total': len(students),
+        'pass_score': promotion_pass_score(),
+        'max_failing': max_failing_subjects_for_promotion(),
+        'repeat_failing': repeat_class_failing_subject_threshold(),
     }
 
 
@@ -10838,6 +13451,7 @@ def execute_academic_rollover(
         'promoted': 0,
         'graduated': 0,
         'repeat': 0,
+        'summer_school': 0,
         're_enrolled': 0,
         'fees_recorded': 0,
         'fees_configured': 0,
@@ -10857,10 +13471,11 @@ def execute_academic_rollover(
     if target_mode == 'new':
         if not new_year_name or not new_year_start:
             raise ValueError("New academic year requires a name and start date.")
-        if AcademicYear.query.filter_by(name=new_year_name.strip()).first():
-            raise ValueError(f"Academic year '{new_year_name.strip()}' already exists.")
+        new_year_name = normalize_academic_year_name(new_year_name)
+        if find_academic_year_by_name(new_year_name):
+            raise ValueError(f"Academic year '{new_year_name}' already exists.")
         target_year = AcademicYear(
-            name=new_year_name.strip(),
+            name=new_year_name,
             start_date=new_year_start,
             end_date=new_year_end,
             is_active=True,
@@ -10896,6 +13511,7 @@ def execute_academic_rollover(
     students = students_query.all()
 
     class_cache = {c.id: c for c in Class.query.all()}
+    source_year = db.session.get(AcademicYear, source_year_id) if source_year_id else None
 
     for student in students:
         if exclude_statuses and student.status in exclude_statuses:
@@ -10912,7 +13528,23 @@ def execute_academic_rollover(
                 academic_year_id=source_year_id,
             )
 
-        if apply_promotions and student.klass_id:
+        meets_standard = True
+        if apply_promotions and source_year:
+            decision = evaluate_year_promotion_decision(student, source_year)
+            if not decision.get('passed'):
+                if decision.get('code') == 'SUMMER_SCHOOL':
+                    student.status = 'SUMMER_SCHOOL'
+                    results['summer_school'] += 1
+                else:
+                    student.status = 'REPEAT'
+                    results['repeat'] += 1
+                if student.klass_id:
+                    record_student_class_enrollment(
+                        student, student.klass_id, academic_year_id=target_year.id,
+                    )
+                meets_standard = False
+
+        if apply_promotions and meets_standard and student.klass_id:
             target_class = promotion_map.get(student.klass_id, 'repeat')
             if target_class == 'graduate':
                 mark_student_alumni(student, source_year_id)
@@ -10926,6 +13558,7 @@ def execute_academic_rollover(
                         student, student.klass_id, academic_year_id=target_year.id,
                     )
             elif target_class:
+                student.status = 'ACTIVE'
                 student.klass_id = int(target_class)
                 promoted_class = class_cache.get(int(target_class))
                 if promoted_class:
@@ -10934,11 +13567,12 @@ def execute_academic_rollover(
                     student, student.klass_id, academic_year_id=target_year.id,
                 )
                 results['promoted'] += 1
-        elif apply_promotions and not student.klass_id:
+        elif apply_promotions and meets_standard and not student.klass_id:
             grade_level = _student_grade_level(student)
             if grade_level:
                 new_klass = find_class_for_student_grade(grade_level)
                 if new_klass:
+                    student.status = 'ACTIVE'
                     student.klass_id = new_klass.id
                     student.grade_level = new_klass.grade_level
                     record_student_class_enrollment(
@@ -10946,7 +13580,7 @@ def execute_academic_rollover(
                     )
                     results['promoted'] += 1
 
-        if apply_promotions and student.status == 'ACTIVE':
+        if apply_promotions and (student.status or '').upper() in ACTIVE_ENROLLMENT_STATUSES:
             sync_student_class_assignment(student)
 
         if student_is_alumni(student):
@@ -10961,7 +13595,8 @@ def execute_academic_rollover(
                 results['tuition_reset'] += 1
             student.tuition_cleared = False
 
-        mark_student_promoted_pending_fee(student)
+        if (student.status or '').upper() not in ('REPEAT', 'SUMMER_SCHOOL'):
+            mark_student_promoted_pending_fee(student)
 
         if charge_registration_fee and student.klass_id and student.klass_id in included_class_ids:
             fee_amount = money(class_registration_fees.get(student.klass_id, 0))
@@ -10992,6 +13627,7 @@ def execute_academic_rollover(
         retained=retained_count,
         graduated=results['graduated'],
         re_registration=results['re_enrolled'],
+        summer_school=results.get('summer_school', 0),
     )
     reset_dashboard_year_sessions(target_year)
     db.session.commit()
@@ -11018,12 +13654,14 @@ def academic_rollover():
             return jsonify({
                 'promoted': preview['promoted'],
                 'retained': preview['retained'],
+                'summer_school': preview['summer_school'],
                 'graduated': preview['graduated'],
                 're_registration': preview['re_registration'],
                 'student_total': preview['student_total'],
                 'next_year_name': preview['next_year_name'],
                 'pass_score': preview['pass_score'],
                 'max_failing': preview['max_failing'],
+                'repeat_failing': preview.get('repeat_failing'),
                 'warnings': preview['warnings'],
                 'can_execute': preview['can_execute'],
             })
@@ -11242,17 +13880,26 @@ def _purge_academic_year_linked_records(year_id):
 @app.route('/academic-years', methods=['GET', 'POST'])
 @login_required
 def academic_years():
-    # ✨ FIX: Check if the user's role is neither Admin nor Principal
-    # We use .lower() to completely eliminate case-sensitivity bugs!
-    if current_user.role.lower() not in ['admin', 'principal', 'vpa']:
-        flash("Unauthorized access.", "danger")
-        return redirect(url_for('login'))
+    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    if blocked:
+        return blocked
 
     form = AcademicYearForm()
 
     if form.validate_on_submit():
+        year_name = normalize_academic_year_name(form.name.data)
+        if find_academic_year_by_name(year_name):
+            flash(f"Academic year '{year_name}' already exists.", "warning")
+            years = all_academic_years()
+            year_links = _build_academic_year_links(years)
+            return render_template(
+                'academic_years.html',
+                form=form,
+                years=years,
+                year_links=year_links,
+            )
         year = AcademicYear(
-            name=form.name.data,
+            name=year_name,
             start_date=form.start_date.data,
             end_date=form.end_date.data,
             is_active=False,
@@ -11260,10 +13907,22 @@ def academic_years():
         )
         db.session.add(year)
         db.session.flush()
-        if form.is_active.data:
+        other_active = AcademicYear.query.filter(
+            AcademicYear.id != year.id,
+            AcademicYear.is_active.is_(True),
+        ).count()
+        if form.is_active.data or other_active == 0:
             _set_active_academic_year(year)
         db.session.commit()
-        flash("Academic year created successfully.", "success")
+        if has_app_context() and hasattr(g, '_flpa_active_year'):
+            delattr(g, '_flpa_active_year')
+        if has_request_context() and hasattr(g, '_flpa_all_years'):
+            delattr(g, '_flpa_all_years')
+        flash(
+            f"Academic year {year.name} is ready as its own folder. "
+            "Grades, attendance, and fees for other years stay in those years.",
+            "success",
+        )
         return redirect(url_for('academic_years'))
 
     years = all_academic_years()
@@ -11344,7 +14003,12 @@ def edit_academic_year(year_id):
     if form.validate_on_submit():
         try:
             # If this year is being switched from Inactive to Active
-            year.name = form.name.data
+            year_name = normalize_academic_year_name(form.name.data)
+            existing = find_academic_year_by_name(year_name)
+            if existing and existing.id != year.id:
+                flash(f"Academic year '{year_name}' already exists.", "warning")
+                return render_template('academy_year_edit.html', form=form, year=year)
+            year.name = year_name
             year.start_date = form.start_date.data
             year.end_date = form.end_date.data
             if form.is_active.data:
@@ -11492,47 +14156,181 @@ def categorize_fee_payment(description):
     return "Student Fees"
 
 
-def sync_registration_fee_ledger(student, academic_year_id, fee_amount, *, update_existing=True):
-    """Create or update the registration fee payment row for a student."""
-    fee_amount = parse_currency_amount_optional(fee_amount)
-    if not student or not academic_year_id or fee_amount <= 0:
-        return fee_amount
-
-    existing_reg_payment = (
+def find_registration_fee_payment(student, academic_year_id):
+    """Latest registration StudentPayment for a student in a given year."""
+    if not student or not getattr(student, 'id', None) or not academic_year_id:
+        return None
+    return (
         StudentPayment.query.filter_by(
             student_id=student.id,
             academic_year_id=academic_year_id,
             term=1,
         )
         .filter(StudentPayment.description.ilike('%registration%'))
+        .order_by(StudentPayment.id.desc())
         .first()
     )
 
-    if existing_reg_payment:
-        if not update_existing:
-            return fee_amount
-        old_amount = parse_currency_amount_optional(existing_reg_payment.amount_paid)
-        if old_amount == fee_amount:
-            return fee_amount
-        existing_reg_payment.amount_paid = fee_amount
-        marker = f"[SP-{existing_reg_payment.id}]"
-        income_tx = BusinessTransaction.query.filter(
-            BusinessTransaction.description.like(f"%{marker}%"),
-            BusinessTransaction.is_deleted.is_(False),
-        ).first()
-        if income_tx:
-            income_tx.amount = fee_amount
-        return fee_amount
 
-    record_student_payment_with_income(
+def _latest_registration_payments_map(student_ids, academic_year_id=None):
+    """Map student_id → latest registration payment (batched for roster folders)."""
+    if not student_ids:
+        return {}
+    query = StudentPayment.query.filter(
+        StudentPayment.student_id.in_(list(student_ids)),
+        StudentPayment.description.ilike('%registration%'),
+    )
+    if academic_year_id:
+        query = query.filter(StudentPayment.academic_year_id == academic_year_id)
+    latest = {}
+    for payment in query.order_by(StudentPayment.id.asc()).all():
+        latest[payment.student_id] = payment
+    return latest
+
+
+def _registration_fee_payment_description(payment_status=None, receipt_reference=None):
+    status = (payment_status or '').strip().lower()
+    if status == 'partial':
+        base = 'Partial Registration Fee Payment'
+    else:
+        base = 'Initial Registration Fee Payment (Auto-Generated)'
+    ref = (receipt_reference or '').strip()
+    if ref:
+        return f'{base} (Ref: {ref})'
+    return base
+
+
+def _form_registration_payment_status(form):
+    field = getattr(form, 'registration_payment_status', None)
+    return ((field.data if field is not None else '') or '').strip().lower()
+
+
+def _form_receipt_reference(form):
+    field = getattr(form, 'receipt_reference', None)
+    return ((field.data if field is not None else '') or '').strip()
+
+
+def _registration_receipt_meta(payment, student):
+    """Display fields for the official registration receipt."""
+    fee_amount = money(getattr(student, 'registration_fees', 0) if student else 0)
+    amount_paid = money(payment.amount_paid if payment else 0)
+    remaining = max(0.0, round(fee_amount - amount_paid, 2))
+    description = payment.description or '' if payment else ''
+    desc_lower = description.lower()
+    if 'partial' in desc_lower or remaining > 0.004:
+        fee_status = 'Partial'
+    else:
+        fee_status = 'Paid'
+    receipt_reference = None
+    marker = '(Ref: '
+    start = description.find(marker)
+    if start >= 0:
+        rest = description[start + len(marker):]
+        end = rest.find(')')
+        receipt_reference = (rest[:end] if end >= 0 else rest).strip() or None
+    return {
+        'fee_amount': fee_amount,
+        'amount_paid': amount_paid,
+        'remaining': remaining,
+        'fee_status': fee_status,
+        'receipt_reference': receipt_reference,
+        'receipt_no': 'SP-{}'.format(payment.id) if payment else '—',
+    }
+
+
+def _is_registration_fee_payment(payment):
+    return 'registration' in ((payment.description or '') if payment else '').lower()
+
+
+def _render_registrar_registration_receipt(payment):
+    """Official registration receipt page (shared by registrar and business print routes)."""
+    student = db.session.get(Student, payment.student_id) if payment else None
+    year = db.session.get(AcademicYear, payment.academic_year_id) if payment else None
+    meta = _registration_receipt_meta(payment, student)
+    return render_template(
+        'registrar_registration_receipt.html',
+        payment=payment,
+        student=student,
+        display_year=year,
+        class_label=format_student_class_name(student, payment.academic_year_id) if student else '—',
+        collected_by=current_user.full_name or current_user.email,
+        registered_by=getattr(student, 'registrar', None),
+        remaining=meta['remaining'],
+        fee_amount=meta['fee_amount'],
+        fee_status=meta['fee_status'],
+        receipt_reference=meta['receipt_reference'],
+        receipt_no=meta['receipt_no'],
+        default_avatar_url=default_static_photo_url(),
+    )
+
+
+def collect_registration_fee_payment(student, form, academic_year_id, fee_value, *, update_existing=True):
+    """
+    Create/update the registration ledger row.
+
+    New unpaid registrations do not post income. Existing rows are still updated
+    when the fee amount changes. Returns (payment, offer_print_receipt).
+    """
+    status = _form_registration_payment_status(form)
+    collected = status in {'paid', 'partial'}
+    existing = find_registration_fee_payment(student, academic_year_id)
+    if not collected and not existing:
+        return None, False
+    payment = sync_registration_fee_ledger(
+        student,
+        academic_year_id,
+        fee_value,
+        update_existing=update_existing,
+        payment_status=status if collected else None,
+        receipt_reference=_form_receipt_reference(form) or None,
+    )
+    return payment, bool(collected and payment)
+
+
+def sync_registration_fee_ledger(
+    student,
+    academic_year_id,
+    fee_amount,
+    *,
+    update_existing=True,
+    payment_status=None,
+    receipt_reference=None,
+):
+    """Create or update the registration fee payment row for a student.
+
+    Returns the StudentPayment row, or None when no ledger row is written.
+    """
+    fee_amount = parse_currency_amount_optional(fee_amount)
+    if not student or not academic_year_id or fee_amount <= 0:
+        return None
+
+    description = _registration_fee_payment_description(payment_status, receipt_reference)
+    existing_reg_payment = find_registration_fee_payment(student, academic_year_id)
+
+    if existing_reg_payment:
+        if update_existing:
+            old_amount = parse_currency_amount_optional(existing_reg_payment.amount_paid)
+            if old_amount != fee_amount:
+                existing_reg_payment.amount_paid = fee_amount
+                marker = f"[SP-{existing_reg_payment.id}]"
+                income_tx = BusinessTransaction.query.filter(
+                    BusinessTransaction.description.like(f"%{marker}%"),
+                    BusinessTransaction.is_deleted.is_(False),
+                ).first()
+                if income_tx:
+                    income_tx.amount = fee_amount
+            if payment_status or receipt_reference:
+                existing_reg_payment.description = description
+        return existing_reg_payment
+
+    return record_student_payment_with_income(
         student,
         academic_year_id,
         term=1,
         amount_paid=fee_amount,
-        description="Initial Registration Fee Payment (Auto-Generated)",
+        description=description,
         installment=1,
     )
-    return fee_amount
 
 
 def record_student_payment_with_income(
@@ -11717,6 +14515,7 @@ def build_business_dashboard_context(
 ):
     """Build template context for the business role dashboard."""
     search_class = (search_class or request.args.get("search_class", "") or "").strip()
+    search_student = (request.args.get("search_student") or "").strip()
     active_tab = (request.args.get("tab") or "tuition").strip().lower()
     if active_tab not in {"tuition", "summary", "ledger"}:
         active_tab = "tuition"
@@ -11745,10 +14544,39 @@ def build_business_dashboard_context(
     class_roster = build_business_class_roster(
         selected_class_id, display_year, viewing_archived=viewing_archived,
     )
+    if search_student:
+        needle = search_student.lower()
+        class_roster = [
+            row for row in class_roster
+            if needle in (row.get("full_name") or "").lower()
+            or needle in str(row.get("student_id") or "").lower()
+        ]
     selected_student_summary = next(
         (row for row in class_roster if row["id"] == selected_student_id),
         None,
     )
+    if selected_student_id and not selected_student_summary:
+        selected_student_summary = next(
+            (
+                row for row in build_business_class_roster(
+                    selected_class_id, display_year, viewing_archived=viewing_archived,
+                )
+                if row["id"] == selected_student_id
+            ),
+            None,
+        )
+
+    selected_student_payments = []
+    if selected_student_id and display_year:
+        selected_student_payments = (
+            StudentPayment.query.filter_by(
+                student_id=selected_student_id,
+                academic_year_id=display_year.id,
+            )
+            .order_by(StudentPayment.paid_on.desc(), StudentPayment.id.desc())
+            .limit(12)
+            .all()
+        )
 
     class_query = Class.query.order_by(Class.name.asc())
     if search_class:
@@ -11910,7 +14738,10 @@ def build_business_dashboard_context(
         "selected_student": selected_student,
         "class_roster": class_roster,
         "selected_student_summary": selected_student_summary,
+        "selected_student_payments": selected_student_payments,
         "recent_payments": recent_payments,
+        "search_class": search_class,
+        "search_student": search_student,
         "total_revenue": total_revenue,
         "total_expenses": total_expenses,
         "net_profit": total_revenue - total_expenses,
@@ -11921,7 +14752,6 @@ def build_business_dashboard_context(
         "tx_flags_by_id": tx_flags_by_id,
         "students": year_students,
         "classes": classes_list,
-        "search_class": search_class,
         "stats": stats,
         "counts": stats,
         "years": years,
@@ -12062,8 +14892,109 @@ def find_student_by_email(email):
     return None, None
 
 
+_RETENTION_PLACEMENT_CODES = frozenset({'REPEAT', 'SUMMER_SCHOOL'})
+_RETENTION_PLACEMENT_LABELS = {
+    'REPEAT': 'Repeat class',
+    'SUMMER_SCHOOL': 'Summer School',
+}
+
+
+def find_prior_academic_year(year):
+    """Year that rolls into `year` (e.g. 2025-2026 → 2026-2027)."""
+    if year is None:
+        return None
+    target_name = (getattr(year, 'name', None) or '').strip()
+    if not target_name:
+        return None
+    for candidate in AcademicYear.query.filter(AcademicYear.id != year.id).all():
+        if _next_academic_year_name(candidate.name) == target_name:
+            return candidate
+    return None
+
+
+def returning_student_retention_info(student):
+    """
+    Repeat class / Summer School placement for registrar re-registration.
+
+    Uses enrollment status set by rollover, then last-year promotion
+    (evaluate_year_promotion_decision). Does not invent new status codes.
+    """
+    if not student:
+        return None
+
+    code = (getattr(student, 'status', None) or '').upper()
+    if code not in _RETENTION_PLACEMENT_CODES:
+        years_to_check = []
+        if getattr(student, 'academic_year', None):
+            years_to_check.append(student.academic_year)
+        active = get_active_academic_year()
+        if active:
+            years_to_check.append(active)
+        prior = find_prior_academic_year(active or getattr(student, 'academic_year', None))
+        if prior:
+            years_to_check.append(prior)
+
+        seen = set()
+        code = ''
+        for year in years_to_check:
+            year_id = getattr(year, 'id', None)
+            if not year or year_id in seen:
+                continue
+            seen.add(year_id)
+            decision = evaluate_year_promotion_decision(student, year)
+            decision_code = (decision.get('code') or '').upper()
+            if decision_code in _RETENTION_PLACEMENT_CODES:
+                code = decision_code
+                break
+        if code not in _RETENTION_PLACEMENT_CODES:
+            return None
+
+    label = _RETENTION_PLACEMENT_LABELS[code]
+    klass = getattr(student, 'assigned_class', None) or getattr(student, 'klass', None)
+    if klass is None and student.klass_id:
+        klass = db.session.get(Class, student.klass_id)
+    klass_name = ''
+    if klass is not None:
+        klass_name = klass.name or ''
+        stream = getattr(klass, 'stream', None)
+        if stream:
+            klass_name = f'{klass_name} ({stream})'.strip()
+    if not klass_name:
+        formatted = format_student_class_name(student)
+        if formatted and formatted not in ('Not Assigned',):
+            klass_name = formatted
+
+    lock_class = bool(student.klass_id)
+    detail = 'They stay in the same grade, not promoted.'
+    return {
+        'code': code,
+        'label': label,
+        'klass_id': student.klass_id,
+        'klass_name': klass_name,
+        'lock_class': lock_class,
+        'detail': detail,
+        'message': f'{label} — they stay in the same grade, not promoted.',
+    }
+
+
+def apply_returning_retention_class(student, form):
+    """Keep a repeater / summer-school student in the class rollover assigned."""
+    info = returning_student_retention_info(student)
+    if not info:
+        return info
+    if info.get('lock_class') and info.get('klass_id') and form is not None:
+        form.klass.data = info['klass_id']
+    if (student.status or '').upper() not in _RETENTION_PLACEMENT_CODES:
+        student.status = info['code']
+    return info
+
+
 def build_student_lookup_payload(student, match_kind, *, staff=False):
     """Shared lookup response for enrollment auto-fill APIs."""
+    user = student.user
+    has_photo = bool(student.has_id_photo)
+    klass = getattr(student, 'assigned_class', None) or getattr(student, 'klass', None)
+    klass_name = (klass.name if klass is not None else '') or ''
     payload = {
         'found': True,
         'is_returning': True,
@@ -12072,20 +15003,43 @@ def build_student_lookup_payload(student, match_kind, *, staff=False):
         'last_name': student.last_name,
         'dob': student.dob.isoformat() if student.dob else None,
         'gender': student.gender,
-        'level': student.level or 'Senior High',
+        'level': academic_level_for_student(student),
         'parent_email': student.parent_email or '',
+        'parent_phone': student.parent_phone or '',
+        'guardian_name': resolve_parent_guardian_name(student) or '',
         'klass_id': student.klass_id,
+        'klass_name': klass_name,
+        'status': (student.status or 'ACTIVE').upper(),
         'student_id': student.student_id,
-        'email': (student.user.email if student.user else '') or '',
+        'email': (user.email if user else '') or '',
+        'telephone_number': (user.telephone_number if user else '') or '',
+        'home_address': (user.home_address if user else '') or '',
+        'has_id_photo': has_photo,
+        'photo_url': student.photo_url if has_photo else '',
+        'retention': None,
+        'promotion_status': None,
     }
 
     if staff:
         fee_value = float(student.registration_fees or 0)
         payload['registration_fees'] = f'{fee_value:,.2f}' if fee_value else '0.00'
-        payload['welcome_message'] = (
-            f'Returning student found: {student.first_name} {student.last_name}. '
-            'Identity fields are locked — assign class and academic year, then commit.'
-        )
+        retention = returning_student_retention_info(student)
+        payload['retention'] = retention
+        if retention:
+            payload['promotion_status'] = retention['code']
+            class_bit = ''
+            if retention.get('klass_name'):
+                locked = ' (locked)' if retention.get('lock_class') else ''
+                class_bit = f" Class: {retention['klass_name']}{locked}."
+            payload['welcome_message'] = (
+                f"{retention['label']}: {student.first_name} {student.last_name} "
+                f"stays in the same grade, not promoted.{class_bit}"
+            )
+        else:
+            payload['welcome_message'] = (
+                f'Returning student found: {student.first_name} {student.last_name}. '
+                'Identity fields are locked — assign class and academic year, then commit.'
+            )
     else:
         parent_contact = student.parent_email or ''
         if not parent_contact and student.user:
@@ -12099,12 +15053,18 @@ def build_student_lookup_payload(student, match_kind, *, staff=False):
     return payload
 
 
+def _class_division_label_map(classes=None):
+    rows = classes if classes is not None else Class.query.order_by(Class.name.asc()).all()
+    return {klass.id: division_label_for_class(klass) for klass in rows}
+
+
 def _populate_self_registration_form(form):
     """Load class choices for the public self-registration form."""
     classes = Class.query.order_by(Class.name.asc()).all()
     form.klass.choices = [(0, '— Select Class (optional) —')] + [
         (klass.id, klass.name) for klass in classes
     ]
+    return classes
 
 
 def _apply_self_registration_to_student(student, form, academic_year, *, registration_type):
@@ -12130,6 +15090,9 @@ def _apply_self_registration_to_student(student, form, academic_year, *, registr
         assigned_class = db.session.get(Class, klass_id)
         if assigned_class:
             student.grade_level = assigned_class.grade_level
+            division = division_label_for_class(assigned_class)
+            if division and division != 'Other':
+                student.level = division
 
     if student.student_id:
         student.student_id_code = student.student_id
@@ -12141,19 +15104,24 @@ def _apply_self_registration_to_student(student, form, academic_year, *, registr
 def student_enrollment():
     """Public self-service enrollment form."""
     form = SelfRegistrationForm()
-    _populate_self_registration_form(form)
-    return render_template('student/self_registration.html', form=form)
+    classes = _populate_self_registration_form(form)
+    return render_template(
+        'student/self_registration.html',
+        form=form,
+        class_division_labels=_class_division_label_map(classes),
+    )
 
 
 @app.route('/student/enrollment/submit', methods=['POST'])
 def submit_registration():
     """Process public self-registration submissions."""
     form = SelfRegistrationForm()
-    _populate_self_registration_form(form)
+    classes = _populate_self_registration_form(form)
+    self_reg_ctx = {'form': form, 'class_division_labels': _class_division_label_map(classes)}
 
     if not form.validate_on_submit():
         flash('Please correct the highlighted errors before submitting.', 'danger')
-        return render_template('student/self_registration.html', form=form), 400
+        return render_template('student/self_registration.html', **self_reg_ctx), 400
 
     active_year = get_active_academic_year()
     if not active_year:
@@ -12170,7 +15138,7 @@ def submit_registration():
         if is_returning:
             if not existing_student:
                 flash('No matching record found for that email. Uncheck returning student or use a different email.', 'danger')
-                return render_template('student/self_registration.html', form=form)
+                return render_template('student/self_registration.html', **self_reg_ctx)
             if student_same_year_fully_enrolled(existing_student, active_year.id):
                 flash(f'You are already enrolled for {active_year.name}. Sign in to access your portal.', 'info')
                 return redirect(url_for('login'))
@@ -12179,7 +15147,7 @@ def submit_registration():
         elif existing_student:
             if not _same_student_identity(existing_student, form):
                 flash('That email is already linked to another student record.', 'danger')
-                return render_template('student/self_registration.html', form=form)
+                return render_template('student/self_registration.html', **self_reg_ctx)
             student = existing_student
             registration_type = 'Returning'
         else:
@@ -12197,10 +15165,12 @@ def submit_registration():
         )
 
         if email:
+            chosen_password = (form.password.data or '').strip() or None
             portal_user = link_student_portal_from_form(
                 student,
                 email,
-                password=form.password.data or None,
+                password=chosen_password,
+                must_change_password=not bool(chosen_password),
             )
             if not portal_user:
                 flash(
@@ -12208,6 +15178,13 @@ def submit_registration():
                     'Contact the registrar for assistance.',
                     'warning',
                 )
+            else:
+                issued = getattr(portal_user, '_issued_initial_password', None)
+                if issued and not chosen_password:
+                    flash(
+                        f'Your portal login password is {issued}. Change it after you sign in.',
+                        'info',
+                    )
 
         mark_student_promoted_pending_fee(student)
         sync_student_class_assignment(student)
@@ -12224,7 +15201,7 @@ def submit_registration():
         db.session.rollback()
         logger.error('Self-registration failed: %s', exc, exc_info=True)
         flash('Registration could not be completed. Please try again or visit the registrar.', 'danger')
-        return render_template('student/self_registration.html', form=form)
+        return render_template('student/self_registration.html', **self_reg_ctx)
 
 
 @app.route('/api/lookup-student', methods=['POST'])
@@ -12387,7 +15364,16 @@ TEACHER_YEAR_SESSION_KEY = 'teacher_display_year_id'
 
 def all_academic_years():
     """All academic years, newest first — used for dashboard year dropdowns."""
-    return AcademicYear.query.order_by(AcademicYear.name.desc()).all()
+    if has_request_context() and hasattr(g, '_flpa_all_years'):
+        return g._flpa_all_years
+    years = AcademicYear.query.order_by(
+        AcademicYear.start_date.desc(),
+        AcademicYear.name.desc(),
+        AcademicYear.id.desc(),
+    ).all()
+    if has_request_context():
+        g._flpa_all_years = years
+    return years
 
 
 def dashboard_year_session_key(role=None):
@@ -12443,47 +15429,48 @@ def _students_pending_year_registration(display_year):
 
 
 def _student_ids_with_year_history(year_id):
-    """
-    Student IDs with any academic footprint in a year.
-    After rollover, live Student.academic_year_id moves forward; grades and
-    payments remain tagged to the archived year. Used only for archived views.
-    """
+    """Student IDs with any academic footprint in a year (union, one round-trip)."""
     if not year_id:
         return []
-    ids = set()
-    for row in db.session.query(Student.id).filter(Student.academic_year_id == year_id):
-        ids.add(row[0])
-    for row in (
-        db.session.query(Grade.student_id)
-        .filter(Grade.academic_year_id == year_id, Grade.student_id.isnot(None))
-        .distinct()
-    ):
-        ids.add(row[0])
-    for row in (
-        db.session.query(StudentPayment.student_id)
-        .filter(StudentPayment.academic_year_id == year_id, StudentPayment.student_id.isnot(None))
-        .distinct()
-    ):
-        ids.add(row[0])
-    for row in (
-        db.session.query(Attendance.student_id)
-        .filter(Attendance.academic_year_id == year_id, Attendance.student_id.isnot(None))
-        .distinct()
-    ):
-        ids.add(row[0])
-    for row in (
-        db.session.query(Enrollment.student_id)
-        .filter(Enrollment.academic_year_id == year_id, Enrollment.student_id.isnot(None))
-        .distinct()
-    ):
-        ids.add(row[0])
-    return list(ids)
+    queries = [
+        db.session.query(Student.id.label('sid')).filter(Student.academic_year_id == year_id),
+        db.session.query(Grade.student_id.label('sid')).filter(
+            Grade.academic_year_id == year_id, Grade.student_id.isnot(None)
+        ),
+        db.session.query(StudentPayment.student_id.label('sid')).filter(
+            StudentPayment.academic_year_id == year_id, StudentPayment.student_id.isnot(None)
+        ),
+        db.session.query(Attendance.student_id.label('sid')).filter(
+            Attendance.academic_year_id == year_id, Attendance.student_id.isnot(None)
+        ),
+        db.session.query(Enrollment.student_id.label('sid')).filter(
+            Enrollment.academic_year_id == year_id, Enrollment.student_id.isnot(None)
+        ),
+    ]
+    union_q = queries[0].union(queries[1], queries[2], queries[3], queries[4])
+    return [row[0] for row in union_q.all() if row[0]]
+
+
+def adjacent_academic_years(display_year, years=None):
+    """Older and newer neighbors of the displayed year (list is newest-first)."""
+    years = list(years) if years is not None else all_academic_years()
+    if not display_year or not years:
+        return None, None
+    ids = [year.id for year in years]
+    try:
+        index = ids.index(display_year.id)
+    except ValueError:
+        return None, None
+    newer = years[index - 1] if index > 0 else None
+    older = years[index + 1] if index + 1 < len(years) else None
+    return older, newer
 
 
 def resolve_dashboard_academic_year(session_key=None):
     """
     Resolve the academic year shown on role dashboards.
     Priority: ?academic_year_id= query param -> session -> active year.
+    Session selections persist so staff can move back and forth across years.
     """
     if session_key is None:
         session_key = dashboard_year_session_key()
@@ -12496,10 +15483,6 @@ def resolve_dashboard_academic_year(session_key=None):
         or request.form.get('academic_year_id', type=int)
     )
     display_year = None
-    explicit_request = (
-        request.args.get('academic_year_id') is not None
-        or request.form.get('academic_year_id') is not None
-    )
 
     if requested_id and requested_id in valid_year_ids:
         session[session_key] = requested_id
@@ -12507,18 +15490,7 @@ def resolve_dashboard_academic_year(session_key=None):
     else:
         session_year_id = session.get(session_key)
         if session_year_id in valid_year_ids:
-            session_year = db.session.get(AcademicYear, session_year_id)
-            if (
-                session_year
-                and active_year
-                and session_year.id != active_year.id
-                and not session_year.is_active
-                and not explicit_request
-            ):
-                display_year = active_year
-                session[session_key] = active_year.id
-            else:
-                display_year = session_year
+            display_year = db.session.get(AcademicYear, session_year_id)
         elif active_year:
             display_year = active_year
             session[session_key] = active_year.id
@@ -12594,18 +15566,36 @@ def _students_for_display_year(display_year, *, alumni_only=False, history_mode=
 
 
 def _student_class_map_for_display_year(display_year, *, viewing_archived=False):
-    """Map student_id -> class_id for roster and attendance resolution."""
+    """Map student_id -> class_id for roster and attendance (SQL, year-scoped)."""
     if not display_year:
         return {}
     year_id = display_year.id
     mapping = {}
-    for student in _students_for_display_year(display_year, history_mode=viewing_archived).all():
-        if viewing_archived:
-            resolved = get_student_class_for_year(student, year_id)
-            if resolved:
-                mapping[student.id] = resolved.id
-        elif student.klass_id:
-            mapping[student.id] = student.klass_id
+    if viewing_archived:
+        for sid, cid in (
+            db.session.query(Enrollment.student_id, Enrollment.class_id)
+            .filter(Enrollment.academic_year_id == year_id, Enrollment.class_id.isnot(None))
+            .all()
+        ):
+            mapping[sid] = cid
+        for sid, cid in (
+            db.session.query(Grade.student_id, Grade.class_id)
+            .filter(
+                Grade.academic_year_id == year_id,
+                Grade.student_id.isnot(None),
+                Grade.class_id.isnot(None),
+            )
+            .distinct()
+            .all()
+        ):
+            mapping.setdefault(sid, cid)
+    for sid, cid in (
+        _students_for_display_year(display_year, history_mode=viewing_archived)
+        .filter(Student.klass_id.isnot(None))
+        .with_entities(Student.id, Student.klass_id)
+        .all()
+    ):
+        mapping.setdefault(sid, cid)
     return mapping
 
 
@@ -12615,22 +15605,28 @@ def _roster_sizes_for_display_year(display_year, *, viewing_archived=False):
     for class_id in _student_class_map_for_display_year(
         display_year, viewing_archived=viewing_archived,
     ).values():
-        sizes[class_id] = sizes.get(class_id, 0) + 1
+        if class_id:
+            sizes[class_id] = sizes.get(class_id, 0) + 1
     return sizes
 
 
 def _attach_display_class(students, display_year, *, viewing_archived=False):
-    """Set display_klass on students for archived-year roster views."""
-    if not display_year:
+    """Set display_klass on students without per-row class lookups."""
+    if not students:
+        return students
+    if not display_year or not viewing_archived:
         for student in students:
             student.display_klass = student.klass
         return students
-    year_id = display_year.id
+    mapping = _student_class_map_for_display_year(display_year, viewing_archived=True)
+    class_ids = {cid for cid in mapping.values() if cid}
+    classes = {
+        klass.id: klass
+        for klass in (Class.query.filter(Class.id.in_(class_ids)).all() if class_ids else [])
+    }
     for student in students:
-        if viewing_archived:
-            student.display_klass = get_student_class_for_year(student, year_id)
-        else:
-            student.display_klass = student.klass
+        cid = mapping.get(student.id) or student.klass_id
+        student.display_klass = classes.get(cid) or student.klass
     return students
 
 
@@ -12739,16 +15735,207 @@ def _build_registrar_year_lifecycle_status(display_year, active_year):
     return items
 
 
+def _registrar_roster_class_for_student(student, display_year, *, viewing_archived=False):
+    """Resolve the class folder a roster student belongs to for the display year.
+
+    Live years use ``klass_id`` (plus year enrollment if the live FK is empty).
+    Archived years use historical grade/enrollment resolution so rollover does
+    not dump every student into Unassigned or the current class.
+    """
+    if not student:
+        return None
+    year_id = display_year.id if display_year else None
+    if viewing_archived:
+        return get_student_class_for_year(student, year_id)
+    if student.klass_id:
+        return student.assigned_class or db.session.get(Class, student.klass_id)
+    if year_id:
+        enrolled_id = _class_id_from_year_enrollment(student.id, year_id)
+        if enrolled_id:
+            return db.session.get(Class, enrolled_id)
+    return None
+
+
+def _student_roster_search_haystack(student):
+    """Name, ID, and contact text used to find a student inside class folders."""
+    parent_user = getattr(student, 'parent_user', None)
+    user = getattr(student, 'user', None)
+    parts = [
+        getattr(student, 'full_name', None),
+        student.first_name,
+        student.last_name,
+        student.student_id,
+        student.parent_phone,
+        student.parent_email,
+        getattr(student, 'guardian_name', None),
+        getattr(parent_user, 'full_name', None) if parent_user else None,
+        getattr(user, 'email', None) if user else None,
+        getattr(user, 'telephone_number', None) if user else None,
+    ]
+    return ' '.join(str(part).strip() for part in parts if part).lower()
+
+
+def _student_matches_roster_search(student, needle):
+    if not needle:
+        return True
+    return needle in _student_roster_search_haystack(student)
+
+
+def _build_registrar_roster_folders(
+    display_year,
+    *,
+    alumni_only=False,
+    viewing_archived=False,
+    search_class='',
+    search_student='',
+    open_class_id=None,
+    open_student_id=None,
+):
+    """File-explorer class folders with a nested folder per student."""
+    roster_students = []
+    if display_year:
+        roster_students = (
+            _students_for_display_year(
+                display_year,
+                alumni_only=alumni_only,
+                history_mode=viewing_archived,
+            )
+            .options(
+                joinedload(Student.user),
+                joinedload(Student.parent_user),
+                joinedload(Student.assigned_class),
+                joinedload(Student.academic_year),
+                selectinload(Student.registry_documents),
+            )
+            .order_by(Student.last_name.asc(), Student.first_name.asc())
+            .all()
+        )
+
+    class_needle = (search_class or '').strip().lower()
+    student_needle = (search_student or '').strip().lower()
+    class_rows = Class.query.all()
+    if class_needle:
+        class_rows = [
+            klass for klass in class_rows
+            if class_needle in (klass.name or '').lower()
+            or class_needle in (klass.stream or '').lower()
+            or class_needle in str(klass.grade_level or '').lower()
+        ]
+    class_rows = sorted(class_rows, key=class_sort_key_from_klass)
+    class_ids = {klass.id for klass in class_rows}
+
+    students_by_class = {klass.id: [] for klass in class_rows}
+    unassigned = []
+    for student in roster_students:
+        if not _student_matches_roster_search(student, student_needle):
+            continue
+        klass = _registrar_roster_class_for_student(
+            student, display_year, viewing_archived=viewing_archived,
+        )
+        if klass and klass.id in class_ids:
+            students_by_class[klass.id].append(student)
+        elif klass and not class_needle:
+            students_by_class.setdefault(klass.id, []).append(student)
+        elif not class_needle:
+            unassigned.append(student)
+
+    folders = []
+    for klass in class_rows:
+        students = students_by_class.get(klass.id, [])
+        if student_needle and not students:
+            continue
+        folders.append({
+            'id': klass.id,
+            'name': klass.name,
+            'grade_level': klass.grade_level,
+            'stream': klass.stream,
+            'division_label': division_label_for_class(klass),
+            'student_count': len(students),
+            'students': students,
+            'klass': klass,
+            'id_download_filename': id_cards_pdf_filename(klass, display_year),
+        })
+
+    extra_ids = [
+        class_id for class_id in students_by_class
+        if class_id not in class_ids and students_by_class[class_id]
+    ]
+    for class_id in extra_ids:
+        klass = db.session.get(Class, class_id)
+        if not klass:
+            continue
+        students = students_by_class[class_id]
+        folders.append({
+            'id': klass.id,
+            'name': klass.name,
+            'grade_level': klass.grade_level,
+            'stream': klass.stream,
+            'division_label': division_label_for_class(klass),
+            'student_count': len(students),
+            'students': students,
+            'klass': klass,
+            'id_download_filename': id_cards_pdf_filename(klass, display_year),
+        })
+
+    folders.sort(key=lambda folder: class_sort_key_from_klass(folder['klass']))
+    if not open_student_id and student_needle:
+        for folder in folders:
+            if folder['students']:
+                open_class_id = open_class_id or folder['id']
+                open_student_id = folder['students'][0].id
+                break
+        if not open_student_id and unassigned:
+            open_student_id = unassigned[0].id
+    elif open_student_id and not open_class_id:
+        for folder in folders:
+            if any(student.id == open_student_id for student in folder['students']):
+                open_class_id = folder['id']
+                break
+
+    year_id = display_year.id if display_year else None
+    receipt_map = _latest_registration_payments_map(
+        [student.id for student in roster_students],
+        academic_year_id=year_id,
+    )
+    for student in roster_students:
+        payment = receipt_map.get(student.id)
+        if payment:
+            student.registration_fee_status = _registration_receipt_meta(payment, student)['fee_status']
+        elif parse_currency_amount_optional(getattr(student, 'registration_fees', 0)) > 0:
+            student.registration_fee_status = 'Unpaid'
+
+    _refresh_id_card_flags(roster_students, academic_year=display_year, commit=False)
+
+    return {
+        'roster_folders': folders,
+        'roster_folders_by_division': group_items_by_class(folders, lambda folder: folder['klass']),
+        'unassigned_roster_students': unassigned,
+        'open_class_id': open_class_id,
+        'open_student_id': open_student_id,
+        'search_student': (search_student or '').strip(),
+        'registration_receipt_payments': receipt_map,
+        'roster_record_count': (
+            sum(folder['student_count'] for folder in folders) + len(unassigned)
+            if (class_needle or student_needle)
+            else len(roster_students)
+        ),
+    }
+
+
 def build_registrar_dashboard_context(form=None, search_class=None):
     """Shared template context for registrar dashboard and registration views."""
     display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
         session_key=REGISTRAR_YEAR_SESSION_KEY,
     )
     search_class = (search_class or request.args.get('search_class') or '').strip()
+    search_student = (request.args.get('search_student') or '').strip()
     roster_view = 'alumni' if request.args.get('view') == 'alumni' else 'active'
     history_mode = viewing_archived
 
-    class_rows = Class.query.order_by(Class.name.asc()).all()
+    all_class_rows = Class.query.all()
+    all_class_rows = sorted(all_class_rows, key=class_sort_key_from_klass)
+    # Enrollment class picker must list every class. Search only filters the roster sidebar.
+    class_rows = all_class_rows
     if search_class:
         needle = search_class.lower()
         class_rows = [klass for klass in class_rows if needle in (klass.name or '').lower()]
@@ -12778,16 +15965,20 @@ def build_registrar_dashboard_context(form=None, search_class=None):
             'name': klass.name,
             'description': getattr(klass, 'description', None) or klass.stream,
             'student_count': student_count,
+            'division_label': division_label_for_class(klass),
             'klass': klass,
         })
 
     if form is None:
         form = RegisterStudentForm()
 
-    form.klass.choices = [(0, '-- Select Class --')] + [(k['id'], k['name']) for k in classes]
+    form.klass.choices = [(0, '-- Select Class --')] + [
+        (klass.id, klass.name) for klass in all_class_rows
+    ]
     form.academic_year.choices = [(0, '-- Select Academic Year --')] + [(y.id, y.name) for y in years]
     suggested_student_id = generate_next_student_id(display_year or active_year)
-    if request.method == 'GET':
+    already_bound = bool(form.first_name.data or form.last_name.data)
+    if request.method == 'GET' and not already_bound:
         if display_year:
             form.academic_year.default = display_year.id
         form.process()
@@ -12831,6 +16022,32 @@ def build_registrar_dashboard_context(form=None, search_class=None):
                 pending_student, year_id,
             )
 
+    roster_folder_ctx = _build_registrar_roster_folders(
+        display_year,
+        alumni_only=(roster_view == 'alumni'),
+        viewing_archived=viewing_archived,
+        search_class=search_class,
+        search_student=search_student,
+        open_student_id=request.args.get('open_student_id', type=int),
+    )
+
+    prev_display_year, next_display_year = adjacent_academic_years(display_year, years)
+    year_nav_extra = {}
+    if roster_view == 'alumni':
+        year_nav_extra['view'] = 'alumni'
+    if search_class:
+        year_nav_extra['search_class'] = search_class
+    if search_student:
+        year_nav_extra['search_student'] = search_student
+    prev_year_url = (
+        url_for('registrar_dashboard', academic_year_id=prev_display_year.id, **year_nav_extra)
+        if prev_display_year else None
+    )
+    next_year_url = (
+        url_for('registrar_dashboard', academic_year_id=next_display_year.id, **year_nav_extra)
+        if next_display_year else None
+    )
+
     return {
         'form': form,
         'students': students,
@@ -12838,6 +16055,7 @@ def build_registrar_dashboard_context(form=None, search_class=None):
         'students_pagination': students_pagination,
         'suggested_student_id': suggested_student_id,
         'classes': classes,
+        'classes_by_division': group_classes(all_class_rows),
         'years': years,
         'all_years': years,
         'active_year': active_year,
@@ -12850,10 +16068,36 @@ def build_registrar_dashboard_context(form=None, search_class=None):
         'selected_year': selected_year_name,
         'selected_year_name': selected_year_name,
         'homeroom_matrix': _build_homeroom_matrix(),
+        'class_division_labels': {
+            klass.id: division_label_for_class(klass) for klass in all_class_rows
+        },
         'active_teachers': active_teachers,
         'year_lifecycle_status': _build_registrar_year_lifecycle_status(display_year, active_year),
         'pending_registration_students': pending_registration_students,
+        'prev_display_year': prev_display_year,
+        'next_display_year': next_display_year,
+        'prev_year_url': prev_year_url,
+        'next_year_url': next_year_url,
+        **roster_folder_ctx,
     }
+
+
+def persist_student_guardian_name(student, form=None, raw=None):
+    """Write Student.guardian_name from POST, WTForms, or an explicit value.
+
+    Prefer the raw request so registrar HTML inputs are not dropped when the
+    WTForms field exists but was not bound to the posted name.
+    """
+    if not student:
+        return None
+    if raw is None and has_request_context() and request.form is not None and 'guardian_name' in request.form:
+        raw = request.form.get('guardian_name')
+    elif raw is None and form is not None and getattr(form, 'guardian_name', None) is not None:
+        raw = form.guardian_name.data
+    if raw is None:
+        return getattr(student, 'guardian_name', None)
+    student.guardian_name = (str(raw).strip() if raw else '') or None
+    return student.guardian_name
 
 
 def apply_student_form_to_record(student, form, *, registrar_name, registration_type=None):
@@ -12870,8 +16114,12 @@ def apply_student_form_to_record(student, form, *, registrar_name, registration_
     student.last_name = form.last_name.data.strip()
     student.dob = form.dob.data
     student.gender = form.gender.data
-    student.parent_email = (form.parent_email.data or '').strip() or None
+    if has_request_context() and request.form is not None and 'parent_email' in request.form:
+        student.parent_email = (request.form.get('parent_email') or '').strip() or None
+    elif getattr(form, 'parent_email', None) is not None and (form.parent_email.data or '').strip():
+        student.parent_email = form.parent_email.data.strip()
     student.parent_phone = (getattr(form, 'parent_phone', None) and (form.parent_phone.data or '').strip()) or None
+    persist_student_guardian_name(student, form)
     if getattr(form, 'parent_report_pin', None) and (form.parent_report_pin.data or '').strip():
         if not set_parent_report_pin(student, form.parent_report_pin.data):
             raise ValueError('Parent report PIN must be 4–6 digits.')
@@ -12889,6 +16137,9 @@ def apply_student_form_to_record(student, form, *, registrar_name, registration_
         assigned_class = db.session.get(Class, klass_id)
         if assigned_class:
             student.grade_level = assigned_class.grade_level
+            division = division_label_for_class(assigned_class)
+            if division and division != 'Other':
+                student.level = division
 
     if form.student_id.data:
         student.student_id = form.student_id.data.strip()
@@ -12899,6 +16150,9 @@ def apply_student_form_to_record(student, form, *, registrar_name, registration_
     ensure_student_secure_qr_token(student)
     ensure_parent_report_token(student)
     link_student_parent_account(student)
+
+    year = db.session.get(AcademicYear, academic_year_id) if academic_year_id else None
+    _sync_student_id_card(student, academic_year=year)
 
     return registration_fee_value, academic_year_id
 
@@ -12958,10 +16212,11 @@ def registrar_reassign_class_teacher(class_id):
 
 
 @app.route('/register-student', methods=['GET', 'POST'])
+@app.route('/registrar/dashboard', methods=['GET', 'POST'], endpoint='registrar_dashboard')
 @login_required
 def register_student():
-    # 1. Authorize user permissions (case-insensitive)
-    if (current_user.role or '').lower() not in {"admin", "principal", "registrar"}:
+    # 1. Authorize user permissions (aliases like registry → registrar)
+    if canonical_role(current_user) not in {"admin", "principal", "registrar"}:
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
 
@@ -13004,6 +16259,7 @@ def register_student():
 
             if existing_student:
                 student = existing_student
+                apply_returning_retention_class(student, form)
                 registration_fee_value, academic_year_id = apply_student_form_to_record(
                     student,
                     form,
@@ -13050,16 +16306,24 @@ def register_student():
                 student.photo = os.path.join('uploads', 'students', filename).replace('\\', '/')
                 student.photo_filename = filename
 
+            issued_password = None
             if form.email.data:
                 portal_user = link_student_portal_from_form(
                     student,
                     form.email.data,
                     password=form.password.data or None,
+                    must_change_password=True,
                 )
                 if portal_user:
-                    if not form.password.data:
+                    issued_password = getattr(portal_user, '_issued_initial_password', None)
+                    if issued_password:
                         flash(
-                            "Student portal account linked. Default login password is: student123",
+                            "Student portal account created. Print the credential slip and give it to the student.",
+                            "success",
+                        )
+                    else:
+                        flash(
+                            "Student portal account linked. No new password was issued.",
                             "info",
                         )
                 else:
@@ -13069,16 +16333,31 @@ def register_student():
                         "warning",
                     )
 
+            registration_payment = None
+            offer_receipt = False
             if registration_fee_value > 0 and academic_year_id:
                 db.session.flush()
-                sync_registration_fee_ledger(
+                registration_payment, offer_receipt = collect_registration_fee_payment(
                     student,
+                    form,
                     academic_year_id,
                     registration_fee_value,
                     update_existing=False,
                 )
 
+            _sync_student_id_card(student, academic_year=academic_year)
             db.session.commit()
+            if issued_password:
+                stash_registrar_credential_password(student.id, issued_password)
+                return redirect(url_for(
+                    'print_registrar_credential_slip',
+                    student_id=student.id,
+                ))
+            if offer_receipt and registration_payment:
+                return redirect(url_for(
+                    'print_registrar_registration_receipt',
+                    payment_id=registration_payment.id,
+                ))
             return redirect(url_for('dashboard', **registrar_dashboard_redirect_kwargs()))
 
         except Exception as e:
@@ -13087,10 +16366,3082 @@ def register_student():
 
     return render_template('dashboard_registrar.html', **context)
 
+
+@app.route('/registrar/students/<int:student_id>/print', methods=['GET'], endpoint='print_registrar_student')
+@login_required
+def print_registrar_student(student_id):
+    """Printable official student file from a registrar class/student folder."""
+    if canonical_role(current_user) not in {"admin", "principal", "registrar"}:
+        flash("Unauthorized access.", "danger")
+        return redirect(url_for('login'))
+
+    student = Student.query.get_or_404(student_id)
+    display_year, _active_year, _years, _archived = resolve_dashboard_academic_year(
+        session_key=REGISTRAR_YEAR_SESSION_KEY,
+    )
+    year_id = display_year.id if display_year else student.academic_year_id
+    return render_template(
+        'registrar_student_print.html',
+        student=student,
+        display_year=display_year,
+        class_label=format_student_class_name(student, year_id),
+        printed_by=current_user.full_name or current_user.email,
+        printed_at=datetime.now(timezone.utc),
+        default_avatar_url=default_static_photo_url(),
+    )
+
+
+@app.route('/registrar/payments/<int:payment_id>/receipt', methods=['GET'], endpoint='print_registrar_registration_receipt')
+@login_required
+def print_registrar_registration_receipt(payment_id):
+    """Printable official registration-fee receipt for registrar, principal, and admin."""
+    if canonical_role(current_user) not in {"admin", "principal", "registrar"}:
+        flash("Unauthorized access.", "danger")
+        return redirect(url_for('login'))
+
+    payment = StudentPayment.query.get_or_404(payment_id)
+    if not _is_registration_fee_payment(payment):
+        flash("That payment is not a registration fee receipt.", "warning")
+        return redirect(url_for('dashboard', **registrar_dashboard_redirect_kwargs()))
+    return _render_registrar_registration_receipt(payment)
+
+
+@app.route('/registrar/students/<int:student_id>/credential-slip', methods=['GET'], endpoint='print_registrar_credential_slip')
+@login_required
+def print_registrar_credential_slip(student_id):
+    """Printable portal login slip. Initial password is shown once from session."""
+    if canonical_role(current_user) not in {"admin", "principal", "registrar"}:
+        flash("Unauthorized access.", "danger")
+        return redirect(url_for('login'))
+
+    student = Student.query.get_or_404(student_id)
+    portal_user = student.user
+    issued_password = pop_registrar_credential_password(student.id)
+    must_change = bool(getattr(portal_user, 'must_change_password', False)) if portal_user else False
+    if issued_password:
+        password_state = 'issued'
+    elif not portal_user:
+        password_state = 'no_portal'
+    elif must_change:
+        password_state = 'issued_once'
+    else:
+        password_state = 'already_set'
+
+    display_year, _active_year, _years, _archived = resolve_dashboard_academic_year(
+        session_key=REGISTRAR_YEAR_SESSION_KEY,
+    )
+    year_id = display_year.id if display_year else student.academic_year_id
+    year = display_year or student.academic_year
+    receipt_payment = find_registration_fee_payment(student, year_id) if year_id else None
+    login_username = (
+        (portal_user.username if portal_user else None)
+        or student.student_id
+        or student.student_id_code
+    )
+    return render_template(
+        'registrar_credential_slip.html',
+        student=student,
+        portal_user=portal_user,
+        display_year=year,
+        class_label=format_student_class_name(student, year_id),
+        login_username=login_username,
+        issued_password=issued_password,
+        password_state=password_state,
+        receipt_payment=receipt_payment,
+        printed_by=current_user.full_name or current_user.email,
+        printed_at=datetime.now(timezone.utc),
+        default_avatar_url=default_static_photo_url(),
+    )
+
+
+@app.route('/business/payments/<int:payment_id>/receipt', methods=['GET'], endpoint='print_business_payment_receipt')
+@login_required
+def print_business_payment_receipt(payment_id):
+    access = _require_business_dashboard_access()
+    if access:
+        return access
+    payment = StudentPayment.query.get_or_404(payment_id)
+    if _is_registration_fee_payment(payment):
+        return _render_registrar_registration_receipt(payment)
+    student = db.session.get(Student, payment.student_id)
+    year = db.session.get(AcademicYear, payment.academic_year_id)
+    financials = build_student_financials(student, year) if student and year else {}
+    return render_template(
+        'business_payment_receipt.html',
+        payment=payment,
+        student=student,
+        display_year=year,
+        class_label=format_student_class_name(student, payment.academic_year_id) if student else '—',
+        collected_by=current_user.full_name or current_user.email,
+        remaining=financials.get('tuition_balance', 0),
+        receipt_no='SP-{}'.format(payment.id),
+    )
+
+
+REGISTRAR_DOC_ALLOWED_EXT = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf'}
+REGISTRAR_DOC_MAX_BYTES = 12 * 1024 * 1024
+ID_CARD_IMAGE_EXT = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
+ID_CARD_MAX_BYTES = 8 * 1024 * 1024
+ID_PHOTO_OUTPUT_PX = 800
+ID_PHOTO_WHITE = (255, 255, 255)
+ID_PHOTO_REMBG_FAIL_MESSAGE = 'Background could not be removed — install/check rembg'
+ID_PHOTO_REMBG_LOADING_MESSAGE = (
+    'Background removal is still starting. Wait, then tap Save ID files again — '
+    'the outdoor photo was not saved as the ID.'
+)
+ID_PHOTO_SKIP_REMBG_WARNING = (
+    'Background removal is turned off (SKIP_REMBG). Outdoor photos will keep their backdrop.'
+)
+ID_PHOTO_PRINT_STILL_PROCESSING = (
+    'Photo still processing — Save ID or wait. Outdoor backdrops cannot be cleaned by Print alone.'
+)
+_REMBG_SESSION = None
+_REMBG_UNAVAILABLE = False
+_REMBG_LOAD_THREAD = None
+_REMBG_LOAD_BOX = []
+_REMBG_LOCK = None
+_REMBG_LOAD_TIMEOUT_SECONDS = 120  # wait once on Save ID; preload starts this at boot
+_REMBG_CUTOUT_TIMEOUT_SECONDS = 90  # warm session; fail the save rather than store outdoor
+_PRINT_REMBG_TIMEOUT_SECONDS = 12  # print/PDF must not wait on rembg for a class
+_PRINT_REMBG_MAX_PHOTOS = 2  # at most two outdoor rembg attempts per print/PDF request
+_U2NET_MIN_BYTES = 150 * 1024 * 1024  # complete u2net / u2net_human_seg is ~176MB
+_ID_PHOTO_ALPHA_CLEAR = 40  # fully transparent; never hard-cut interior dark skin
+_ID_PHOTO_ALPHA_OPAQUE = 180  # at/above this, keep the person fully
+_ID_PHOTO_ERODE_PX = 0  # do not eat into the face; 0–1px outer edge only if ever needed
+_ID_PHOTO_FEATHER_PX = 1.5  # 1–2px Gaussian onto white only
+_ID_PHOTO_DENOISE_MIX = 0.0  # keep rembg RGB; median/L-blur posterizes dark skin
+_ID_PHOTO_UNSHARP_PERCENT = 70
+_ID_PHOTO_JPEG_QUALITY = 92
+_ID_PHOTO_WHITE_LUMA = 245  # JPEG-safe studio white; 255 would keep letterbox as "subject"
+_ID_PHOTO_SUBJECT_FRINGE = 0.01  # tiny inset so rembg halo is not kept as gutters
+_ID_PHOTO_HEAD_SHOULDERS_RATIO = 1.22  # H&S window height / bust width before cover-by-width
+_ID_PHOTO_HEADROOM_FRAC = 0.10  # 8–12% of square side above the crown; never put bbox.top at y=0
+
+
+def _require_registrar_office():
+    if canonical_role(current_user) not in {"admin", "principal", "registrar"}:
+        flash("Unauthorized access.", "danger")
+        return False
+    return True
+
+
+def _registrar_office_denied_redirect():
+    if getattr(current_user, "is_authenticated", False):
+        return redirect(url_for("dashboard"))
+    return redirect(url_for("login"))
+
+
+def _registrar_office_guard():
+    """None when registrar/admin/principal; otherwise a redirect response."""
+    if _require_registrar_office():
+        return None
+    return _registrar_office_denied_redirect()
+
+
+def _registrar_student_folder_redirect(student_id):
+    return redirect(
+        url_for('dashboard', **registrar_dashboard_redirect_kwargs(open_student_id=student_id))
+        + f'#student-folder-{int(student_id)}'
+    )
+
+
+def _default_id_expiration_date(academic_year=None):
+    """ID cards expire at the academic-year end, or 31 July of that session."""
+    if academic_year and getattr(academic_year, 'end_date', None):
+        return academic_year.end_date
+    span = parse_academic_year_span(
+        getattr(academic_year, 'name', None) if academic_year else None
+    )
+    if span:
+        return date(span[1], 7, 31)
+    start = getattr(academic_year, 'start_date', None) if academic_year else None
+    if start:
+        return date(start.year + 1, 7, 31)
+    today = datetime.now(timezone.utc).date()
+    year = today.year + 1 if today.month >= 8 else today.year
+    return date(year, 7, 31)
+
+
+def _id_photo_resample():
+    return getattr(getattr(Image, 'Resampling', Image), 'LANCZOS', Image.LANCZOS)
+
+
+def _downscale_id_photo(img, max_side=1800):
+    """Keep rembg/crop work at print-enough resolution without huge originals."""
+    width, height = img.size
+    longest = max(width, height)
+    if longest <= max_side:
+        return img
+    scale = max_side / float(longest)
+    return img.resize(
+        (max(1, int(width * scale)), max(1, int(height * scale))),
+        _id_photo_resample(),
+    )
+
+
+def _color_close(left, right, tol=32):
+    return all(abs(a - b) <= tol for a, b in zip(left[:3], right[:3]))
+
+
+def _looks_like_skin_rgb(rgb):
+    red, green, blue = rgb[:3]
+    return (
+        red > 95 and green > 40 and blue > 20
+        and red > green and red > blue
+        and abs(red - green) > 15
+        and (max(red, green, blue) - min(red, green, blue)) > 15
+    )
+
+
+def _corner_patch_uniform(img, xy, radius=10, spread=48):
+    width, height = img.size
+    x0 = max(0, xy[0] - radius)
+    y0 = max(0, xy[1] - radius)
+    x1 = min(width, xy[0] + radius + 1)
+    y1 = min(height, xy[1] + radius + 1)
+    extrema = img.crop((x0, y0, x1, y1)).getextrema()
+    if not extrema:
+        return False
+    channels = extrema if isinstance(extrema[0], tuple) else (extrema,)
+    return all((high - low) <= spread for low, high in channels[:3])
+
+
+def _skip_rembg_requested():
+    return (os.environ.get('SKIP_REMBG') or '').strip().lower() in ('1', 'true', 'yes')
+
+
+def _rembg_lock():
+    global _REMBG_LOCK
+    import threading
+    if _REMBG_LOCK is None:
+        _REMBG_LOCK = threading.RLock()
+    return _REMBG_LOCK
+
+
+def _id_photo_needs_background_removal(img):
+    """True when this is not already a white-studio ID (outdoor / colored corners)."""
+    return not _top_corners_near_white(img)
+
+
+def _flash_id_photo_notice(message, category='warning'):
+    if has_request_context():
+        flash(message, category)
+
+
+def _raise_id_photo_rembg_failure(reason, message=None):
+    logger.error(
+        'ID photo rembg failed (%s). Not saving an outdoor/busy backdrop as the ID JPEG.',
+        reason,
+    )
+    raise ValueError(message or ID_PHOTO_REMBG_FAIL_MESSAGE)
+
+
+def _u2net_model_paths(model_name):
+    home = os.path.expanduser('~')
+    filename = '%s.onnx' % model_name
+    return (
+        os.path.join(home, '.u2net', filename),
+        os.path.join(home, '.rembg', 'models', model_name, filename),
+    )
+
+
+def _u2net_model_status(model_name):
+    """complete / incomplete / missing for a rembg ONNX on disk."""
+    saw_complete = False
+    saw_incomplete = False
+    for path in _u2net_model_paths(model_name):
+        if not os.path.isfile(path):
+            continue
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            continue
+        if size >= _U2NET_MIN_BYTES:
+            saw_complete = True
+        else:
+            saw_incomplete = True
+    if saw_complete:
+        return 'complete'
+    if saw_incomplete:
+        return 'incomplete'
+    return 'missing'
+
+
+def _preferred_rembg_model_names():
+    """Human-focused first. Skip only known-partial ONNX files (missing may download)."""
+    preferred = ('u2net_human_seg', 'u2net')
+    return tuple(name for name in preferred if _u2net_model_status(name) != 'incomplete')
+
+
+def _rembg_models_unusable():
+    """True only when every preferred model file exists but is a partial download."""
+    names = ('u2net_human_seg', 'u2net')
+    statuses = [_u2net_model_status(name) for name in names]
+    if any(status == 'complete' for status in statuses):
+        return False
+    if any(status == 'missing' for status in statuses):
+        return False
+    return True
+
+
+def _run_rembg_with_timeout(fn, timeout):
+    """Run fn in a daemon thread. Returns (status, value) where status is ok/timeout/err."""
+    import threading
+    box = []
+
+    def _target():
+        try:
+            box.append(('ok', fn()))
+        except (Exception, SystemExit) as exc:
+            box.append(('err', exc))
+
+    thread = threading.Thread(target=_target, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if thread.is_alive():
+        return 'timeout', None
+    if not box:
+        return 'err', None
+    return box[0]
+
+
+def _disable_rembg(reason):
+    """Do not call on timeout. Outdoor photos must error, not fall back forever."""
+    global _REMBG_SESSION, _REMBG_UNAVAILABLE
+    _REMBG_SESSION = None
+    _REMBG_UNAVAILABLE = True
+    logger.warning(
+        'ID photo rembg disabled (%s). Outdoor/busy backdrops will not be removed.',
+        reason,
+    )
+
+
+def _harvest_rembg_load_box():
+    """Return a finished session from a load thread that completed after a timeout."""
+    global _REMBG_SESSION, _REMBG_LOAD_BOX, _REMBG_LOAD_THREAD
+    if _REMBG_SESSION is not None:
+        return _REMBG_SESSION
+    if not _REMBG_LOAD_BOX:
+        return None
+    status, value = _REMBG_LOAD_BOX[0]
+    if status == 'ok' and value is not None:
+        _REMBG_SESSION = value
+        logger.info('ID photo rembg session ready.')
+        return _REMBG_SESSION
+    logger.warning('ID photo rembg session load failed (%s); will retry on the next photo.', value)
+    _REMBG_LOAD_BOX = []
+    _REMBG_LOAD_THREAD = None
+    return None
+
+
+def _load_rembg_session_sync():
+    """Blocking ONNX session create. Prefer u2net_human_seg for outdoor people."""
+    os.environ.setdefault('OMP_NUM_THREADS', '1')
+    import onnxruntime  # noqa: F401  # rembg sys.exits if this backend cannot load
+    from rembg import new_session
+    model_names = _preferred_rembg_model_names() or ('u2net_human_seg',)
+    last_error = None
+    for name in model_names:
+        try:
+            try:
+                session = new_session(model_name=name)
+            except TypeError:
+                session = new_session(name)
+            logger.info('ID photo rembg loaded model %s.', name)
+            return session
+        except Exception as exc:
+            last_error = exc
+            logger.warning('ID photo rembg could not load %s (%s).', name, exc)
+            continue
+    try:
+        return new_session()
+    except Exception:
+        if last_error is not None:
+            raise last_error
+        raise
+
+
+def _start_rembg_session_load():
+    """Start the daemon ONNX load if needed. Never waits (boot preload)."""
+    global _REMBG_LOAD_THREAD, _REMBG_LOAD_BOX
+    if _skip_rembg_requested() or _REMBG_UNAVAILABLE:
+        return None
+    if _REMBG_SESSION is not None:
+        return _REMBG_SESSION
+    harvested = _harvest_rembg_load_box()
+    if harvested is not None:
+        return harvested
+    import threading
+    lock = _rembg_lock()
+    with lock:
+        if _REMBG_SESSION is not None:
+            return _REMBG_SESSION
+        harvested = _harvest_rembg_load_box()
+        if harvested is not None:
+            return harvested
+        if _REMBG_LOAD_THREAD is not None and _REMBG_LOAD_THREAD.is_alive():
+            return None
+        _REMBG_LOAD_BOX = []
+
+        def _target():
+            global _REMBG_SESSION
+            try:
+                session = _load_rembg_session_sync()
+                _REMBG_LOAD_BOX.append(('ok', session))
+                _REMBG_SESSION = session
+                logger.info('ID photo rembg session ready.')
+            except (Exception, SystemExit) as exc:
+                _REMBG_LOAD_BOX.append(('err', exc))
+                logger.warning('ID photo rembg session load failed (%s); will retry.', exc)
+
+        _REMBG_LOAD_THREAD = threading.Thread(target=_target, daemon=True, name='id-photo-rembg-preload')
+        _REMBG_LOAD_THREAD.start()
+        logger.info(
+            'ID photo rembg session loading in background (models: %s).',
+            ', '.join(_preferred_rembg_model_names() or ('u2net_human_seg',)),
+        )
+    return None
+
+
+def _start_rembg_session_preload():
+    """App startup: warm rembg so the first Save ID is not a 2-minute cold start."""
+    if _skip_rembg_requested():
+        logger.warning('ID photo rembg preload skipped (SKIP_REMBG is set).')
+        return
+    _start_rembg_session_load()
+
+
+def _get_rembg_session(wait_seconds=None):
+    """Cache one rembg session. Preload at boot; Save ID waits once (default 120s).
+
+    Timeouts do not permanently disable rembg: a late-finishing Windows ONNX load is
+    harvested on the next photo instead of silently falling back to outdoor JPEGs.
+    """
+    if _skip_rembg_requested():
+        logger.warning('ID photo rembg skipped (SKIP_REMBG is set).')
+        return None
+    if _REMBG_UNAVAILABLE:
+        return None
+    if _REMBG_SESSION is not None:
+        return _REMBG_SESSION
+    harvested = _harvest_rembg_load_box()
+    if harvested is not None:
+        return harvested
+    _start_rembg_session_load()
+    wait = _REMBG_LOAD_TIMEOUT_SECONDS if wait_seconds is None else max(0, int(wait_seconds))
+    thread = _REMBG_LOAD_THREAD
+    if wait > 0 and thread is not None:
+        thread.join(wait)
+    harvested = _harvest_rembg_load_box()
+    if harvested is not None:
+        return harvested
+    if thread is not None and thread.is_alive():
+        logger.warning(
+            'ID photo rembg session still loading after %ss; not disabling — next photo will wait again.',
+            wait,
+        )
+    return None
+
+
+def _id_photo_alpha_feather_lut():
+    """<40 clear, 40–180 ramp, >=180 opaque. Interior holes are filled separately."""
+    clear = _ID_PHOTO_ALPHA_CLEAR
+    opaque = _ID_PHOTO_ALPHA_OPAQUE
+    span = float(max(1, opaque - clear))
+    lut = []
+    for value in range(256):
+        if value < clear:
+            lut.append(0)
+        elif value >= opaque:
+            lut.append(255)
+        else:
+            lut.append(int(round((value - clear) * 255.0 / span)))
+    return lut
+
+
+def _fill_mask_holes(mask):
+    """Fill enclosed transparent regions so dark skin/hair are not punched out."""
+    binary = mask.point(lambda pixel: 255 if pixel >= 128 else 0)
+    if ImageFilter is not None and hasattr(ImageFilter, 'MaxFilter') and hasattr(ImageFilter, 'MinFilter'):
+        # 1px close seals hairline cracks without shrinking the outer silhouette.
+        binary = binary.filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.MinFilter(3))
+    if ImageDraw is None or ImageChops is None:
+        return binary
+    inverted = ImageChops.invert(binary)
+    flood = inverted.copy()
+    width, height = flood.size
+    if width < 2 or height < 2:
+        return binary
+    for seed in ((0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1)):
+        try:
+            ImageDraw.floodfill(flood, seed, 0)
+        except Exception:
+            continue
+    return ImageChops.lighter(binary, flood)
+
+
+def _edge_safe_id_photo_matte(alpha, erode_px=_ID_PHOTO_ERODE_PX):
+    """Keep interior alpha; threshold and feather only at the silhouette edge."""
+    mapped = alpha.point(_id_photo_alpha_feather_lut())
+    silhouette = alpha.point(lambda pixel: 255 if pixel >= _ID_PHOTO_ALPHA_CLEAR else 0)
+    silhouette = _fill_mask_holes(silhouette)
+    erode_px = max(0, min(int(erode_px or 0), 1))
+    if erode_px > 0 and ImageFilter is not None and hasattr(ImageFilter, 'MinFilter'):
+        silhouette = silhouette.filter(ImageFilter.MinFilter(3))
+    interior = silhouette
+    if ImageFilter is not None and hasattr(ImageFilter, 'MinFilter'):
+        # ~2px inset: face/hair stay fully opaque even when rembg was uncertain.
+        interior = silhouette.filter(ImageFilter.MinFilter(5))
+    if ImageChops is not None:
+        matte = ImageChops.lighter(mapped, interior)
+        matte = ImageChops.multiply(matte, silhouette)
+    else:
+        matte = silhouette
+    return silhouette, _feather_id_photo_mask(matte)
+
+
+def _feather_id_photo_mask(mask, radius=_ID_PHOTO_FEATHER_PX):
+    """Soft 1–2px Gaussian onto white only. Do not restore backdrop."""
+    if ImageFilter is None or radius <= 0:
+        return mask
+    return mask.filter(ImageFilter.GaussianBlur(radius=float(radius)))
+
+
+def _composite_id_cutout_on_white(rgba, alpha_cut=None, erode_px=_ID_PHOTO_ERODE_PX):
+    """Paste rembg RGB onto #FFFFFF. Interior dark skin stays; only the edge is matted."""
+    rgba = rgba.convert('RGBA')
+    red, green, blue, alpha = rgba.split()
+    silhouette, soft = _edge_safe_id_photo_matte(alpha, erode_px=erode_px)
+    subject_rgb = Image.merge('RGB', (red, green, blue))
+    white = Image.new('RGB', rgba.size, ID_PHOTO_WHITE)
+    # Stamp outside to white first so the feather samples white, not leftover wall.
+    stamped = Image.composite(subject_rgb, white, silhouette)
+    return Image.composite(stamped, white, soft)
+
+
+def _corners_near_white(img, tol=22, radius=8):
+    """True when each corner patch is already near #FFFFFF (backdrop gone)."""
+    return _listed_corners_near_white(
+        img,
+        None,
+        tol=tol,
+        radius=radius,
+    )
+
+
+def _top_corners_near_white(img, tol=22, radius=8):
+    """True when the top corners are studio white (processed ID on a white backdrop).
+
+    A forehead-fill crop can put skin in the bottom corners, so all-four-corners
+    is too strict for 'already processed' detection.
+    """
+    rgb = img.convert('RGB')
+    width, height = rgb.size
+    return _listed_corners_near_white(
+        rgb,
+        ((1, 1), (width - 2, 1)),
+        tol=tol,
+        radius=radius,
+    )
+
+
+def _listed_corners_near_white(img, corners, tol=22, radius=8):
+    rgb = img.convert('RGB')
+    width, height = rgb.size
+    if width < 8 or height < 8:
+        return True
+    if corners is None:
+        corners = (
+            (1, 1),
+            (width - 2, 1),
+            (1, height - 2),
+            (width - 2, height - 2),
+        )
+    for cx, cy in corners:
+        x0 = max(0, cx - radius)
+        y0 = max(0, cy - radius)
+        x1 = min(width, cx + radius + 1)
+        y1 = min(height, cy + radius + 1)
+        extrema = rgb.crop((x0, y0, x1, y1)).getextrema()
+        if not extrema:
+            continue
+        channels = extrema if isinstance(extrema[0], tuple) else (extrema,)
+        if any(low < 255 - tol for low, _high in channels[:3]):
+            return False
+    return True
+
+
+def _rembg_session_already_ready():
+    """True when a rembg session is in memory. Does not start a 180s ONNX load."""
+    if _skip_rembg_requested() or _REMBG_UNAVAILABLE:
+        return False
+    if _REMBG_SESSION is not None:
+        return True
+    return _harvest_rembg_load_box() is not None
+
+
+def _rembg_cutout_rgba(img, disable_on_fail=True, timeout=None, *, load_session=True):
+    """RGBA subject matte from rembg. None if rembg is unavailable or times out.
+
+    Timeouts and cutout errors no longer permanently disable rembg — the next photo
+    retries. Outdoor photos must not be saved as ID JPEGs when this returns None.
+    Print/PDF must pass load_session=False and a short timeout so a cold session
+    cannot stall the whole class.
+    """
+    if load_session:
+        session = _get_rembg_session()
+    elif _REMBG_SESSION is not None:
+        session = _REMBG_SESSION
+    else:
+        session = _harvest_rembg_load_box()
+    if session is None:
+        return None
+    try:
+        from rembg import remove
+    except (Exception, SystemExit):
+        logger.warning('ID photo rembg import failed during cutout; will retry on the next photo.')
+        return None
+
+    source = img.convert('RGB') if img.mode not in ('RGB', 'RGBA') else img
+    incoming = BytesIO()
+    source.save(incoming, format='PNG')
+    payload = incoming.getvalue()
+
+    def _cut():
+        cutout = remove(payload, session=session)
+        return Image.open(BytesIO(cutout)).convert('RGBA')
+
+    cutout_timeout = _REMBG_CUTOUT_TIMEOUT_SECONDS if timeout is None else timeout
+    with _rembg_lock():
+        status, value = _run_rembg_with_timeout(_cut, cutout_timeout)
+    if status == 'ok' and value is not None:
+        return value
+    logger.warning(
+        'ID photo rembg cutout failed (%s) after %ss; session kept for retry. disable_on_fail=%s',
+        status,
+        cutout_timeout,
+        disable_on_fail,
+    )
+    return None
+
+
+def _floodfill_studio_backdrop(img):
+    """Last resort: flood a flat studio wall to white. Cannot remove outdoor scenes."""
+    if ImageDraw is None:
+        return img.convert('RGB')
+    rgb = img.convert('RGB')
+    width, height = rgb.size
+    if width < 8 or height < 8:
+        return rgb
+    corners = (
+        (1, 1),
+        (width - 2, 1),
+        (1, height - 2),
+        (width - 2, height - 2),
+    )
+    samples = [rgb.getpixel(point) for point in corners]
+    average = tuple(sum(channel[idx] for channel in samples) // 4 for idx in range(3))
+    if _looks_like_skin_rgb(average):
+        return rgb
+    if any(not _color_close(sample, average, 42) for sample in samples):
+        return rgb
+    if any(not _corner_patch_uniform(rgb, point) for point in corners):
+        return rgb
+    for point in corners:
+        try:
+            ImageDraw.floodfill(rgb, point, ID_PHOTO_WHITE, thresh=30)
+        except Exception:
+            continue
+    return rgb
+
+
+def _replace_id_photo_background(img):
+    """White #FFFFFF. Always run rembg unless SKIP_REMBG is set.
+
+    Outdoor / colored-corner photos raise if rembg cannot run. Already-white studio
+    photos may use PIL flood-fill as a last-resort helper.
+    """
+    if _skip_rembg_requested():
+        logger.warning(
+            'ID photo rembg skipped because SKIP_REMBG is set. size=%s needs_cutout=%s',
+            getattr(img, 'size', None),
+            _id_photo_needs_background_removal(img),
+        )
+        _flash_id_photo_notice(ID_PHOTO_SKIP_REMBG_WARNING, 'warning')
+        return _floodfill_studio_backdrop(img)
+
+    rgba = _rembg_cutout_rgba(img)
+    if rgba is not None:
+        result = _composite_id_cutout_on_white(rgba)
+        if _corners_near_white(result):
+            return result
+        logger.info('ID photo corners still not white after rembg; retrying rembg once (same gentle matte).')
+        rgba_retry = _rembg_cutout_rgba(img, disable_on_fail=False)
+        if rgba_retry is not None:
+            result = _composite_id_cutout_on_white(rgba_retry)
+        return result
+    if _id_photo_needs_background_removal(img):
+        thread = _REMBG_LOAD_THREAD
+        if thread is not None and thread.is_alive() and not _rembg_session_already_ready():
+            _raise_id_photo_rembg_failure(
+                'rembg session still loading after wait; corners are not studio white',
+                ID_PHOTO_REMBG_LOADING_MESSAGE,
+            )
+        _raise_id_photo_rembg_failure(
+            'rembg unavailable or timed out; corners are not studio white'
+        )
+    logger.warning(
+        'ID photo rembg unavailable; PIL flood-fill last resort on an already-white studio photo. '
+        'Install rembg with a complete u2net model, or unset SKIP_REMBG.'
+    )
+    return _floodfill_studio_backdrop(img)
+
+
+def _estimate_portrait_focus(img):
+    """Skin-tone centroid in the upper 70% — used when a face detector is not installed."""
+    rgb = img.convert('RGB')
+    sample = rgb.copy()
+    sample.thumbnail((160, 160), _id_photo_resample())
+    width, height = sample.size
+    pixels = sample.load()
+    xs = []
+    ys = []
+    for y in range(max(1, int(height * 0.70))):
+        for x in range(width):
+            if _looks_like_skin_rgb(pixels[x, y]):
+                xs.append(x)
+                ys.append(y)
+    if len(xs) < 40:
+        return None
+    xs_sorted = sorted(xs)
+    ys_sorted = sorted(ys)
+    low = int(len(xs_sorted) * 0.10)
+    high = max(low + 1, int(len(xs_sorted) * 0.90))
+    trimmed_x = xs_sorted[low:high]
+    trimmed_y = ys_sorted[low:high]
+    x_span = trimmed_x[-1] - trimmed_x[0]
+    y_span = trimmed_y[-1] - trimmed_y[0]
+    scale_x = rgb.size[0] / float(width)
+    scale_y = rgb.size[1] / float(height)
+    # Trimmed mean — do not let outlier skin pixels pull the crop left.
+    return (
+        (sum(trimmed_x) / len(trimmed_x)) * scale_x,
+        (sum(trimmed_y) / len(trimmed_y)) * scale_y,
+        max(x_span * scale_x, y_span * scale_y),
+    )
+
+
+def _luma_below_white_mask(rgb, white_threshold=_ID_PHOTO_WHITE_LUMA):
+    """255 where Rec. 601 luminance is below studio white. Dark clothes stay subject."""
+    return rgb.convert('L').point(lambda pixel: 255 if pixel < white_threshold else 0)
+
+
+def _subject_bbox(img, white_threshold=_ID_PHOTO_WHITE_LUMA):
+    """Bounding box of the person: non-white luma or visible alpha (not 255-exact)."""
+    width, height = img.size
+    if width < 2 or height < 2:
+        return None
+    if img.mode in ('RGBA', 'LA'):
+        rgba = img.convert('RGBA')
+        rgb = Image.merge('RGB', rgba.split()[:3])
+        mask = _luma_below_white_mask(rgb, white_threshold)
+        alpha = rgba.split()[-1].point(
+            lambda pixel: 255 if pixel >= _ID_PHOTO_ALPHA_CLEAR else 0
+        )
+        if ImageChops is not None:
+            mask = ImageChops.lighter(mask, alpha)
+        else:
+            mask = alpha
+    else:
+        mask = _luma_below_white_mask(img.convert('RGB'), white_threshold)
+    return mask.getbbox()
+
+
+def _letterbox_on_white_square(img, size=ID_PHOTO_OUTPUT_PX):
+    """Scale img to fit inside size×size and paste it centered on white."""
+    rgb = img.convert('RGB')
+    width, height = rgb.size
+    canvas = Image.new('RGB', (size, size), ID_PHOTO_WHITE)
+    if width < 1 or height < 1:
+        return canvas
+    scale = min(size / float(width), size / float(height))
+    new_w = max(1, int(round(width * scale)))
+    new_h = max(1, int(round(height * scale)))
+    if (new_w, new_h) != (width, height):
+        rgb = rgb.resize((new_w, new_h), _id_photo_resample())
+    canvas.paste(rgb, ((size - new_w) // 2, (size - new_h) // 2))
+    return canvas
+
+
+def _mask_channel_count(mask, value=255):
+    hist = mask.histogram()
+    if value >= len(hist):
+        return 0
+    return hist[value]
+
+
+def _trim_solid_white_margins(img, white_threshold=_ID_PHOTO_WHITE_LUMA):
+    """Crop L/R/top/bottom columns that are solid studio white. Ignore rembg/JPEG dust."""
+    rgb = img.convert('RGB')
+    width, height = rgb.size
+    if width < 4 or height < 4:
+        return rgb
+    mask = _luma_below_white_mask(rgb, white_threshold)
+    col_allow = max(2, int(height * 0.025))
+    row_allow = max(2, int(width * 0.025))
+
+    def col_content(x):
+        return _mask_channel_count(mask.crop((x, 0, x + 1, height)))
+
+    def row_content(y):
+        return _mask_channel_count(mask.crop((0, y, width, y + 1)))
+
+    x0 = 0
+    while x0 < width - 2 and col_content(x0) <= col_allow:
+        x0 += 1
+    x1 = width
+    while x1 > x0 + 2 and col_content(x1 - 1) <= col_allow:
+        x1 -= 1
+    y0 = 0
+    while y0 < height - 2 and row_content(y0) <= row_allow:
+        y0 += 1
+    y1 = height
+    while y1 > y0 + 2 and row_content(y1 - 1) <= row_allow:
+        y1 -= 1
+    if x1 - x0 < 2 or y1 - y0 < 2:
+        return rgb
+    return rgb.crop((x0, y0, x1, y1))
+
+
+def _content_x_span(img, y0, y1, white_threshold=_ID_PHOTO_WHITE_LUMA, min_col_frac=0.18):
+    """Left/right of columns in [y0, y1) that are really the person, not a stray speck."""
+    rgb = img.convert('RGB')
+    width, height = rgb.size
+    if width < 2 or height < 2:
+        return None
+    top = max(0, min(height - 1, int(y0)))
+    bottom = max(top + 1, min(height, int(y1)))
+    band = _luma_below_white_mask(rgb.crop((0, top, width, bottom)), white_threshold)
+    band_h = band.size[1]
+    need = max(2, int(round(band_h * min_col_frac)))
+    left = None
+    right = None
+    for x in range(width):
+        if _mask_channel_count(band.crop((x, 0, x + 1, band_h))) < need:
+            continue
+        if left is None:
+            left = x
+        right = x + 1
+    if left is None:
+        return None
+    return left, right
+
+
+def _content_y_span(img, x0, x1, white_threshold=_ID_PHOTO_WHITE_LUMA, min_row_frac=0.10):
+    """Top/bottom of rows in [x0, x1) that are really the person, not a stray speck."""
+    rgb = img.convert('RGB')
+    width, height = rgb.size
+    if width < 2 or height < 2:
+        return None
+    left = max(0, min(width - 1, int(x0)))
+    right = max(left + 1, min(width, int(x1)))
+    band = _luma_below_white_mask(rgb.crop((left, 0, right, height)), white_threshold)
+    band_w = band.size[0]
+    need = max(2, int(round(band_w * min_row_frac)))
+    top = None
+    bottom = None
+    for y in range(height):
+        if _mask_channel_count(band.crop((0, y, band_w, y + 1))) < need:
+            continue
+        if top is None:
+            top = y
+        bottom = y + 1
+    if top is None:
+        return None
+    return top, bottom
+
+
+def _id_photo_edge_white_frac(img, from_left=True, px=3, white_threshold=_ID_PHOTO_WHITE_LUMA):
+    """Fraction of the leftmost or rightmost px columns that are studio white."""
+    rgb = img.convert('RGB')
+    width, height = rgb.size
+    if width < 2 or height < 2:
+        return 1.0
+    n = min(max(1, int(px)), width)
+    xs = range(n) if from_left else range(width - 1, width - 1 - n, -1)
+    pixels = rgb.load()
+    white = 0
+    total = 0
+    for x in xs:
+        for y in range(height):
+            red, green, blue = pixels[x, y]
+            total += 1
+            if (0.299 * red + 0.587 * green + 0.114 * blue) >= white_threshold:
+                white += 1
+    return white / float(total) if total else 1.0
+
+
+def _edge_columns_uniformly_white(img, px=3, min_white_frac=0.82):
+    """True when either side's 3-pixel strip is mostly leftover studio white."""
+    return (
+        _id_photo_edge_white_frac(img, True, px) >= min_white_frac
+        or _id_photo_edge_white_frac(img, False, px) >= min_white_frac
+    )
+
+
+def _lower_third_side_columns_white(img, px=3, min_white_frac=0.82, white_threshold=_ID_PHOTO_WHITE_LUMA):
+    """True when the lower third (shirt/chest) still has white gutters at the sides."""
+    rgb = img.convert('RGB')
+    width, height = rgb.size
+    if width < 2 or height < 4:
+        return True
+    y0 = int(height * 2 / 3.0)
+    n = min(max(1, int(px)), width)
+    pixels = rgb.load()
+
+    def _side_frac(xs):
+        white = 0
+        total = 0
+        for x in xs:
+            for y in range(y0, height):
+                red, green, blue = pixels[x, y]
+                total += 1
+                if (0.299 * red + 0.587 * green + 0.114 * blue) >= white_threshold:
+                    white += 1
+        return white / float(total) if total else 1.0
+
+    left = _side_frac(range(n))
+    right = _side_frac(range(width - 1, width - 1 - n, -1))
+    return left >= min_white_frac or right >= min_white_frac
+
+
+def _lower_third_white_frac(img, white_threshold=_ID_PHOTO_WHITE_LUMA):
+    """Fraction of the lower third that is studio white."""
+    rgb = img.convert('RGB')
+    width, height = rgb.size
+    if width < 2 or height < 4:
+        return 1.0
+    y0 = int(height * 2 / 3.0)
+    band = rgb.crop((0, y0, width, height))
+    hist = band.convert('L').histogram()
+    white = sum(hist[int(white_threshold):]) if hist else 0
+    total = width * max(1, height - y0)
+    return white / float(total)
+
+
+def _widest_dense_row_span(img, y0, y1, white_threshold=_ID_PHOTO_WHITE_LUMA, min_run=8, min_fill=0.35):
+    """Shoulder/chest span: widest row whose first-to-last content is actually filled.
+
+    First-to-last keeps a white shirt between two sleeves. A density floor
+    ignores a left speck plus a right speck pretending to be full width.
+    Returns (left, right, y) or None.
+    """
+    rgb = img.convert('RGB')
+    width, height = rgb.size
+    if width < 2 or height < 2:
+        return None
+    top = max(0, min(height - 1, int(y0)))
+    bottom = max(top + 1, min(height, int(y1)))
+    band = _luma_below_white_mask(rgb.crop((0, top, width, bottom)), white_threshold)
+    pixels = band.load()
+    band_h, band_w = band.size[1], band.size[0]
+    candidates = []
+    for y in range(band_h):
+        left = None
+        right = None
+        filled = 0
+        for x in range(band_w):
+            if pixels[x, y] < 128:
+                continue
+            filled += 1
+            if left is None:
+                left = x
+            right = x + 1
+        if left is None:
+            continue
+        span_w = right - left
+        if span_w < min_run or filled / float(span_w) < min_fill:
+            continue
+        candidates.append((span_w, top + y, left, right))
+    if not candidates:
+        return None
+    max_w = max(item[0] for item in candidates)
+    need = max_w * 0.85
+    best = None
+    for span_w, row_y, left, right in candidates:
+        if span_w < need:
+            continue
+        if best is None or row_y < best[2]:
+            best = (left, right, row_y)
+    return best
+
+
+def _widest_row_x_span(img, y0, y1, white_threshold=_ID_PHOTO_WHITE_LUMA, min_run=4):
+    """Shoulder width from the single widest content row (not the union of a tall band)."""
+    rgb = img.convert('RGB')
+    width, height = rgb.size
+    if width < 2 or height < 2:
+        return None
+    top = max(0, min(height - 1, int(y0)))
+    bottom = max(top + 1, min(height, int(y1)))
+    band = _luma_below_white_mask(rgb.crop((0, top, width, bottom)), white_threshold)
+    pixels = band.load()
+    band_h, band_w = band.size[1], band.size[0]
+    best = None
+    best_w = 0
+    for y in range(band_h):
+        left = None
+        right = None
+        for x in range(band_w):
+            if pixels[x, y] < 128:
+                continue
+            if left is None:
+                left = x
+            right = x + 1
+        if left is None:
+            continue
+        span_w = right - left
+        if span_w < min_run:
+            continue
+        if span_w > best_w:
+            best_w = span_w
+            best = (left, right)
+    return best
+
+
+def _cover_subject_keep_head(img, size=ID_PHOTO_OUTPUT_PX):
+    """Fill size×size by WIDTH only; keep headroom above the crown; extra from the bottom."""
+    rgb = img.convert('RGB')
+    width, height = rgb.size
+    if width < 1 or height < 1:
+        return Image.new('RGB', (size, size), ID_PHOTO_WHITE)
+    scale = size / float(width)
+    new_w = size
+    new_h = max(1, int(round(height * scale)))
+    if (new_w, new_h) != (width, height):
+        rgb = rgb.resize((new_w, new_h), _id_photo_resample())
+        width, height = new_w, new_h
+    bbox = _subject_bbox(rgb)
+    crown = bbox[1] if bbox else 0
+    headroom = int(round(size * _ID_PHOTO_HEADROOM_FRAC))
+    pad_t = max(0, headroom - int(crown))
+    if pad_t:
+        padded = Image.new('RGB', (width, height + pad_t), ID_PHOTO_WHITE)
+        padded.paste(rgb, (0, pad_t))
+        rgb = padded
+        width, height = rgb.size
+    if height >= size:
+        return rgb.crop((0, 0, size, size))
+    # Rare landscape leftover: pin to top. Do not crop L/R (that re-opens white pillars).
+    canvas = Image.new('RGB', (size, size), ID_PHOTO_WHITE)
+    canvas.paste(rgb, (0, 0))
+    return canvas
+
+
+def _bust_width_box(img):
+    """Crop box whose WIDTH is the shoulders — not the forehead, not full-body hips."""
+    rgb = _trim_solid_white_margins(img)
+    width, height = rgb.size
+    if width < 2 or height < 2:
+        return rgb, None
+    bbox = _subject_bbox(rgb)
+    if not bbox:
+        span = _content_x_span(rgb, 0, height)
+        if span is None:
+            return rgb, None
+        return rgb, (span[0], 0, span[1], height)
+    _x0, y0, _x1, y1 = bbox
+    subj_h = max(1, y1 - y0)
+    subj_w = max(1, _x1 - _x0)
+    # Full-body cutouts are widest at the hips. Guess H&S width from the upper body.
+    guess_w = min(subj_w, max(8, int(round(subj_h * 0.42))))
+    hs_bottom = min(y1, y0 + max(8, int(round(guess_w * 1.25))))
+    shoulder_top = y0 + int((hs_bottom - y0) * 0.38)
+    span = _widest_row_x_span(rgb, shoulder_top, hs_bottom)
+    if span is None:
+        span = _content_x_span(rgb, shoulder_top, hs_bottom, min_col_frac=0.15)
+    if span is None:
+        span = _content_x_span(rgb, y0, hs_bottom, min_col_frac=0.12)
+    if span is None:
+        span = _content_x_span(rgb, 0, height)
+    if span is None:
+        span = (_x0, _x1)
+    return rgb, (span[0], y0, span[1], y1)
+
+
+def _subject_fill_box(img):
+    """Tight person box after solid-white trim (no rembg dust inflating the width)."""
+    _src, box = _bust_width_box(img)
+    return box
+
+
+def _crop_id_square_fill(img, mid_x, crop_top, side):
+    """Shoulder-width square: shift L/R (no side pillars); pad white above/below, never clip the crown."""
+    rgb = img.convert('RGB')
+    width, height = rgb.size
+    if width < 2 or height < 2:
+        return rgb
+    side = max(2, int(round(side)))
+    # Never shrink the square to the source height — that would put the crown at y=0.
+    if side > width:
+        side = max(2, width)
+        left = 0
+    else:
+        left = int(round(mid_x - side / 2.0))
+        left = max(0, min(left, width - side))
+    top = int(round(crop_top))
+    pad_t = max(0, -top)
+    pad_b = max(0, top + side - height)
+    if pad_t or pad_b:
+        canvas = Image.new('RGB', (width, height + pad_t + pad_b), ID_PHOTO_WHITE)
+        canvas.paste(rgb, (0, pad_t))
+        rgb = canvas
+        width, height = rgb.size
+        top += pad_t
+    top = max(0, min(top, max(0, height - side)))
+    return rgb.crop((left, top, left + side, top + side))
+
+
+def _crop_subject_width_square(rgb, x0, x1, top):
+    """1:1 crop whose width is the shoulders. Pad white above the crown; never pad L/R."""
+    rgb = rgb.convert('RGB')
+    side = max(2, int(round(float(x1) - float(x0))))
+    mid_x = (float(x0) + float(x1)) / 2.0
+    return _crop_id_square_fill(rgb, mid_x, top, side)
+
+
+def _fit_subject_on_white_square(img, size=ID_PHOTO_OUTPUT_PX):
+    """800×800 head-and-shoulders: shoulder-width square, headroom above the crown, chest at bottom.
+
+    Trim white, take the subject, set WIDTH from the widest dense row (shoulders,
+    including a white shirt between sleeves). Start the square 8–12% of the side
+    above the silhouette top. If that is off-canvas, pad white above — never clip.
+    """
+    rgb = _trim_solid_white_margins(img)
+    width, height = rgb.size
+    if width < 2 or height < 2:
+        return Image.new('RGB', (size, size), ID_PHOTO_WHITE)
+    if _id_photo_already_usable_hs(img.convert('RGB') if img.mode != 'RGB' else img):
+        src = img.convert('RGB')
+        if src.size != (size, size):
+            src = src.resize((size, size), _id_photo_resample())
+        return src
+    bbox = _subject_bbox(rgb)
+    if bbox:
+        x0, y0, x1, y1 = (float(v) for v in bbox)
+    else:
+        x0, y0, x1, y1 = 0.0, 0.0, float(width), float(height)
+    span_x = _content_x_span(rgb, y0, y1, min_col_frac=0.12)
+    if span_x:
+        x0, x1 = float(span_x[0]), float(span_x[1])
+    span_y = _content_y_span(rgb, x0, x1, min_row_frac=0.10)
+    if span_y:
+        y0, y1 = float(span_y[0]), float(span_y[1])
+    hit = _widest_dense_row_span(rgb, y0, y1)
+    if hit:
+        x0, x1 = float(hit[0]), float(hit[1])
+    fringe = max(0.0, (x1 - x0) * _ID_PHOTO_SUBJECT_FRINGE)
+    x0 += fringe
+    x1 -= fringe
+    if x1 - x0 < 2:
+        x0, x1 = 0.0, float(width)
+
+    out = None
+    for _attempt in range(5):
+        if x1 - x0 < 2:
+            break
+        side = max(2.0, x1 - x0)
+        # Always start above the crown. Never place bbox.top at y=0 of the square.
+        top = y0 - side * _ID_PHOTO_HEADROOM_FRAC
+        square = _crop_subject_width_square(rgb, x0, x1, top)
+        out = square.resize((size, size), _id_photo_resample())
+        if not _lower_third_side_columns_white(out) and not _id_photo_is_face_only_square(out):
+            return out
+        pad = max(2.0, (x1 - x0) * 0.04)
+        x0 += pad
+        x1 -= pad
+        if x1 - x0 < 8:
+            break
+    covered = _cover_subject_keep_head(rgb, size)
+    if out is None or _id_photo_is_face_only_square(out) or _lower_third_side_columns_white(out):
+        return covered
+    return out
+
+
+def _crop_square_centered(img, center_x, center_y, side):
+    """Crop a square centered on a point. Pad with white if the box hangs off the photo."""
+    rgb = img.convert('RGB')
+    width, height = rgb.size
+    side = max(2, int(side))
+    left = int(round(center_x - side / 2.0))
+    top = int(round(center_y - side / 2.0))
+    pad_l = max(0, -left)
+    pad_t = max(0, -top)
+    pad_r = max(0, left + side - width)
+    pad_b = max(0, top + side - height)
+    if pad_l or pad_t or pad_r or pad_b:
+        canvas = Image.new('RGB', (width + pad_l + pad_r, height + pad_t + pad_b), ID_PHOTO_WHITE)
+        canvas.paste(rgb, (pad_l, pad_t))
+        rgb = canvas
+        left += pad_l
+        top += pad_t
+    return rgb.crop((left, top, left + side, top + side))
+
+
+def _square_id_crop(img, focus=None):
+    """Head-and-shoulders square from silhouette/bust width (no face-only zoom)."""
+    src, box = _bust_width_box(img)
+    width, height = src.size
+    min_side = min(width, height)
+    if min_side < 2:
+        return src
+    if box:
+        x0, y0, x1, _y1 = box
+        box_w = max(1.0, float(x1 - x0))
+        mid_x = (x0 + x1) / 2.0
+        inset = box_w * _ID_PHOTO_SUBJECT_FRINGE
+        side = max(2.0, box_w - 2.0 * inset)
+        return _crop_id_square_fill(src, mid_x, y0 - side * _ID_PHOTO_HEADROOM_FRAC, side)
+    if focus:
+        center_x, center_y, spread = focus
+        side = int(spread * 3.15) if spread else min_side
+        side = max(int(min_side * 0.55), min(side, min_side))
+        return _crop_id_square_fill(src, center_x, center_y - side / 2.0, side)
+    return _crop_id_square_fill(src, width / 2.0, (height - min_side) / 2.0, min_side)
+
+
+def _id_photo_nonwhite_mask(rgb, white_threshold=248):
+    """L mask of the person after the white cutout (backdrop stays 0)."""
+    red, green, blue = rgb.split()
+    darkest = ImageChops.darker(ImageChops.darker(red, green), blue)
+    return darkest.point(lambda pixel: 255 if pixel < white_threshold else 0)
+
+
+def _histogram_percentile(hist, pct):
+    """Return the intensity at percentile pct from a 256-bin histogram."""
+    total = sum(hist)
+    if total < 1:
+        return None
+    need = total * (max(0.0, min(100.0, float(pct))) / 100.0)
+    seen = 0
+    for value, count in enumerate(hist):
+        seen += count
+        if seen >= need:
+            return value
+    return 255
+
+
+def _id_photo_skin_like_mask(rgb, subject_mask):
+    """Skin-like subject pixels, including dark skin in shadow. Hair (dark + low chroma) is out."""
+    hsv = rgb.convert('HSV')
+    hue, sat, val = hsv.split()
+    red, green, blue = rgb.split()
+    # PIL HSV hue is 0–255. Skin stays in red–orange (wraps through deep red).
+    hue_ok = hue.point(lambda pixel: 255 if pixel <= 34 or pixel >= 238 else 0)
+    sat_ok = sat.point(lambda pixel: 255 if 22 <= pixel <= 200 else 0)
+    val_ok = val.point(lambda pixel: 255 if pixel >= 16 else 0)
+    # Black/brown hair is dark and nearly neutral; shadowed skin keeps warm chroma.
+    chroma = ImageChops.subtract(
+        ImageChops.lighter(ImageChops.lighter(red, green), blue),
+        ImageChops.darker(ImageChops.darker(red, green), blue),
+    )
+    chroma_ok = chroma.point(lambda pixel: 255 if pixel >= 12 else 0)
+    # Deepest shadows can be V<30; require extra warm chroma so hair stays out.
+    deep_ok = ImageChops.lighter(
+        val.point(lambda pixel: 255 if pixel >= 30 else 0),
+        chroma.point(lambda pixel: 255 if pixel >= 18 else 0),
+    )
+    not_hair = ImageChops.lighter(
+        val.point(lambda pixel: 255 if pixel >= 28 else 0),
+        sat.point(lambda pixel: 255 if pixel >= 42 else 0),
+    )
+    # Skin is warm: red leads green (allow a 2-count tie for underexposure).
+    not_cool = ImageChops.subtract(green, red).point(lambda pixel: 0 if pixel > 2 else 255)
+    mask = subject_mask
+    for layer in (hue_ok, sat_ok, val_ok, chroma_ok, deep_ok, not_hair, not_cool):
+        mask = ImageChops.multiply(mask, layer)
+    if ImageFilter is not None:
+        mask = mask.filter(ImageFilter.GaussianBlur(radius=1.1))
+        mask = ImageChops.multiply(mask, subject_mask)
+    return mask
+
+
+def _studio_even_light_lut(p20, p50, p90, gap):
+    """Identity. Shadow-lift posterized dark skin into brown blocks; keep rembg RGB."""
+    return list(range(256))
+
+
+def _studio_even_light_id_photo(img):
+    """No-op: original rembg RGB is kept. Shadow-lift / L-blur spoiled portraits."""
+    if Image is None:
+        return img
+    return img.convert('RGB')
+
+
+def _id_photo_inset_mask(mask, px=1):
+    """Erode the denoise/deband mask so white does not bleed into the silhouette."""
+    if ImageFilter is None or px < 1 or not hasattr(ImageFilter, 'MinFilter'):
+        return mask
+    inset = mask
+    for _ in range(max(1, min(int(px), 3))):
+        inset = inset.filter(ImageFilter.MinFilter(3))
+    return inset
+
+
+def _refine_id_photo_surface(img):
+    """No-op. Median + dark-region L-blur posterized skin; keep rembg RGB."""
+    if Image is None:
+        return img
+    return img.convert('RGB')
+
+
+def _finish_id_portrait(img):
+    """Mild print punch. Unsharp at 70% so pores stay without amplifying matte jaggies."""
+    rgb = img.convert('RGB')
+    if ImageEnhance is not None:
+        rgb = ImageEnhance.Contrast(rgb).enhance(1.02)
+        rgb = ImageEnhance.Color(rgb).enhance(1.03)
+    if ImageFilter is not None and hasattr(ImageFilter, 'UnsharpMask'):
+        rgb = rgb.filter(
+            ImageFilter.UnsharpMask(radius=1.0, percent=_ID_PHOTO_UNSHARP_PERCENT, threshold=4)
+        )
+    return rgb
+
+
+def _save_id_photo_jpeg(img, buffer):
+    """800×800 JPEG, quality 92, 4:4:4 when Pillow supports it (no chroma banding)."""
+    rgb = img.convert('RGB')
+    try:
+        rgb.save(
+            buffer,
+            format='JPEG',
+            quality=_ID_PHOTO_JPEG_QUALITY,
+            optimize=True,
+            subsampling=0,
+        )
+    except (TypeError, ValueError, OSError):
+        buffer.seek(0)
+        buffer.truncate(0)
+        rgb.save(buffer, format='JPEG', quality=_ID_PHOTO_JPEG_QUALITY, optimize=True)
+
+
+def _process_id_photo(img):
+    """Professional square ID: rembg on white, trim gutters, 800×800 subject-width crop."""
+    if img.mode not in ('RGB', 'RGBA'):
+        img = img.convert('RGB')
+    logger.info(
+        'ID photo pipeline start size=%s skip_rembg=%s needs_cutout=%s',
+        img.size,
+        _skip_rembg_requested(),
+        _id_photo_needs_background_removal(img),
+    )
+    img = _downscale_id_photo(img)
+    img = _replace_id_photo_background(img)
+    img = _fit_subject_on_white_square(img, ID_PHOTO_OUTPUT_PX)
+    return _finish_id_portrait(img)
+
+
+def _crop_id_photo_without_rembg(img):
+    """Square crop + print punch when rembg/full pipeline throws. Still crops — never skip."""
+    rgb = img.convert('RGB') if img.mode not in ('RGB', 'RGBA') else img
+    return _finish_id_portrait(_fit_subject_on_white_square(rgb, ID_PHOTO_OUTPUT_PX))
+
+
+def _process_id_card_image_bytes(payload, kind, ext):
+    """Normalize an ID photo (white bg + square crop) or shrink a signature. Falls back to original bytes."""
+    if Image is None:
+        return payload, ext
+    try:
+        img = Image.open(BytesIO(payload))
+        if ImageOps is not None:
+            img = ImageOps.exif_transpose(img)
+    except Exception:
+        logger.exception('ID photo could not open uploaded bytes')
+        return payload, ext
+    try:
+        if kind == 'photo':
+            try:
+                img = _process_id_photo(img)
+            except ValueError:
+                raise
+            except Exception:
+                logger.exception('ID photo pipeline failed')
+                if _id_photo_needs_background_removal(img):
+                    _raise_id_photo_rembg_failure('pipeline exception on a non-white-studio photo')
+                logger.exception('ID photo pipeline failed; square-cropping a white-studio photo without rembg')
+                img = _crop_id_photo_without_rembg(img)
+            buffer = BytesIO()
+            _save_id_photo_jpeg(img, buffer)
+            return buffer.getvalue(), '.jpg'
+        # Signature: keep transparency when possible, cap longest side.
+        if img.mode not in ('RGB', 'RGBA'):
+            img = img.convert('RGBA')
+        longest = max(img.size)
+        if longest > 900:
+            scale = 900 / float(longest)
+            img = img.resize(
+                (max(1, int(img.size[0] * scale)), max(1, int(img.size[1] * scale))),
+                _id_photo_resample(),
+            )
+        buffer = BytesIO()
+        out_ext = ext if ext in {'.png', '.jpg', '.webp'} else '.png'
+        if out_ext == '.jpg':
+            img = img.convert('RGB')
+            img.save(buffer, format='JPEG', quality=90)
+        elif out_ext == '.webp':
+            img.save(buffer, format='WEBP', quality=90)
+        else:
+            if img.mode != 'RGBA':
+                img = img.convert('RGBA')
+            img.save(buffer, format='PNG')
+            out_ext = '.png'
+        return buffer.getvalue(), out_ext
+    except ValueError:
+        raise
+    except Exception:
+        logger.exception('ID card image process failed for kind=%s', kind)
+        if kind == 'photo':
+            _raise_id_photo_rembg_failure('unhandled photo process exception')
+        return payload, ext
+
+
+def _id_photos_relpath(filename):
+    return os.path.join('uploads', 'id_photos', filename).replace('\\', '/')
+
+
+def _save_id_card_image(file_storage, subdir, student_id, kind, student=None):
+    """Save an ID photo or signature under static/uploads/<subdir>/. Returns (filename, rel_path)."""
+    if not file_storage or not (file_storage.filename or '').strip():
+        return None
+    original = secure_filename(file_storage.filename) or kind
+    ext = os.path.splitext(original)[1].lower()
+    if ext not in ID_CARD_IMAGE_EXT:
+        raise ValueError('Use a photo file (JPG, PNG, WEBP, or GIF).')
+    payload = file_storage.read()
+    if not payload:
+        raise ValueError('That file was empty. Please try again.')
+    if len(payload) > ID_CARD_MAX_BYTES:
+        raise ValueError('That file is too large. Maximum size is 8 MB.')
+    original_ext = ext
+    if kind == 'photo' and student is not None:
+        _store_id_photo_original_bytes(student, payload, original_ext)
+    payload, ext = _process_id_card_image_bytes(payload, kind, ext)
+    upload_dir = os.path.join(current_app.root_path, 'static', 'uploads', subdir)
+    os.makedirs(upload_dir, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')
+    filename = f"{kind}_{int(student_id)}_{timestamp}{ext}"
+    with open(os.path.join(upload_dir, filename), 'wb') as handle:
+        handle.write(payload)
+    rel_path = os.path.join('uploads', subdir, filename).replace('\\', '/')
+    return filename, rel_path
+
+
+def _is_processed_id_photo_path(path):
+    """True when this file lives under static/uploads/id_photos/."""
+    if not path:
+        return False
+    norm = os.path.normcase(os.path.abspath(str(path)))
+    marker = os.path.normcase(os.path.join('uploads', 'id_photos') + os.sep)
+    return marker in norm.replace('/', os.sep)
+
+
+def _cache_busted_photo_url(student, disk_path=None):
+    """Static photo URL with mtime so a recropped JPEG is not served from browser cache."""
+    url = getattr(student, 'photo_url', None)
+    path = disk_path or _student_id_photo_disk_path(student)
+    if not url or not path:
+        return url
+    try:
+        stamp = int(os.path.getmtime(path))
+    except OSError:
+        return url
+    sep = '&' if '?' in url else '?'
+    return '%s%sv=%s' % (url, sep, stamp)
+
+
+def _write_processed_id_photo_jpeg(student, img):
+    """Write a NEW 800×800 JPEG under id_photos (new timestamp) and point student.photo at it."""
+    buffer = BytesIO()
+    _save_id_photo_jpeg(img, buffer)
+    payload = buffer.getvalue()
+    timestamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')
+    student_pk = int(getattr(student, 'id', 0) or 0)
+    filename = 'photo_%s_%s.jpg' % (student_pk, timestamp)
+    upload_dir = _id_photos_dir_from_student(student)
+    os.makedirs(upload_dir, exist_ok=True)
+    with open(os.path.join(upload_dir, filename), 'wb') as handle:
+        handle.write(payload)
+    rel_path = _id_photos_relpath(filename)
+    student.photo = rel_path
+    student.photo_filename = filename
+    return True
+
+
+def _id_photo_disk_paths(student):
+    """Absolute photo files for this student, processed ID JPEGs first."""
+    paths = []
+    seen = set()
+    if not student:
+        return paths
+    for source in student._id_photo_sources():
+        path = _resolve_static_abs_path(source)
+        if not path or path in seen or not os.path.isfile(path):
+            continue
+        seen.add(path)
+        paths.append(path)
+    return paths
+
+
+def _id_photo_pixel_area(path):
+    try:
+        with Image.open(path) as opened:
+            return opened.size[0] * opened.size[1]
+    except Exception:
+        return 0
+
+
+def _id_photo_student_pk(student):
+    return int(getattr(student, 'id', 0) or 0)
+
+
+def _is_id_photo_original_filename(path):
+    return os.path.basename(str(path or '')).lower().startswith('original_')
+
+
+def _existing_processed_id_photo_path(student):
+    """On-disk processed id_photos JPEG (not original_*). None if only a camera file exists."""
+    for path in _id_photo_disk_paths(student):
+        if _is_processed_id_photo_path(path) and not _is_id_photo_original_filename(path):
+            return path
+    pk = _id_photo_student_pk(student)
+    if pk:
+        files = _glob_id_photo_dir(student, 'photo_%s_*' % pk)
+        if files:
+            return files[0]
+    return None
+
+
+def _id_photos_dir_from_student(student):
+    """Folder for processed/original ID JPEGs. Prefers the student's current id_photos dir."""
+    current = None
+    try:
+        current = _student_id_photo_disk_path(student)
+    except Exception:
+        current = None
+    if current and _is_processed_id_photo_path(current):
+        return os.path.dirname(current)
+    if has_app_context() and getattr(current_app, 'static_folder', None):
+        return os.path.join(current_app.static_folder, 'uploads', 'id_photos')
+    if has_app_context() and getattr(current_app, 'root_path', None):
+        return os.path.join(current_app.root_path, 'static', 'uploads', 'id_photos')
+    return os.path.join(BASE_DIR, 'static', 'uploads', 'id_photos')
+
+
+def _glob_id_photo_dir(student, pattern):
+    folder = _id_photos_dir_from_student(student)
+    if not folder or not os.path.isdir(folder):
+        return []
+    return sorted(glob.glob(os.path.join(folder, pattern)), reverse=True)
+
+
+def _unique_existing_photo_paths(paths):
+    seen = set()
+    out = []
+    for path in paths:
+        if not path:
+            continue
+        abs_path = os.path.abspath(str(path))
+        key = os.path.normcase(abs_path)
+        if key in seen or not os.path.isfile(abs_path):
+            continue
+        seen.add(key)
+        out.append(abs_path)
+    return out
+
+
+def _id_photo_is_processed_square(img):
+    """True when this looks like an 800×800 processed ID JPEG."""
+    width, height = img.size
+    return abs(width - height) <= 8 and abs(min(width, height) - ID_PHOTO_OUTPUT_PX) <= 50
+
+
+def _id_photo_is_face_only_square(img):
+    """True when a processed 800×800 JPEG is already a face/forehead crop — not a rembg source.
+
+    Camera originals are not 800×800-on-white, so they return False. A full
+    head-and-shoulders ID (shoulders wider than the head) also returns False.
+    """
+    rgb = img.convert('RGB') if img.mode != 'RGB' else img
+    if not _id_photo_is_processed_square(rgb):
+        return False
+    if not _top_corners_near_white(rgb):
+        return False
+    width, height = rgb.size
+    bbox = _subject_bbox(rgb)
+    if not bbox:
+        return True
+    x0, y0, x1, y1 = bbox
+    if y1 <= height * 0.40:
+        return True
+    subj_h = max(1.0, float(y1 - y0))
+    upper = _widest_dense_row_span(rgb, y0, y0 + subj_h * 0.40)
+    lower = _widest_dense_row_span(rgb, y0 + subj_h * 0.55, y1)
+    upper_w = float(upper[1] - upper[0]) if upper else float(x1 - x0)
+    lower_w = float(lower[1] - lower[0]) if lower else 0.0
+    if lower_w >= upper_w * 1.35:
+        return False
+    fills = y0 <= height * 0.12 and y1 >= height * 0.88
+    if fills and lower_w <= upper_w * 1.32:
+        return True
+    if y1 <= height * 0.55 and _lower_third_white_frac(rgb) >= 0.75:
+        return True
+    return False
+
+
+def _id_photo_already_usable_hs(img):
+    """True when an 800×800 ID already shows head and shoulders on a white studio backdrop.
+
+    Outdoor / colored-corner squares are never treated as finished — rembg must run.
+    """
+    rgb = img.convert('RGB') if img.mode != 'RGB' else img
+    if not _id_photo_is_processed_square(rgb) or _id_photo_is_face_only_square(rgb):
+        return False
+    if not _top_corners_near_white(rgb):
+        return False
+    bbox = _subject_bbox(rgb)
+    if not bbox:
+        return False
+    x0, y0, x1, y1 = bbox
+    height = rgb.size[1]
+    if y0 <= height * 0.015:
+        return False
+    if (y1 - y0) < height * 0.68:
+        return False
+    first = _widest_dense_row_span(rgb, y0, y0 + max(4, int((y1 - y0) * 0.05)))
+    widest = _widest_dense_row_span(rgb, y0, y1)
+    if first and widest:
+        first_w = float(first[1] - first[0])
+        max_w = float(widest[1] - widest[0])
+        if max_w >= 1 and first_w >= max_w * 0.68:
+            return False
+    return True
+
+
+def _id_photo_path_is_face_only(path):
+    try:
+        img = _open_id_photo_for_process(path)
+        return _id_photo_is_face_only_square(img)
+    except Exception:
+        return False
+
+
+def _gather_id_photo_recrop_paths(student):
+    """Candidate recrop sources: originals and camera uploads first, processed last."""
+    paths = []
+    pk = _id_photo_student_pk(student)
+    if pk:
+        paths.extend(_glob_id_photo_dir(student, 'original_%s_*' % pk))
+    user = getattr(student, 'user', None)
+    if user is not None:
+        user_photo = getattr(user, 'photo', None)
+        if user_photo:
+            raw = str(user_photo).strip()
+            if os.path.isabs(raw) and os.path.isfile(raw):
+                paths.append(raw)
+            else:
+                resolved = _resolve_static_abs_path(raw)
+                if resolved:
+                    paths.append(resolved)
+    for path in _id_photo_disk_paths(student):
+        if not _is_processed_id_photo_path(path) or _is_id_photo_original_filename(path):
+            paths.append(path)
+    if pk:
+        photo_files = _glob_id_photo_dir(student, 'photo_%s_*' % pk)
+        photo_files.sort(key=_id_photo_pixel_area, reverse=True)
+        paths.extend(photo_files)
+    paths.extend(_id_photo_disk_paths(student))
+    return _unique_existing_photo_paths(paths)
+
+
+def _choose_id_photo_recrop_source(student):
+    """First non-face-only source. Never rembg a destroyed 800×800 forehead JPEG."""
+    for path in _gather_id_photo_recrop_paths(student):
+        if _id_photo_path_is_face_only(path):
+            logger.info(
+                'ID photo skip face-only source %s for student %s',
+                path,
+                getattr(student, 'id', None),
+            )
+            continue
+        return path
+    return None
+
+
+def _store_id_photo_original_bytes(student, payload, ext):
+    """Keep the camera upload as id_photos/original_{id}_{timestamp}.* before first crop."""
+    if not student or not payload:
+        return None
+    ext = (ext or '.jpg').lower()
+    if ext not in ID_CARD_IMAGE_EXT:
+        ext = '.jpg'
+    timestamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')
+    filename = 'original_%s_%s%s' % (_id_photo_student_pk(student), timestamp, ext)
+    upload_dir = _id_photos_dir_from_student(student)
+    os.makedirs(upload_dir, exist_ok=True)
+    dest = os.path.join(upload_dir, filename)
+    with open(dest, 'wb') as handle:
+        handle.write(payload)
+    return dest
+
+
+def _ensure_id_photo_original_copy(student, path):
+    """Copy a camera original into id_photos/original_* if none is stored yet."""
+    if not path or not os.path.isfile(path):
+        return None
+    if _is_id_photo_original_filename(path):
+        return path
+    pk = _id_photo_student_pk(student)
+    existing = _glob_id_photo_dir(student, 'original_%s_*' % pk) if pk else []
+    if existing:
+        return existing[0]
+    try:
+        img = _open_id_photo_for_process(path)
+        if _id_photo_is_processed_square(img) and _corners_near_white(img):
+            return None
+    except Exception:
+        logger.exception('ID photo original copy could not inspect %s', path)
+        return None
+    upload_dir = _id_photos_dir_from_student(student)
+    os.makedirs(upload_dir, exist_ok=True)
+    ext = os.path.splitext(path)[1].lower() or '.jpg'
+    if ext not in ID_CARD_IMAGE_EXT:
+        ext = '.jpg'
+    timestamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')
+    filename = 'original_%s_%s%s' % (pk, timestamp, ext)
+    dest = os.path.join(upload_dir, filename)
+    shutil.copy2(path, dest)
+    return dest
+
+
+def _id_photo_looks_unusable_id_crop(img):
+    """True when L/R gutters remain or the lower third has no shirt at the sides (eyes-only)."""
+    return _edge_columns_uniformly_white(img) or _lower_third_side_columns_white(img)
+
+
+def _open_id_photo_for_process(path):
+    img = Image.open(path)
+    if ImageOps is not None:
+        img = ImageOps.exif_transpose(img)
+    return img
+
+
+def _reprocess_student_id_photo(student):
+    """Recrop from the camera original when possible. Writes a new id_photos filename.
+
+    Face-only / forehead 800×800 JPEGs are never used as rembg sources. Already-white
+    studio H&S JPEGs are refit in-process (no rembg). Outdoor / colored-corner photos
+    always run rembg from the camera original — never skip just because the file is 800×800.
+    Returns True when DB paths changed.
+    """
+    if Image is None or not student:
+        return False
+    path = _choose_id_photo_recrop_source(student)
+    if not path:
+        logger.warning(
+            'ID photo recrop has no usable original for student %s; leaving current JPEG',
+            getattr(student, 'id', None),
+        )
+        return False
+    _ensure_id_photo_original_copy(student, path)
+    try:
+        img = _open_id_photo_for_process(path)
+    except Exception:
+        logger.exception('ID photo recrop could not open %s', path)
+        return False
+    out = None
+    try:
+        already_white_studio = (
+            _top_corners_near_white(img) and not _id_photo_is_face_only_square(img)
+        )
+        if already_white_studio:
+            logger.info(
+                'ID photo recrop skip rembg (already white studio) path=%s student=%s size=%s',
+                path,
+                getattr(student, 'id', None),
+                img.size,
+            )
+            out = _finish_id_portrait(_fit_subject_on_white_square(img, ID_PHOTO_OUTPUT_PX))
+        else:
+            logger.info(
+                'ID photo recrop running rembg path=%s student=%s size=%s processed_square=%s corners_white=%s',
+                path,
+                getattr(student, 'id', None),
+                img.size,
+                _id_photo_is_processed_square(img),
+                _corners_near_white(img),
+            )
+            out = _process_id_photo(img)
+    except ValueError:
+        logger.exception(
+            'ID photo recrop rembg failed for student %s; leaving current JPEG (not saving outdoor crop)',
+            getattr(student, 'id', None),
+        )
+        return False
+    except Exception:
+        logger.exception(
+            'ID photo recrop failed for student %s',
+            getattr(student, 'id', None),
+        )
+        if _id_photo_needs_background_removal(img):
+            logger.error(
+                'ID photo recrop will not square-crop an outdoor photo without rembg for student %s',
+                getattr(student, 'id', None),
+            )
+            return False
+        try:
+            out = _crop_id_photo_without_rembg(img)
+        except Exception:
+            logger.exception(
+                'ID photo recrop fallback also failed for student %s',
+                getattr(student, 'id', None),
+            )
+            return False
+    if out is not None and _id_photo_looks_unusable_id_crop(out):
+        try:
+            out = _finish_id_portrait(_fit_subject_on_white_square(out, ID_PHOTO_OUTPUT_PX))
+        except Exception:
+            logger.exception(
+                'ID photo gutter refit failed for student %s',
+                getattr(student, 'id', None),
+            )
+    if out is not None and (
+        _id_photo_looks_unusable_id_crop(out) or _id_photo_is_face_only_square(out)
+    ):
+        source_is_camera = not (
+            _id_photo_is_processed_square(img) and _top_corners_near_white(img)
+        )
+        for alt in _gather_id_photo_recrop_paths(student):
+            if alt == path or _id_photo_path_is_face_only(alt):
+                continue
+            if source_is_camera and _is_processed_id_photo_path(alt) and not _is_id_photo_original_filename(alt):
+                continue
+            logger.warning(
+                'ID photo crop still has gutters/face-zoom; retrying from original %s for student %s',
+                alt,
+                getattr(student, 'id', None),
+            )
+            try:
+                src = _open_id_photo_for_process(alt)
+                if _id_photo_is_processed_square(src) and _top_corners_near_white(src):
+                    continue
+                retry = _process_id_photo(src)
+            except Exception:
+                logger.exception('ID photo original retry failed for %s', alt)
+                continue
+            if _id_photo_is_face_only_square(retry) or _id_photo_looks_unusable_id_crop(retry):
+                continue
+            out = retry
+            break
+    if out is not None and (
+        _id_photo_looks_unusable_id_crop(out) or _id_photo_is_face_only_square(out)
+    ):
+        for alt in _gather_id_photo_recrop_paths(student):
+            if alt == path or _id_photo_path_is_face_only(alt):
+                continue
+            if not _is_processed_id_photo_path(alt) or _is_id_photo_original_filename(alt):
+                continue
+            try:
+                src = _open_id_photo_for_process(alt)
+                if not _id_photo_already_usable_hs(src):
+                    continue
+                retry = _finish_id_portrait(src.convert('RGB'))
+            except Exception:
+                logger.exception('ID photo H&S fallback failed for %s', alt)
+                continue
+            if _id_photo_is_face_only_square(retry):
+                continue
+            logger.warning(
+                'ID photo using stored head-and-shoulders JPEG %s for student %s',
+                alt,
+                getattr(student, 'id', None),
+            )
+            out = retry
+            break
+    return _write_processed_id_photo_jpeg(student, out)
+
+
+def _prepare_id_photo_for_print(student, rembg_budget=None):
+    """Print/PDF photo prep: reuse processed JPEGs. Never wait on rembg for a class.
+
+    White-studio files may be PIL-recropped (no rembg). Outdoor / colored-corner
+    files try rembg from original_* only when a session is already loaded and it
+    finishes within _PRINT_REMBG_TIMEOUT_SECONDS; otherwise the existing photo is kept.
+    Returns True when DB photo paths changed.
+    """
+    if Image is None or not student:
+        return False
+    path = _existing_processed_id_photo_path(student) or _student_id_photo_disk_path(student)
+    if not path:
+        return False
+    try:
+        img = _open_id_photo_for_process(path)
+    except Exception:
+        logger.exception('ID print photo could not open %s', path)
+        return False
+
+    outdoor = _id_photo_needs_background_removal(img)
+    if outdoor:
+        allow = rembg_budget is None or rembg_budget.get('allow', True)
+        if rembg_budget is not None and 'remaining' in rembg_budget:
+            allow = allow and int(rembg_budget.get('remaining') or 0) > 0
+        if allow and _rembg_session_already_ready():
+            source_path = _choose_id_photo_recrop_source(student) or path
+            try:
+                source = _open_id_photo_for_process(source_path)
+            except Exception:
+                logger.exception('ID print rembg could not open source %s', source_path)
+                source = img
+            source = _downscale_id_photo(source)
+            rgba = _rembg_cutout_rgba(
+                source,
+                disable_on_fail=False,
+                timeout=_PRINT_REMBG_TIMEOUT_SECONDS,
+                load_session=False,
+            )
+            if rembg_budget is not None:
+                if 'remaining' in rembg_budget:
+                    rembg_budget['remaining'] = max(0, int(rembg_budget.get('remaining') or 0) - 1)
+                    rembg_budget['allow'] = rembg_budget['remaining'] > 0
+                else:
+                    rembg_budget['allow'] = False
+            if rgba is not None:
+                try:
+                    composed = _composite_id_cutout_on_white(rgba)
+                    out = _finish_id_portrait(
+                        _fit_subject_on_white_square(composed, ID_PHOTO_OUTPUT_PX)
+                    )
+                    return _write_processed_id_photo_jpeg(student, out)
+                except Exception:
+                    logger.exception(
+                        'ID print rembg finish failed for student %s; keeping existing JPEG',
+                        getattr(student, 'id', None),
+                    )
+                    return False
+            logger.warning(
+                'ID print rembg timed out or failed for student %s after %ss; keeping existing JPEG',
+                getattr(student, 'id', None),
+                _PRINT_REMBG_TIMEOUT_SECONDS,
+            )
+        else:
+            logger.info(
+                'ID print using existing photo without rembg student=%s path=%s',
+                getattr(student, 'id', None),
+                path,
+            )
+        return False
+
+    if _id_photo_already_usable_hs(img) and not _id_photo_looks_unusable_id_crop(img):
+        return False
+    try:
+        out = _crop_id_photo_without_rembg(img)
+        return _write_processed_id_photo_jpeg(student, out)
+    except Exception:
+        logger.exception(
+            'ID print PIL recrop failed for student %s; keeping existing JPEG',
+            getattr(student, 'id', None),
+        )
+        return False
+
+
+def _student_id_photo_is_outdoor(student):
+    """True when the stored ID JPEG still has colored (outdoor) corners."""
+    path = _existing_processed_id_photo_path(student) or _student_id_photo_disk_path(student)
+    if not path:
+        return False
+    try:
+        img = _open_id_photo_for_process(path)
+    except Exception:
+        return False
+    return _id_photo_needs_background_removal(img)
+
+
+def _refresh_ready_card_photo(card, student):
+    photo_path = _student_id_photo_disk_path(student)
+    card['photo_path'] = photo_path
+    card['photo_url'] = _cache_busted_photo_url(student, photo_path)
+
+
+def _prepare_ready_card_photos_for_print(ready_cards, *, flash_remaining=False):
+    """PIL-recrop white JPEGs. At most two warm rembg cutouts from original_*.
+
+    Does not start a cold ONNX load. Remaining outdoor photos keep the stored JPEG.
+    Returns True when any student.photo path changed.
+    """
+    rembg_budget = {'allow': True, 'remaining': _PRINT_REMBG_MAX_PHOTOS}
+    dirty = False
+    outdoor_names = []
+    for card in ready_cards or []:
+        student = card.get('student') if isinstance(card, dict) else None
+        if not student:
+            continue
+        try:
+            if _prepare_id_photo_for_print(student, rembg_budget=rembg_budget):
+                dirty = True
+                _refresh_ready_card_photo(card, student)
+        except Exception:
+            logger.exception(
+                'ID print photo prep failed for student %s; card will use the existing file',
+                getattr(student, 'id', None),
+            )
+        if _student_id_photo_is_outdoor(student):
+            outdoor_names.append(getattr(student, 'full_name', None) or 'a student')
+    if flash_remaining and outdoor_names:
+        listed = ', '.join(outdoor_names[:6])
+        extra = '' if len(outdoor_names) <= 6 else ' and others'
+        flash(
+            '%s (%s%s).' % (ID_PHOTO_PRINT_STILL_PROCESSING.rstrip('.'), listed, extra),
+            'warning',
+        )
+    return dirty
+
+
+def _student_has_class_for_id_card(student, academic_year=None):
+    """True when the student can be printed onto a class ID card."""
+    if not student:
+        return False
+    if student.klass_id or student.assigned_class:
+        return True
+    year_id = getattr(academic_year, 'id', None) or student.academic_year_id
+    if year_id:
+        return bool(_class_id_from_year_enrollment(student.id, year_id))
+    return False
+
+
+def _sync_student_id_card(student, academic_year=None):
+    """Set expiration (if missing) and id_card_ready from photo + signature + class + student ID."""
+    if not student:
+        return False
+    if student.student_id and not (student.student_id_code or '').strip():
+        student.student_id_code = student.student_id
+    default_exp = _default_id_expiration_date(academic_year)
+    existing_exp = student.id_expiration_date
+    year_start = getattr(academic_year, 'start_date', None) if academic_year else None
+    if existing_exp is None or (year_start and existing_exp < year_start):
+        student.id_expiration_date = default_exp
+    student.id_card_ready = bool(
+        (student.student_id or '').strip()
+        and _student_has_class_for_id_card(student, academic_year)
+        and student.has_id_photo
+        and student.has_signature
+    )
+    return student.id_card_ready
+
+
+def _refresh_id_card_flags(students, academic_year=None, *, commit=False):
+    """Recompute id_card_ready for many students; optionally commit if anything changed."""
+    dirty = False
+    for student in students or []:
+        before_ready = student.id_card_ready
+        before_exp = student.id_expiration_date
+        before_code = student.student_id_code
+        year = academic_year or student.academic_year
+        _sync_student_id_card(student, academic_year=year)
+        if (
+            student.id_card_ready != before_ready
+            or student.id_expiration_date != before_exp
+            or student.student_id_code != before_code
+        ):
+            dirty = True
+    if dirty and commit:
+        db.session.commit()
+    return dirty
+
+
+def _id_card_students_for_year(display_year):
+    """Year roster with ID-ready flags refreshed from photo, signature, class, and ID number."""
+    students = []
+    if display_year:
+        students = (
+            _students_for_display_year(display_year)
+            .options(joinedload(Student.assigned_class))
+            .order_by(Student.last_name.asc(), Student.first_name.asc())
+            .all()
+        )
+    _refresh_id_card_flags(students, academic_year=display_year, commit=False)
+    return students
+
+
+def _id_card_print_payload(student, display_year):
+    """Front/back print row for one ready student (CR80 + portal QR).
+
+    Does not recrop or rembg. Photos load from stored /static/uploads/id_photos files.
+    """
+    year_id = display_year.id if display_year else getattr(student, 'academic_year_id', None)
+    token = None
+    portal_url = None
+    qr_uri = None
+    photo_path = None
+    try:
+        if student.student_id and not (student.student_id_code or '').strip():
+            student.student_id_code = student.student_id
+        ensure_student_secure_qr_token(student)
+        token = (getattr(student, 'secure_qr_token', None) or '').strip()
+        base_url = get_site_base_url()
+        portal_url = build_student_portal_qr_url(student, base_url=base_url)
+        try:
+            qr_uri = generate_student_scanner_code(student, base_url=base_url)
+        except Exception:
+            logger.exception('ID card QR failed for student %s', getattr(student, 'id', None))
+        photo_path = _student_id_photo_disk_path(student)
+    except Exception:
+        logger.exception('ID card print payload failed for student %s', getattr(student, 'id', None))
+    return {
+        'student': student,
+        'parent_name': resolve_parent_guardian_name(student) or '',
+        'qr_code_data_uri': qr_uri,
+        'student_portal_qr_url': portal_url,
+        'portal_path': f'/student/id-portal/{token}' if token else None,
+        'class_label': format_student_class_name(student, year_id),
+        'photo_path': photo_path,
+        'photo_url': _cache_busted_photo_url(student, photo_path),
+        'signature_path': _student_signature_disk_path(student),
+    }
+
+
+def _resolve_static_abs_path(relative_path):
+    """Map a stored static-relative photo/logo path to an absolute file."""
+    from models import _looks_like_raster_image, _photo_candidate_filenames
+
+    if not relative_path:
+        return None
+    raw = str(relative_path).strip()
+    if os.path.isabs(raw) and os.path.isfile(raw):
+        return raw
+    candidates = _photo_candidate_filenames(raw) or [raw.replace('\\', '/').lstrip('/')]
+    roots = []
+    static_root = getattr(current_app, 'static_folder', None)
+    if static_root:
+        roots.append(static_root)
+    if getattr(current_app, 'root_path', None):
+        roots.append(os.path.join(current_app.root_path, 'static'))
+    seen = set()
+    for candidate in candidates:
+        if not candidate or candidate.startswith(('http://', 'https://', 'data:')):
+            continue
+        rel = candidate.replace('/', os.sep)
+        for root in roots:
+            full = os.path.normpath(os.path.join(root, rel))
+            if full in seen:
+                continue
+            seen.add(full)
+            try:
+                if os.path.isfile(full) and _looks_like_raster_image(full):
+                    return full
+            except (OSError, ValueError):
+                continue
+    return None
+
+
+def _school_logo_disk_path():
+    from models import SCHOOL_LOGO_FILENAME
+
+    for name in (SCHOOL_LOGO_FILENAME, 'images/logo.png', 'images/logo1.png'):
+        path = _resolve_static_abs_path(name)
+        if path:
+            return path
+    return None
+
+
+def _liberia_seal_disk_path():
+    from models import LIBERIA_SEAL_FILENAMES
+
+    for name in LIBERIA_SEAL_FILENAMES:
+        path = _resolve_static_abs_path(name)
+        if path:
+            return path
+    return None
+
+
+def _student_id_photo_disk_path(student):
+    if not student:
+        return None
+    for source in student._id_photo_sources():
+        path = _resolve_static_abs_path(source)
+        if path:
+            return path
+    return None
+
+
+def _student_signature_disk_path(student):
+    filename = (getattr(student, 'signature_filename', None) or '').strip().replace('\\', '/')
+    if not filename:
+        return None
+    sources = [filename] if '/' in filename else [f'uploads/signatures/{filename}', filename]
+    for source in sources:
+        path = _resolve_static_abs_path(source)
+        if path:
+            return path
+    return None
+
+
+def _collect_class_id_cards(class_id):
+    """Ready CR80 payloads for one class folder; skips students who are not ID-ready."""
+    klass = Class.query.get_or_404(class_id)
+    display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
+    query = Student.query.filter_by(klass_id=class_id)
+    if display_year:
+        query = _students_for_display_year(display_year).filter(Student.klass_id == class_id)
+    students = (
+        query.options(
+            joinedload(Student.assigned_class),
+            joinedload(Student.parent_user),
+            joinedload(Student.user),
+        )
+        .order_by(Student.last_name.asc(), Student.first_name.asc())
+        .all()
+    )
+    ready_cards = []
+    skipped = []
+    dirty = False
+    for student in students:
+        before_ready = student.id_card_ready
+        before_exp = student.id_expiration_date
+        _sync_student_id_card(student, academic_year=display_year or student.academic_year)
+        if student.id_card_ready != before_ready or student.id_expiration_date != before_exp:
+            dirty = True
+        if student.id_card_ready:
+            before_photo = (student.photo, student.photo_filename)
+            try:
+                ready_cards.append(_id_card_print_payload(student, display_year))
+            except Exception:
+                logger.exception(
+                    'ID print payload failed for student %s; emitting a placeholder card',
+                    getattr(student, 'id', None),
+                )
+                ready_cards.append({
+                    'student': student,
+                    'parent_name': resolve_parent_guardian_name(student) or '',
+                    'qr_code_data_uri': None,
+                    'student_portal_qr_url': None,
+                    'portal_path': None,
+                    'class_label': '',
+                    'photo_path': None,
+                    'photo_url': getattr(student, 'photo_url', None),
+                    'signature_path': None,
+                })
+            if (student.photo, student.photo_filename) != before_photo:
+                dirty = True
+        else:
+            skipped.append(student)
+    if dirty:
+        db.session.commit()
+    return klass, display_year, ready_cards, skipped
+
+
+def _stream_id_cards_pdf(klass, display_year, ready_cards, *, single=False):
+    """Build a complete PDF of ready ID cards, then send it as a finished attachment.
+
+    Never rembg the whole class. PIL-recrop existing JPEGs; up to
+    _PRINT_REMBG_MAX_PHOTOS short rembg attempts are allowed only when the
+    session is already loaded. Photo failures still emit a card so the HTTP
+    body is always a valid complete PDF.
+    """
+    dirty = False
+    try:
+        dirty = _prepare_ready_card_photos_for_print(ready_cards, flash_remaining=False)
+    except Exception:
+        logger.exception('ID PDF photo prep failed; continuing with stored JPEGs')
+    if dirty:
+        try:
+            db.session.commit()
+        except Exception:
+            logger.exception('ID PDF photo path commit failed')
+            db.session.rollback()
+    try:
+        buffer = build_class_id_cards_pdf(
+            ready_cards,
+            klass=klass,
+            display_year=display_year,
+            brand=school_print_brand(),
+            logo_path=_school_logo_disk_path(),
+            seal_path=_liberia_seal_disk_path(),
+        )
+    except Exception:
+        logger.exception('ID card PDF folder failed; retrying a complete PDF without logos')
+        try:
+            buffer = build_class_id_cards_pdf(
+                ready_cards,
+                klass=klass,
+                display_year=display_year,
+                brand=school_print_brand(),
+            )
+        except Exception:
+            logger.exception('ID card PDF fallback failed')
+            flash(
+                'The ID card folder could not be prepared. Use Print class IDs, then choose Download / Save PDF.',
+                'danger',
+            )
+            if klass:
+                return redirect(url_for('print_class_id_cards', class_id=klass.id))
+            return redirect(url_for('id_cards_folder_hub'))
+    filename = id_cards_pdf_filename(klass, display_year, single=single)
+    return _id_cards_pdf_attachment_response(buffer, filename)
+
+
+def _id_cards_pdf_attachment_response(buffer, filename):
+    """Force the browser to save a finished PDF. Never stream a partial file."""
+    if hasattr(buffer, 'seek'):
+        buffer.seek(0)
+    payload = buffer.getvalue() if hasattr(buffer, 'getvalue') else buffer.read()
+    if not payload or not payload.startswith(b'%PDF'):
+        logger.error('ID card PDF buffer was empty or not a PDF; building a one-page fallback')
+        fallback = build_class_id_cards_pdf([], klass=None, display_year=None, brand={})
+        payload = fallback.getvalue()
+    finished = BytesIO(payload)
+    finished.seek(0)
+    safe_name = (filename or 'FLPA_ID_Cards.pdf').replace('"', '').replace('\r', '').replace('\n', '')
+    response = send_file(
+        finished,
+        as_attachment=True,
+        download_name=safe_name,
+        mimetype='application/pdf',
+        max_age=0,
+        conditional=False,
+        etag=False,
+    )
+    response.headers['Content-Type'] = 'application/pdf'
+    # Quoted filename so Chrome/Edge save as FLPA_ID_Cards_....pdf instead of opening the viewer.
+    response.headers['Content-Disposition'] = f'attachment; filename="{safe_name}"'
+    response.headers['Content-Length'] = str(len(payload))
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers.pop('Accept-Ranges', None)
+    response.direct_passthrough = False
+    return response
+
+
+def _id_cards_none_ready_response(klass, *, from_download=False):
+    flash(
+        f'No ready ID cards in {klass.name}. Add a photo on each student folder first '
+        '(signature is generated from the name).',
+        'warning',
+    )
+    if from_download:
+        return redirect(url_for('dashboard') + f'#folder-{klass.id}')
+    return redirect(url_for('id_cards_folder_hub'))
+
+
+def _id_cards_qr_localhost_warning(cards):
+    return any(site_url_is_loopback(card.get('student_portal_qr_url')) for card in cards)
+
+
+@app.route('/registrar/students/<int:student_id>/documents', methods=['POST'], endpoint='upload_registrar_student_document')
+@login_required
+def upload_registrar_student_document(student_id):
+    """Scan or upload a paper into the student's registrar folder."""
+    if not _require_registrar_office():
+        return redirect(url_for('login'))
+
+    student = Student.query.get_or_404(student_id)
+    upload = request.files.get('scan_file') or request.files.get('upload_file') or request.files.get('document')
+    if not upload or not (upload.filename or '').strip():
+        flash("Choose a scan or file to place in this student's folder.", "warning")
+        return _registrar_student_folder_redirect(student.id)
+
+    original = secure_filename(upload.filename) or 'document'
+    ext = os.path.splitext(original)[1].lower()
+    if ext not in REGISTRAR_DOC_ALLOWED_EXT:
+        flash("Use a photo (JPG, PNG, WEBP) or a PDF.", "warning")
+        return _registrar_student_folder_redirect(student.id)
+
+    payload = upload.read()
+    if not payload:
+        flash("That scan was empty. Please try again.", "warning")
+        return _registrar_student_folder_redirect(student.id)
+    if len(payload) > REGISTRAR_DOC_MAX_BYTES:
+        flash("That file is too large. Maximum size is 12 MB.", "warning")
+        return _registrar_student_folder_redirect(student.id)
+
+    doc_type = (request.form.get('doc_type') or 'other').strip().lower()
+    if doc_type not in StudentRegistryDocument.DOC_TYPE_LABELS:
+        doc_type = 'other'
+    title = (request.form.get('title') or '').strip() or StudentRegistryDocument.DOC_TYPE_LABELS[doc_type]
+
+    display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
+    rel_dir = os.path.join('uploads', 'student_docs', str(student.id))
+    abs_dir = os.path.join(BASE_DIR, 'static', rel_dir)
+    os.makedirs(abs_dir, exist_ok=True)
+    stored_name = f"{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}{ext}"
+    abs_path = os.path.join(abs_dir, stored_name)
+    with open(abs_path, 'wb') as handle:
+        handle.write(payload)
+
+    ocr_text = None
+    if ext != '.pdf' and ocr_engine_ready():
+        try:
+            ocr_text = (extract_text_from_stream(BytesIO(payload)) or '').strip() or None
+        except Exception:
+            ocr_text = None
+
+    record = StudentRegistryDocument(
+        student_id=student.id,
+        uploaded_by_id=current_user.id,
+        academic_year_id=display_year.id if display_year else student.academic_year_id,
+        title=title[:200],
+        doc_type=doc_type,
+        original_filename=original[:255],
+        file_path=os.path.join(rel_dir, stored_name).replace('\\', '/'),
+        mime_type=upload.mimetype or None,
+        ocr_text=ocr_text,
+    )
+    db.session.add(record)
+    db.session.commit()
+    if ocr_text:
+        flash("Document scanned and filed in this student's folder.", "success")
+    else:
+        flash("Document filed in this student's folder.", "success")
+    return _registrar_student_folder_redirect(student.id)
+
+
+@app.route(
+    '/registrar/students/<int:student_id>/documents/<int:document_id>/file',
+    methods=['GET'],
+    endpoint='view_registrar_student_document',
+)
+@login_required
+def view_registrar_student_document(student_id, document_id):
+    if not _require_registrar_office():
+        return redirect(url_for('login'))
+
+    document = StudentRegistryDocument.query.filter_by(id=document_id, student_id=student_id).first_or_404()
+    rel = (document.file_path or '').replace('\\', '/').lstrip('/')
+    if rel.startswith('static/'):
+        rel = rel[7:]
+    directory = os.path.dirname(rel)
+    filename = os.path.basename(rel)
+    base_dir = os.path.realpath(os.path.join(BASE_DIR, 'static', directory.replace('/', os.sep)))
+    file_path = os.path.realpath(os.path.join(base_dir, filename))
+    if not filename or not file_path.startswith(base_dir) or not os.path.isfile(file_path):
+        abort(404)
+    return send_from_directory(base_dir, filename, as_attachment=False, download_name=document.original_filename or filename)
+
+
+@app.route(
+    '/registrar/students/<int:student_id>/documents/<int:document_id>/delete',
+    methods=['POST'],
+    endpoint='delete_registrar_student_document',
+)
+@login_required
+def delete_registrar_student_document(student_id, document_id):
+    if not _require_registrar_office():
+        return redirect(url_for('login'))
+
+    document = StudentRegistryDocument.query.filter_by(id=document_id, student_id=student_id).first_or_404()
+    rel = (document.file_path or '').replace('\\', '/').lstrip('/')
+    if rel.startswith('static/'):
+        rel = rel[7:]
+    abs_path = os.path.join(BASE_DIR, 'static', rel.replace('/', os.sep))
+    try:
+        if os.path.isfile(abs_path):
+            os.remove(abs_path)
+    except OSError:
+        pass
+    db.session.delete(document)
+    db.session.commit()
+    flash("Document removed from this student's folder.", "success")
+    return _registrar_student_folder_redirect(student_id)
+
+
+@app.route(
+    '/registrar/students/<int:student_id>/setup-id',
+    methods=['POST'],
+    endpoint='setup_student_id_card',
+)
+@login_required
+def setup_student_id_card(student_id):
+    """Upload or replace the ID-card photo and signature for one student."""
+    denied = _registrar_office_guard()
+    if denied:
+        return denied
+
+    student = Student.query.get_or_404(student_id)
+    photo = request.files.get('photo') or request.files.get('id_photo')
+    signature = request.files.get('signature')
+    try:
+        photo_saved = False
+        if photo and (photo.filename or '').strip():
+            saved = _save_id_card_image(photo, 'id_photos', student.id, 'photo', student=student)
+            if saved:
+                filename, rel_path = saved
+                student.photo = rel_path
+                student.photo_filename = filename
+                photo_saved = True
+        if not photo_saved and student.has_id_photo:
+            _reprocess_student_id_photo(student)
+        if signature and (signature.filename or '').strip():
+            saved = _save_id_card_image(signature, 'signatures', student.id, 'signature')
+            if saved:
+                _filename, rel_path = saved
+                student.signature_filename = rel_path
+    except ValueError as exc:
+        flash(str(exc), 'warning')
+        return _registrar_student_folder_redirect(student.id)
+
+    persist_student_guardian_name(student)
+
+    expires_raw = (request.form.get('id_expiration_date') or '').strip()
+    if expires_raw:
+        try:
+            student.id_expiration_date = datetime.strptime(expires_raw, '%Y-%m-%d').date()
+        except ValueError:
+            flash('Expiration date must be YYYY-MM-DD.', 'warning')
+            return _registrar_student_folder_redirect(student.id)
+
+    display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
+    _sync_student_id_card(student, academic_year=display_year or student.academic_year)
+    db.session.commit()
+
+    if student.id_card_ready:
+        flash(f'ID card ready for {student.full_name}.', 'success')
+    else:
+        missing = []
+        if not (student.student_id or '').strip():
+            missing.append('student ID')
+        if not _student_has_class_for_id_card(student, display_year or student.academic_year):
+            missing.append('class assignment')
+        if not student.has_id_photo:
+            missing.append('photo')
+        if not (student.signature_url or student.official_signature_mark):
+            missing.append('signature')
+        flash(
+            'ID files saved, but still needs: {}.'.format(', '.join(missing) or 'a complete record'),
+            'warning',
+        )
+    return _registrar_student_folder_redirect(student.id)
+
+
+@app.route('/id-cards', methods=['GET'], endpoint='id_cards_folder_hub')
+@login_required
+def id_cards_folder_hub():
+    """Class-folder hub for issuing and batch-printing student ID cards."""
+    denied = _registrar_office_guard()
+    if denied:
+        return denied
+
+    display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
+    class_rows = sorted(Class.query.all(), key=class_sort_key_from_klass)
+    students = _id_card_students_for_year(display_year)
+    by_class = {}
+    for student in students:
+        klass = _registrar_roster_class_for_student(student, display_year)
+        if klass:
+            by_class.setdefault(klass.id, []).append(student)
+
+    class_stats = {}
+    ready_total = 0
+    roster_total = 0
+    for klass in class_rows:
+        roster = by_class.get(klass.id, [])
+        ready = sum(1 for row in roster if row.id_card_ready)
+        class_stats[klass.id] = {
+            'total': len(roster),
+            'ready': ready,
+            'download_filename': id_cards_pdf_filename(klass, display_year),
+        }
+        roster_total += len(roster)
+        ready_total += ready
+
+    return render_template(
+        'id_cards/folder_hub.html',
+        display_year=display_year,
+        groups=group_classes(class_rows),
+        class_stats=class_stats,
+        ready_total=ready_total,
+        roster_total=roster_total,
+    )
+
+
+@app.route('/id-cards/print/class/<int:class_id>', methods=['GET'], endpoint='print_class_id_cards')
+@login_required
+def print_class_id_cards(class_id):
+    """CR80 batch sheet for every ID-ready student in a class."""
+    if not _require_registrar_office():
+        return redirect(url_for('login'))
+
+    klass, display_year, ready_cards, skipped = _collect_class_id_cards(class_id)
+    if not ready_cards:
+        return _id_cards_none_ready_response(klass)
+
+    dirty = _prepare_ready_card_photos_for_print(ready_cards, flash_remaining=True)
+    if dirty:
+        try:
+            db.session.commit()
+        except Exception:
+            logger.exception('ID print photo path commit failed')
+            db.session.rollback()
+
+    if str(request.args.get('download') or '').strip().lower() in {'1', 'true', 'yes', 'pdf'}:
+        return _stream_id_cards_pdf(klass, display_year, ready_cards)
+
+    return render_template(
+        'id_cards/print_batch.html',
+        klass=klass,
+        display_year=display_year,
+        cards=ready_cards,
+        skipped=skipped,
+        printed_at=datetime.now(timezone.utc),
+        printed_by=current_user.full_name or current_user.email,
+        liberia_seal_url=liberia_seal_static_url(),
+        qr_localhost_warning=_id_cards_qr_localhost_warning(ready_cards),
+        download_url=url_for('download_class_id_cards', class_id=klass.id),
+        download_filename=id_cards_pdf_filename(klass, display_year),
+        refresh_photos_url=url_for('refresh_class_id_photos', class_id=klass.id),
+    )
+
+
+@app.route('/id-cards/download/class/<int:class_id>', methods=['GET'], endpoint='download_class_id_cards')
+@login_required
+def download_class_id_cards(class_id):
+    """One PDF folder of ready class ID cards (front + back). Registrar / admin / principal."""
+    if not _require_registrar_office():
+        return redirect(url_for('login'))
+
+    klass, display_year, ready_cards, _skipped = _collect_class_id_cards(class_id)
+    if not ready_cards:
+        return _id_cards_none_ready_response(klass, from_download=True)
+    return _stream_id_cards_pdf(klass, display_year, ready_cards)
+
+
+def _refresh_outdoor_id_photos_for_students(students, max_photos=_PRINT_REMBG_MAX_PHOTOS):
+    """Full rembg from original_* for outdoor ID JPEGs, a few at a time.
+
+    Returns (changed_count, remaining_outdoor, status) where status is ok/not_ready.
+    """
+    if _skip_rembg_requested():
+        return 0, sum(1 for row in students if _student_id_photo_is_outdoor(row)), 'skipped'
+    session = _get_rembg_session(wait_seconds=60)
+    if session is None:
+        remaining = sum(1 for row in students if _student_id_photo_is_outdoor(row))
+        return 0, remaining, 'not_ready'
+    changed = 0
+    attempted = 0
+    for student in students:
+        if not _student_id_photo_is_outdoor(student):
+            continue
+        attempted += 1
+        try:
+            if _reprocess_student_id_photo(student):
+                changed += 1
+        except Exception:
+            logger.exception(
+                'ID photo refresh rembg failed for student %s',
+                getattr(student, 'id', None),
+            )
+        if attempted >= max_photos:
+            break
+    remaining = sum(1 for row in students if _student_id_photo_is_outdoor(row))
+    return changed, remaining, 'ok'
+
+
+@app.route(
+    '/id-cards/print/class/<int:class_id>/refresh-photos',
+    methods=['POST'],
+    endpoint='refresh_class_id_photos',
+)
+@login_required
+def refresh_class_id_photos(class_id):
+    """Registrar: rembg outdoor ID photos one-by-one, then return to the print hub."""
+    denied = _registrar_office_guard()
+    if denied:
+        return denied
+
+    klass, _display_year, ready_cards, _skipped = _collect_class_id_cards(class_id)
+    students = [card.get('student') for card in ready_cards if card.get('student')]
+    changed, remaining, status = _refresh_outdoor_id_photos_for_students(students)
+    if changed:
+        db.session.commit()
+    if status == 'skipped':
+        flash(ID_PHOTO_SKIP_REMBG_WARNING, 'warning')
+    elif status == 'not_ready':
+        flash(ID_PHOTO_REMBG_LOADING_MESSAGE, 'warning')
+    elif changed and remaining:
+        flash(
+            'Refreshed %s ID photo(s). %s still outdoor — tap Refresh ID photos again.'
+            % (changed, remaining),
+            'warning',
+        )
+    elif changed:
+        flash('Refreshed %s ID photo(s). Reprint when ready.' % changed, 'success')
+    elif remaining:
+        flash(ID_PHOTO_PRINT_STILL_PROCESSING, 'warning')
+    else:
+        flash('ID photos already have a white studio backdrop.', 'success')
+    return redirect(url_for('print_class_id_cards', class_id=klass.id))
+
+
+@app.route(
+    '/id-cards/print/student/<int:student_id>/refresh-photo',
+    methods=['POST'],
+    endpoint='refresh_student_id_photo',
+)
+@login_required
+def refresh_student_id_photo(student_id):
+    """Registrar: rembg one student's outdoor ID photo from original_*."""
+    denied = _registrar_office_guard()
+    if denied:
+        return denied
+
+    student = Student.query.get_or_404(student_id)
+    changed, remaining, status = _refresh_outdoor_id_photos_for_students([student], max_photos=1)
+    if changed:
+        db.session.commit()
+    if status == 'skipped':
+        flash(ID_PHOTO_SKIP_REMBG_WARNING, 'warning')
+    elif status == 'not_ready':
+        flash(ID_PHOTO_REMBG_LOADING_MESSAGE, 'warning')
+    elif changed:
+        flash('ID photo refreshed for %s.' % student.full_name, 'success')
+    elif remaining:
+        flash(ID_PHOTO_PRINT_STILL_PROCESSING, 'warning')
+    else:
+        flash('ID photo already has a white studio backdrop.', 'success')
+    return redirect(url_for('print_student_id_card', student_id=student.id))
+
+
+STAFF_ID_CARD_ROLES = frozenset({
+    'admin', 'principal', 'teacher', 'registrar', 'registry', 'vpa', 'vpi', 'dean', 'business',
+})
+
+
+def _staff_id_disk_path(stored_path):
+    """Resolve a stored staff ID photo/signature to a real static image file."""
+    return _resolve_static_abs_path(stored_path)
+
+
+def _staff_signature_mark(user):
+    """Professional staff signature mark from the account display name."""
+    parts = [part for part in (getattr(user, 'full_name', '') or '').split() if part]
+    if not parts:
+        return 'Authorized Staff'
+    if len(parts) == 1:
+        return parts[0].title()
+    return f"{' '.join(parts[1:]).title()} {parts[0][0].upper()}."
+
+
+def _sync_staff_id_card(user, academic_year=None):
+    """Set staff ID expiration and readiness from the same files used on the card."""
+    if not user:
+        return False
+    if user.id_expiration_date is None:
+        user.id_expiration_date = _default_id_expiration_date(academic_year)
+    user.staff_id_card_ready = bool(
+        user.is_active
+        and user.is_account_active()
+        and canonical_role(user) in STAFF_ID_CARD_ROLES
+        and _staff_id_disk_path(user.id_card_photo_path)
+        and (
+            _staff_id_disk_path(user.id_card_signature_path)
+            or _staff_signature_mark(user)
+        )
+    )
+    return user.staff_id_card_ready
+
+
+def _staff_id_card_payload(user, display_year=None):
+    """Front/back print row for one ready staff member, matching student card processing."""
+    _sync_staff_id_card(user, academic_year=display_year)
+    photo_path = _staff_id_disk_path(user.id_card_photo_path)
+    signature_path = _staff_id_disk_path(user.id_card_signature_path)
+    role = canonical_role(user)
+    role_labels = {
+        'admin': 'Administrator',
+        'principal': 'Principal',
+        'teacher': 'Teacher',
+        'registrar': 'Registrar',
+        'registry': 'Registrar',
+        'vpa': 'Vice Principal Academics',
+        'vpi': 'Vice Principal Operations',
+        'dean': 'Dean',
+        'business': 'Business Office',
+    }
+    return {
+        'student': user,
+        'card_kind': 'staff',
+        'staff_id': f'FLPA-{int(user.id):04d}',
+        'position': role_labels.get(role, (user.role or 'Staff').title()),
+        'photo_path': photo_path,
+        'photo_url': user.photo_url,
+        'signature_path': signature_path,
+        'signature_mark': _staff_signature_mark(user),
+        'expiration_date': user.id_expiration_date,
+        'qr_code_data_uri': None,
+        'class_label': 'STAFF',
+    }
+
+
+def _staff_id_cards(display_year=None):
+    users = User.query.filter(
+        User.role.in_(list(STAFF_ID_CARD_ROLES)),
+        User.is_active.is_(True),
+    ).order_by(User.full_name.asc()).all()
+    dirty = False
+    cards = []
+    for user in users:
+        before_ready = user.staff_id_card_ready
+        before_exp = user.id_expiration_date
+        _sync_staff_id_card(user, academic_year=display_year)
+        if user.staff_id_card_ready != before_ready or user.id_expiration_date != before_exp:
+            dirty = True
+        if user.staff_id_card_ready:
+            cards.append(_staff_id_card_payload(user, display_year))
+    if dirty:
+        db.session.commit()
+    return cards
+
+
+def _stream_staff_id_cards_pdf(cards):
+    try:
+        buffer = build_class_id_cards_pdf(
+            cards,
+            brand=school_print_brand(),
+            logo_path=_school_logo_disk_path(),
+            seal_path=_liberia_seal_disk_path(),
+        )
+    except Exception:
+        logger.exception('Staff ID card PDF failed; retrying without logos')
+        buffer = build_class_id_cards_pdf(cards, brand=school_print_brand())
+    return _id_cards_pdf_attachment_response(buffer, 'FLPA_Staff_ID_Cards.pdf')
+
+
+@app.route('/id-cards/staff', methods=['GET'], endpoint='staff_id_cards_folder')
+@login_required
+def staff_id_cards_folder():
+    """Registrar folder for active staff and teachers."""
+    denied = _registrar_office_guard()
+    if denied:
+        return denied
+    display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
+    users = User.query.filter(
+        User.role.in_(list(STAFF_ID_CARD_ROLES)),
+        User.is_active.is_(True),
+    ).order_by(User.full_name.asc()).all()
+    ready_cards = _staff_id_cards(display_year)
+    ready_ids = {card['student'].id for card in ready_cards}
+    staff_cards = [_staff_id_card_payload(user, display_year) for user in users]
+    return render_template(
+        'id_cards/staff_folder.html',
+        staff_users=users,
+        staff_cards=staff_cards,
+        ready_ids=ready_ids,
+        cards=ready_cards,
+        staff_count=len(users),
+        ready_count=len(ready_cards),
+        printed_at=datetime.now(timezone.utc),
+        download_url=url_for('download_staff_id_cards'),
+    )
+
+
+@app.route('/id-cards/staff/download', methods=['GET'], endpoint='download_staff_id_cards')
+@login_required
+def download_staff_id_cards():
+    """Download one PDF containing all ready staff and teacher cards."""
+    denied = _registrar_office_guard()
+    if denied:
+        return denied
+    display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
+    cards = _staff_id_cards(display_year)
+    if not cards:
+        flash('No ready staff or teacher ID cards are available. Upload ID files first.', 'warning')
+        return redirect(url_for('staff_id_cards_folder'))
+    return _stream_staff_id_cards_pdf(cards)
+
+
+@app.route('/id-cards/staff/<int:user_id>', methods=['GET'], endpoint='print_staff_id_card')
+@login_required
+def print_staff_id_card(user_id):
+    """Preview or download one active staff or teacher ID card."""
+    denied = _registrar_office_guard()
+    if denied:
+        return denied
+    user = db.session.get(User, user_id)
+    display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
+    if not user or canonical_role(user) not in STAFF_ID_CARD_ROLES or not user.is_active:
+        flash('That active staff account was not found.', 'warning')
+        return redirect(url_for('staff_id_cards_folder'))
+    _sync_staff_id_card(user, academic_year=display_year)
+    db.session.commit()
+    if not user.staff_id_card_ready:
+        flash(
+            f'ID card is not ready for {user.full_name}. Upload the staff photo and signature first.',
+            'warning',
+        )
+        return redirect(url_for('setup_staff_id_card', user_id=user.id))
+    card = _staff_id_card_payload(user, display_year)
+    if str(request.args.get('download') or '').strip().lower() in {'1', 'true', 'yes', 'pdf'}:
+        return _stream_staff_id_cards_pdf([card])
+    return render_template(
+        'id_cards/staff_folder.html',
+        staff_users=[user],
+        staff_cards=[card],
+        ready_ids={user.id},
+        cards=[card],
+        staff_count=1,
+        ready_count=1,
+        printed_at=datetime.now(timezone.utc),
+        download_url=url_for('print_staff_id_card', user_id=user.id, download=1),
+        single_staff=True,
+    )
+
+
+@app.route('/id-cards/staff/<int:user_id>/setup', methods=['GET', 'POST'], endpoint='setup_staff_id_card')
+@login_required
+def setup_staff_id_card(user_id):
+    """Upload or replace the staff ID-card photo and signature, like the student setup route."""
+    denied = _registrar_office_guard()
+    if denied:
+        return denied
+    user = db.session.get(User, user_id)
+    if not user or canonical_role(user) not in STAFF_ID_CARD_ROLES:
+        flash('That staff account was not found.', 'warning')
+        return redirect(url_for('staff_id_cards_folder'))
+
+    if request.method == 'POST':
+        try:
+            photo = request.files.get('photo')
+            signature = request.files.get('signature')
+            saved = False
+            if photo and (photo.filename or '').strip():
+                _filename, rel_path = _save_id_card_image(
+                    photo, 'staff_id_photos', user.id, 'photo'
+                )
+                user.id_card_photo_path = rel_path
+                saved = True
+            if signature and (signature.filename or '').strip():
+                _filename, rel_path = _save_id_card_image(
+                    signature, 'staff_signatures', user.id, 'signature'
+                )
+                user.id_card_signature_path = rel_path
+                saved = True
+            if not saved:
+                flash('Choose a staff photo, signature, or both before saving.', 'warning')
+                return redirect(url_for('setup_staff_id_card', user_id=user.id))
+            display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
+            _sync_staff_id_card(user, academic_year=display_year)
+            db.session.commit()
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+            return redirect(url_for('setup_staff_id_card', user_id=user.id))
+        except Exception:
+            db.session.rollback()
+            logger.exception('Staff ID file upload failed for user %s', user.id)
+            flash('The staff ID files could not be saved. Please try again.', 'danger')
+            return redirect(url_for('setup_staff_id_card', user_id=user.id))
+
+        if user.staff_id_card_ready:
+            flash(f'Staff ID card is ready for {user.full_name}.', 'success')
+            return redirect(url_for('print_staff_id_card', user_id=user.id))
+        missing = []
+        if not _staff_id_disk_path(user.id_card_photo_path):
+            missing.append('photo')
+        if not _staff_id_disk_path(user.id_card_signature_path):
+            missing.append('signature')
+        flash(
+            'Staff ID files saved, but still needs: {}.'.format(', '.join(missing) or 'a complete record'),
+            'warning',
+        )
+        return redirect(url_for('staff_id_cards_folder'))
+
+    display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
+    _sync_staff_id_card(user, academic_year=display_year)
+    db.session.commit()
+    return render_template(
+        'id_cards/staff_setup.html',
+        user=user,
+        display_year=display_year,
+        photo_url=(
+            url_for('static', filename=user.id_card_photo_path)
+            if user.id_card_photo_path else user.photo_url
+        ),
+        signature_url=(
+            url_for('static', filename=user.id_card_signature_path)
+            if user.id_card_signature_path else None
+        ),
+        signature_mark=_staff_signature_mark(user),
+    )
+
+
+@app.route(
+    '/id-cards/staff/<int:user_id>/refresh-photo',
+    methods=['POST'],
+    endpoint='refresh_staff_id_photo',
+)
+@login_required
+def refresh_staff_id_photo(user_id):
+    """Re-use the stored staff ID photo path for print; kept parallel to the student refresh action."""
+    denied = _registrar_office_guard()
+    if denied:
+        return denied
+    user = db.session.get(User, user_id)
+    if not user or canonical_role(user) not in STAFF_ID_CARD_ROLES:
+        flash('That staff account was not found.', 'warning')
+        return redirect(url_for('staff_id_cards_folder'))
+    display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
+    _sync_staff_id_card(user, academic_year=display_year)
+    db.session.commit()
+    if user.staff_id_card_ready:
+        flash('Staff ID photo is ready for print.', 'success')
+        return redirect(url_for('print_staff_id_card', user_id=user.id))
+    flash('Upload the staff ID photo before printing.', 'warning')
+    return redirect(url_for('setup_staff_id_card', user_id=user.id))
+
+
+@app.route('/id-cards/print/student/<int:student_id>', methods=['GET'], endpoint='print_student_id_card')
+@login_required
+def print_student_id_card(student_id):
+    """Print one CR80 student ID card from the registrar folder."""
+    if not _require_registrar_office():
+        return redirect(url_for('login'))
+
+    student = Student.query.get_or_404(student_id)
+    display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
+    _sync_student_id_card(student, academic_year=display_year or student.academic_year)
+    db.session.commit()
+
+    if not student.id_card_ready:
+        flash(
+            f'ID card is not ready for {student.full_name}. Add a photo, class, and student ID first.',
+            'warning',
+        )
+        return _registrar_student_folder_redirect(student.id)
+
+    cards = [_id_card_print_payload(student, display_year)]
+    dirty = _prepare_ready_card_photos_for_print(cards, flash_remaining=True)
+    if dirty:
+        db.session.commit()
+    klass = student.assigned_class
+    if str(request.args.get('download') or '').strip().lower() in {'1', 'true', 'yes', 'pdf'}:
+        return _stream_id_cards_pdf(klass, display_year, cards, single=True)
+
+    return render_template(
+        'id_cards/print_batch.html',
+        klass=klass,
+        display_year=display_year,
+        cards=cards,
+        skipped=[],
+        printed_at=datetime.now(timezone.utc),
+        printed_by=current_user.full_name or current_user.email,
+        liberia_seal_url=liberia_seal_static_url(),
+        qr_localhost_warning=_id_cards_qr_localhost_warning(cards),
+        download_url=request.path + '?download=1',
+        download_filename=id_cards_pdf_filename(klass, display_year, single=True),
+        refresh_photos_url=url_for('refresh_student_id_photo', student_id=student.id),
+    )
+
+
 @app.route('/edit-student/<int:student_id>', methods=['GET', 'POST'])
 @login_required
 def edit_student(student_id):
-    if (current_user.role or '').lower() not in {"admin", "principal", "registrar"}:
+    if canonical_role(current_user) not in {"admin", "principal", "registrar"}:
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
 
@@ -13105,7 +19456,7 @@ def edit_student(student_id):
 
     if request.method == 'GET':
         form.student_id.data = student.student_id
-        form.level.data = student.level
+        form.level.data = academic_level_for_student(student) or student.level
         if student.registration_fees is not None and float(student.registration_fees) > 0:
             form.registration_fees.data = f"{float(student.registration_fees):,.2f}"
         else:
@@ -13113,6 +19464,7 @@ def edit_student(student_id):
         if student.user and student.user.email:
             form.email.data = student.user.email
         form.parent_phone.data = student.parent_phone
+        form.guardian_name.data = student.guardian_name or resolve_parent_guardian_name(student)
 
     if form.validate_on_submit():
         existing_student = Student.query.filter_by(student_id=form.student_id.data.strip()).first()
@@ -13133,6 +19485,7 @@ def edit_student(student_id):
                 form=form,
                 student=student,
                 active_year=context.get('active_year'),
+                class_division_labels=context.get('class_division_labels') or {},
                 return_to=return_to,
                 **build_student_qr_context(student),
                 **build_parent_report_qr_context(student, student.academic_year_id),
@@ -13150,16 +19503,19 @@ def edit_student(student_id):
             student.photo = os.path.join('uploads', 'students', filename).replace('\\', '/')
             student.photo_filename = filename
 
+        _sync_student_id_card(student, academic_year=student.academic_year)
+
         if form.email.data:
             portal_user = link_student_portal_from_form(
                 student,
                 form.email.data,
                 password=form.password.data or None,
             )
-            if portal_user and not form.password.data:
+            issued_password = getattr(portal_user, '_issued_initial_password', None) if portal_user else None
+            if portal_user and issued_password:
                 flash(
-                    "Student portal account linked. Default login password is: student123",
-                    "info",
+                    "Student portal password saved. Print the credential slip for the student.",
+                    "success",
                 )
             elif not portal_user:
                 flash(
@@ -13167,11 +19523,16 @@ def edit_student(student_id):
                     "That email may already belong to another student account.",
                     "warning",
                 )
+        else:
+            issued_password = None
 
+        registration_payment = None
+        offer_receipt = False
         if registration_fee_value > 0 and academic_year_id:
             db.session.flush()
-            sync_registration_fee_ledger(
+            registration_payment, offer_receipt = collect_registration_fee_payment(
                 student,
+                form,
                 academic_year_id,
                 registration_fee_value,
                 update_existing=True,
@@ -13184,6 +19545,17 @@ def edit_student(student_id):
                 "Parent report PIN saved. Share it with the guardian for QR report access.",
                 "info",
             )
+        if issued_password:
+            stash_registrar_credential_password(student.id, issued_password)
+            return redirect(url_for(
+                'print_registrar_credential_slip',
+                student_id=student.id,
+            ))
+        if offer_receipt and registration_payment:
+            return redirect(url_for(
+                'print_registrar_registration_receipt',
+                payment_id=registration_payment.id,
+            ))
         if return_to == 'class_roster' and student.klass_id:
             return redirect(url_for(
                 'registrar_class_students',
@@ -13197,6 +19569,7 @@ def edit_student(student_id):
         form=form,
         student=student,
         active_year=context.get('active_year'),
+        class_division_labels=context.get('class_division_labels') or {},
         return_to=return_to,
         **build_student_qr_context(student),
         **build_parent_report_qr_context(student, student.academic_year_id),
@@ -13222,14 +19595,19 @@ def class_create():
 
     # Case-Insensitive Hardened Role Verification Check
     user_role_clean = str(current_user.role).strip().lower()
-    allowed_roles = ['admin', 'principal', 'registrar', 'vpa', 'lead developer']
+    if user_role_clean not in CLASS_STRUCTURE_ROLES:
+        flash(
+            "This page is split by office: VPA assigns teachers and subjects; "
+            "VPI sets tuition and rooms. Other roles cannot change class structure.",
+            "danger",
+        )
+        return redirect(url_for(role_home_endpoint()))
 
-    if user_role_clean not in allowed_roles:
-        flash(f"Access Denied: Role operational capacity '{current_user.role}' lacks administrative elevation metrics.", "danger")
-        return redirect(url_for('login'))
-
-    # Handle Class Submission Payloads
     if request.method == 'POST':
+        if user_role_clean == 'vpi':
+            flash("The VPI office sets tuition and rooms on existing classes. Creating classes and assigning teachers is the VPA office.", "warning")
+            return redirect(url_for('class_create'))
+
         name = request.form.get('name', '').strip()
         grade_level = (request.form.get('grade_level') or '').strip()
         stream = request.form.get('stream', '').strip()
@@ -13239,8 +19617,8 @@ def class_create():
         room_id = request.form.get('room_id') or None
 
         # Validate Core System Variables
-        if not name or not grade_level or not yearly_fees:
-            flash("Data Integrity Warning: Class Name, Grade Level, and Yearly Tuition Rates are mandatory fields.", "warning")
+        if not name or not grade_level:
+            flash("Data Integrity Warning: Class Name and Grade Level are mandatory fields.", "warning")
             return redirect(url_for('class_create'))
         if len(grade_level) > 50:
             flash("Data Integrity Warning: Grade Level must be 50 characters or fewer.", "warning")
@@ -13254,7 +19632,7 @@ def class_create():
                 return redirect(url_for('class_create'))
 
             # Parse and Sanitize Financial Metric Arrays
-            parsed_fees = parse_currency_amount_optional(yearly_fees)
+            parsed_fees = parse_currency_amount_optional(yearly_fees) if yearly_fees else 0
 
             grading_scheme = None
             if ca_weight_raw or exam_weight_raw:
@@ -13285,6 +19663,7 @@ def class_create():
             
             db.session.add(new_class)
             db.session.commit()
+            ensure_class_official_subjects(new_class, commit=True)
             
             flash(f"Operational Node: Class '{name}' has been successfully provisioned and committed!", "success")
             return redirect(url_for('class_create'))  # Redirect back to keep working seamlessly
@@ -13300,14 +19679,22 @@ def class_create():
     # GET Request Processing: Query and load cross-functional entity pipelines
     # Ordered cleanly by name so your drop-down and list matrices always display professionally
     rooms = Room.query.order_by(Room.name.asc()).all()
-    classes = Class.query.order_by(Class.grade_level.asc(), Class.name.asc()).all()
-    teachers = Teacher.query.filter_by(status='ACTIVE').order_by(Teacher.first_name.asc(), Teacher.last_name.asc()).all()
+    classes, classes_by_division = list_classes_grouped()
+    teachers = Teacher.query.filter(
+        func.upper(Teacher.status) == 'ACTIVE'
+    ).order_by(Teacher.first_name.asc(), Teacher.last_name.asc()).all()
+    if not teachers:
+        teachers = Teacher.query.order_by(Teacher.first_name.asc(), Teacher.last_name.asc()).all()
     return render_template(
         'class_create.html',
         rooms=rooms,
         classes=classes,
+        classes_by_division=classes_by_division,
         teachers=teachers,
         sponsor_matrix=_build_class_sponsor_matrix(classes),
+        grade_level_groups=GRADE_LEVEL_GROUPS_FOR_TEMPLATE,
+        is_vpa_office=normalize_role(current_user) == 'vpa',
+        is_vpi_office=normalize_role(current_user) == 'vpi',
     )
 
 
@@ -13323,11 +19710,13 @@ def room_quick_create():
     """
     # Enforce Mirrored Administrative Access Controls
     user_role_clean = str(current_user.role).strip().lower() if hasattr(current_user, 'role') else ''
-    allowed_roles = ['admin', 'principal', 'registrar', 'vpa', 'lead developer']
-    
-    if user_role_clean not in allowed_roles:
-        flash("Access Denied: Unauthorized infrastructure modification request.", "danger")
-        return redirect(url_for('login'))
+    if user_role_clean not in FACILITY_ROLES:
+        flash(
+            "Physical rooms are a VPI campus-operations function. "
+            "The VPA office assigns teachers and subjects, not building inventory.",
+            "danger",
+        )
+        return redirect(url_for(role_home_endpoint()))
 
     # Extract and Cleanse Asset Payload
     room_name = request.form.get('room_name', '').strip()
@@ -13385,11 +19774,9 @@ def assign_teacher():
     via the ClassSubjectTeacher intermediate matrix mapping table.
     """
     # ✨ FIX 1: Grant permission to BOTH Admin and Principal roles (case-insensitive protection)
-    user_role = current_user.role.lower() if current_user.role else ""
-    if user_role not in ['admin', 'principal']:
-        logger.warning(f"Unauthorized assignment manipulation attempt by User ID: {current_user.id} with role: {current_user.role}")
-        flash("Unauthorized access: Restricted to administrative personnel.", "danger")
-        return redirect(url_for('login'))
+    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    if blocked:
+        return blocked
 
     form = AssignTeacherForm()
     
@@ -13469,7 +19856,12 @@ def assign_teacher():
 
 
 def _stream_preset_for_class(klass):
-    """Resolve MoE subject preset from a class stream label."""
+    """Official MoE subjects for a class (division catalog, then stream fallback)."""
+    if not klass:
+        return []
+    catalog = list(division_subjects(resolve_from_class(klass)) or ())
+    if catalog:
+        return catalog
     stream = (klass.stream or 'general').strip().lower()
     aliases = {
         'sci': 'science', 'sciences': 'science', 'science stream': 'science',
@@ -13485,13 +19877,21 @@ def _stream_preset_for_class(klass):
 @login_required
 def subject_setup(class_id=None):
     """Curriculum catalog — define subjects offered per class (VPA / Principal / Admin)."""
-    user_role = (current_user.role or '').lower()
-    if user_role not in ['admin', 'principal', 'vpa']:
-        flash('Unauthorized access.', 'danger')
-        return redirect(url_for('login'))
+    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    if blocked:
+        return blocked
 
-    classes = Class.query.order_by(Class.grade_level.asc(), Class.name.asc()).all()
+    classes, classes_by_division = list_classes_grouped()
     selected_class = db.session.get(Class, class_id) if class_id else None
+    if selected_class is None and class_id:
+        flash('That class could not be found.', 'warning')
+        return redirect(url_for('subject_setup'))
+
+    seeded = 0
+    for klass in classes:
+        seeded += ensure_class_official_subjects(klass)
+    if seeded:
+        db.session.commit()
 
     if request.method == 'POST' and selected_class:
         action = (request.form.get('action') or '').strip()
@@ -13568,6 +19968,7 @@ def subject_setup(class_id=None):
     return render_template(
         'subject_setup.html',
         classes=classes,
+        classes_by_division=classes_by_division,
         selected_class=selected_class,
         class_subjects=class_subjects,
         teacher_map=teacher_map,
@@ -13579,9 +19980,9 @@ def subject_setup(class_id=None):
 @login_required
 def announcements():
     # 1. Secure case-insensitive executive gatekeeping
-    if current_user.role.lower() not in ["admin", "teacher", "principal", "vpa", "dean"]:
+    if current_user.role.lower() not in ["admin", "teacher", "principal", "vpa", "vpi", "dean"]:
         flash("Unauthorized access to communications management.", "danger")
-        return redirect(url_for('login'))
+        return redirect(url_for(role_home_endpoint()))
 
     # Explicit local import from your clean forms.py file
     from forms import AnnouncementForm
@@ -13652,6 +20053,7 @@ def business_management():
     # Populate dropdown choices dynamically
     payment_form.student.choices = [(s.id, f"{s.first_name} {s.last_name} ({s.student_id})") for s in Student.query.order_by(Student.last_name).all()]
     all_years = all_academic_years()
+    active_year = get_active_academic_year()
     payment_form.academic_year.choices = [(y.id, y.name) for y in all_years]
     
     # Pre-fill data if provided via search query parameters
@@ -13663,11 +20065,15 @@ def business_management():
             payment_form.student.data = prefill_student_id
         if prefill_year_id:
             payment_form.academic_year.data = prefill_year_id
-        elif globals().get('active_year'):
+        elif active_year:
             payment_form.academic_year.data = active_year.id
-    
-    selected_year = request.args.get('year', all_years[0].name if all_years else '2025-2026')
+
+    default_year_name = active_year.name if active_year else (all_years[0].name if all_years else '')
+    selected_year = request.args.get('year', default_year_name)
     selected_year_obj = next((y for y in all_years if y.name == selected_year), None)
+    if selected_year_obj is None and active_year:
+        selected_year_obj = active_year
+        selected_year = active_year.name
     
     # 2. Handle Daily Expense/Income Transaction Posting
     if 'submit_transaction' in request.form:
@@ -13759,7 +20165,10 @@ def business_management():
     for k in classes:
         current_fee = k.yearly_fees if k.yearly_fees and k.yearly_fees > 0 else yearly_fee_default
         
-        students_query = Student.query.filter_by(klass_id=k.id, status='ACTIVE')
+        students_query = Student.query.filter(
+            Student.klass_id == k.id,
+            Student.status.in_(list(ACTIVE_ENROLLMENT_STATUSES)),
+        )
         if selected_year_obj:
             students_query = students_query.filter(Student.academic_year_id == selected_year_obj.id)
         students_in_class = students_query.all()
@@ -13843,9 +20252,9 @@ def daily_expense_report():
 @app.route('/business-overview')
 @login_required
 def business_overview():
-    if (current_user.role or '').strip().lower() not in {"admin", "business", "principal", "vpi"}:
-        flash("Unauthorized access to business overview.", "danger")
-        return redirect(url_for('login'))
+    blocked = deny_unless_roles(FISCAL_COMMAND_ROLES, academic_office=False)
+    if blocked:
+        return blocked
 
     income_total = db.session.query(func.sum(BusinessTransaction.amount)).filter(BusinessTransaction.type == "income", BusinessTransaction.is_deleted == False).scalar() or 0
     expense_total = db.session.query(func.sum(BusinessTransaction.amount)).filter(BusinessTransaction.type == "expense", BusinessTransaction.is_deleted == False).scalar() or 0
@@ -13882,9 +20291,9 @@ def payroll_summary():
 @app.route('/financial-reports')
 @login_required
 def financial_reports():
-    if (current_user.role or '').strip().lower() not in {"admin", "business", "vpi", "principal"}:
-        flash("Unauthorized access to financial reports.", "danger")
-        return redirect(url_for('login'))
+    blocked = deny_unless_roles(FISCAL_COMMAND_ROLES, academic_office=False)
+    if blocked:
+        return blocked
 
     years = all_academic_years()
 
@@ -13943,13 +20352,34 @@ def _principal_students_for_class(klass, display_year=None, *, viewing_archived=
         return []
     year_id = display_year.id
     if viewing_archived:
-        roster = []
-        for student in _students_for_display_year(display_year, history_mode=True).all():
-            resolved = get_student_class_for_year(student, year_id)
-            if resolved and resolved.id == klass.id:
-                roster.append(student)
-        roster.sort(key=lambda s: ((s.last_name or '').lower(), (s.first_name or '').lower()))
-        return roster
+        grade_ids = {
+            row[0] for row in db.session.query(Grade.student_id).filter(
+                Grade.academic_year_id == year_id,
+                Grade.class_id == klass.id,
+                Grade.student_id.isnot(None),
+            ).distinct()
+        }
+        enroll_ids = {
+            row[0] for row in db.session.query(Enrollment.student_id).filter(
+                Enrollment.academic_year_id == year_id,
+                Enrollment.class_id == klass.id,
+                Enrollment.student_id.isnot(None),
+            ).distinct()
+        }
+        live_ids = {
+            row[0] for row in db.session.query(Student.id).filter(
+                Student.academic_year_id == year_id,
+                Student.klass_id == klass.id,
+            )
+        }
+        ids = grade_ids | enroll_ids | live_ids
+        if not ids:
+            return []
+        return (
+            Student.query.filter(Student.id.in_(ids))
+            .order_by(Student.last_name.asc(), Student.first_name.asc())
+            .all()
+        )
 
     roster = (
         students_for_academic_year(year_id, registered_only=True)
@@ -13973,11 +20403,16 @@ def _principal_unallocated_students(display_year=None, *, viewing_archived=False
         return []
     year_id = display_year.id
     if viewing_archived:
-        roster = [
-            student for student in _students_for_display_year(display_year, history_mode=True).all()
-            if get_student_class_for_year(student, year_id) is None
-        ]
-        roster.sort(key=lambda s: ((s.last_name or '').lower(), (s.first_name or '').lower()))
+        mapping = _student_class_map_for_display_year(display_year, viewing_archived=True)
+        year_ids = set(_student_ids_with_year_history(year_id))
+        unassigned_ids = [sid for sid in year_ids if not mapping.get(sid)]
+        if not unassigned_ids:
+            return []
+        roster = (
+            Student.query.filter(Student.id.in_(unassigned_ids))
+            .order_by(Student.last_name.asc(), Student.first_name.asc())
+            .all()
+        )
         return roster
     return (
         _students_for_display_year(display_year, history_mode=False)
@@ -14080,6 +20515,8 @@ def principal_dashboard():
         if display_year else []
     )
     total_student_count = len(year_students)
+    # Same enrollment counters as registrar roster (registered, non-alumni, year-scoped).
+    counts = _registrar_counts_for_year(display_year, viewing_archived=viewing_archived)
     failing_students = [
         student for student in year_students
         if _principal_student_average(student, display_year) < 70
@@ -14282,14 +20719,19 @@ def principal_dashboard():
     }
 
     security_events = SecurityLog.query.order_by(SecurityLog.timestamp.desc()).limit(5).all()
+    class_portfolios_by_division = group_items_by_class(
+        class_portfolios, lambda portfolio: portfolio.get('klass'),
+    )
 
     return render_template('principal_dashboard.html',
                             financial_stats=financial_stats,
                            academic_stats=academic_stats,
+                           counts=counts,
                            disciplinary_stats=disciplinary_stats,
                            security_stats=security_stats,
                            students=students_list,
                            class_portfolios=class_portfolios,
+                           class_portfolios_by_division=class_portfolios_by_division,
                            unallocated_portfolio=unallocated_portfolio,
                            selected_class=selected_class,
                            selected_folder=selected_folder if selected_folder == 'unallocated' else '',
@@ -14326,6 +20768,17 @@ def _vpi_class_collection_snapshots(display_year, *, viewing_archived=False):
         class_id=None,
     ).first() if display_year else None
     yearly_fee_default = fee_obj.amount if fee_obj else 0
+    paid_by_student = {}
+    if display_year:
+        paid_by_student = dict(
+            db.session.query(
+                StudentPayment.student_id,
+                func.coalesce(func.sum(StudentPayment.amount_paid), 0),
+            )
+            .filter(StudentPayment.academic_year_id == display_year.id)
+            .group_by(StudentPayment.student_id)
+            .all()
+        )
 
     for klass in Class.query.order_by(Class.grade_level.asc(), Class.name.asc()).all():
         current_fee = klass.yearly_fees if klass.yearly_fees and klass.yearly_fees > 0 else yearly_fee_default
@@ -14336,7 +20789,7 @@ def _vpi_class_collection_snapshots(display_year, *, viewing_archived=False):
             if display_year else []
         )
         collected = sum(
-            Decimal(str(build_student_financials_business_summary(student, display_year)["total_collected"]))
+            Decimal(str(paid_by_student.get(student.id, 0) or 0))
             for student in students
         )
         expected = Decimal(str(current_fee)) * len(students)
@@ -14357,14 +20810,26 @@ def _vpi_outstanding_students(display_year, limit=10, *, viewing_archived=False)
     rows = []
     if not display_year:
         return rows
-    for student in _students_for_display_year(display_year, history_mode=viewing_archived).all():
-        fin = build_student_financials(student, display_year)
-        balance = Decimal(str(fin.get('tuition_balance', 0) or 0))
+    paid_by_student = dict(
+        db.session.query(
+            StudentPayment.student_id,
+            func.coalesce(func.sum(StudentPayment.amount_paid), 0),
+        )
+        .filter(StudentPayment.academic_year_id == display_year.id)
+        .group_by(StudentPayment.student_id)
+        .all()
+    )
+    fee_by_class = {c.id: Decimal(str(c.yearly_fees or 0)) for c in Class.query.all()}
+    students = _students_for_display_year(display_year, history_mode=viewing_archived).all()
+    for student in students:
+        fee = fee_by_class.get(student.klass_id) or Decimal('0')
+        paid = Decimal(str(paid_by_student.get(student.id, 0) or 0))
+        balance = fee - paid
         if balance > 0:
             rows.append({
                 'student': student,
-                'yearly_fee': money(fin.get('yearly_fee', 0)),
-                'total_paid': money(fin.get('total_paid', 0)),
+                'yearly_fee': money(fee),
+                'total_paid': money(paid),
                 'balance': money(balance),
             })
     rows.sort(key=lambda row: row['balance'], reverse=True)
@@ -14373,9 +20838,9 @@ def _vpi_outstanding_students(display_year, limit=10, *, viewing_archived=False)
 
 @app.route('/vpi/dashboard')
 @login_required
-@role_required('VPI', 'business', 'admin')
+@role_required('VPI', 'principal', 'admin')
 def vpi_dashboard():
-    """VPI / Business Officer — tuition, ledger, collections, and fiscal oversight."""
+    """VPI — tuition, ledger, collections, and campus fiscal operations (not academics)."""
     display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
         session_key=VPI_YEAR_SESSION_KEY,
     )
@@ -14403,14 +20868,29 @@ def vpi_dashboard():
     total_expected = Decimal('0')
     students_with_balance = 0
     if selected_year:
-        for student in _students_for_display_year(
+        tuition_collected = Decimal(str(
+            db.session.query(func.coalesce(func.sum(StudentPayment.amount_paid), 0))
+            .filter(StudentPayment.academic_year_id == selected_year.id)
+            .scalar() or 0
+        ))
+        year_students = _students_for_display_year(
             selected_year, history_mode=viewing_archived,
-        ).all():
-            fin = build_student_financials(student, selected_year)
-            tuition_collected += Decimal(str(fin.get('total_paid', 0) or 0))
-            yearly_fee = Decimal(str(fin.get('yearly_fee', 0) or 0))
-            total_expected += yearly_fee
-            if Decimal(str(fin.get('tuition_balance', 0) or 0)) > 0:
+        ).with_entities(Student.id, Student.klass_id)
+        paid_by_student = dict(
+            db.session.query(
+                StudentPayment.student_id,
+                func.coalesce(func.sum(StudentPayment.amount_paid), 0),
+            )
+            .filter(StudentPayment.academic_year_id == selected_year.id)
+            .group_by(StudentPayment.student_id)
+            .all()
+        )
+        fee_by_class = {c.id: Decimal(str(c.yearly_fees or 0)) for c in Class.query.all()}
+        for student_id, klass_id in year_students:
+            fee = fee_by_class.get(klass_id) or Decimal('0')
+            total_expected += fee
+            paid = Decimal(str(paid_by_student.get(student_id, 0) or 0))
+            if fee > paid:
                 students_with_balance += 1
 
     collection_rate = round(float(tuition_collected / total_expected * 100), 1) if total_expected > 0 else 0.0
@@ -14791,15 +21271,43 @@ def dean_reinstate_student():
 
 
 # -------------------------- VPA DASHBOARD -------------------------------
-def _vpa_student_average(student, academic_year=None):
-    """MoE student standing — mean of all entered grade scores for the year."""
-    query = Grade.query.filter_by(student_id=student.id)
+def _vpa_student_average(student, academic_year=None, averages_map=None):
+    """MoE student standing — mean of entered scores for the year (uses SQL map when provided)."""
+    if averages_map is not None:
+        return averages_map.get(student.id)
+    query = db.session.query(func.avg(Grade.score)).filter(
+        Grade.student_id == student.id,
+        Grade.score.isnot(None),
+    )
     if academic_year:
-        query = query.filter_by(academic_year_id=academic_year.id)
-    scores = [g.score for g in query.all() if g.score is not None]
-    if not scores:
-        return None
-    return round(sum(scores) / len(scores), 1)
+        query = query.filter(Grade.academic_year_id == academic_year.id)
+    avg = query.scalar()
+    return round(float(avg), 1) if avg is not None else None
+
+
+def _vpa_averages_map(academic_year):
+    """One GROUP BY query for all student averages in a year — never N queries."""
+    if not academic_year:
+        return {}
+    cache_key = academic_year.id
+    if has_request_context():
+        maps = getattr(g, '_flpa_vpa_avg_maps', None)
+        if maps is None:
+            maps = {}
+            g._flpa_vpa_avg_maps = maps
+        if cache_key in maps:
+            return maps[cache_key]
+    rows = db.session.query(
+        Grade.student_id,
+        func.avg(Grade.score),
+    ).filter(
+        Grade.academic_year_id == academic_year.id,
+        Grade.score.isnot(None),
+    ).group_by(Grade.student_id).all()
+    result = {sid: round(float(avg), 1) for sid, avg in rows if avg is not None}
+    if has_request_context():
+        g._flpa_vpa_avg_maps[cache_key] = result
+    return result
 
 
 def _vpa_year_grade_query(academic_year):
@@ -14816,41 +21324,61 @@ def _vpa_year_assessment_query(academic_year):
     return query
 
 
-def _vpa_build_class_snapshots(academic_year, *, viewing_archived=False):
+def _vpa_build_class_snapshots(academic_year, *, viewing_archived=False, averages_map=None):
     snapshots = []
-    for klass in Class.query.order_by(Class.grade_level.asc(), Class.name.asc()).all():
-        students = (
-            _principal_students_for_class(
-                klass, academic_year, viewing_archived=viewing_archived,
+    if averages_map is None:
+        averages_map = _vpa_averages_map(academic_year)
+    year_id = academic_year.id if academic_year else None
+    grade_counts = dict(
+        db.session.query(Grade.class_id, func.count(Grade.id))
+        .filter(Grade.academic_year_id == year_id)
+        .group_by(Grade.class_id)
+        .all()
+    ) if year_id else {}
+    assessment_counts = dict(
+        db.session.query(Assessment.klass_id, func.count(Assessment.id))
+        .filter(Assessment.academic_year_id == year_id)
+        .group_by(Assessment.klass_id)
+        .all()
+    ) if year_id else {}
+
+    subject_counts = dict(
+        db.session.query(ClassSubject.class_id, func.count(ClassSubject.id))
+        .group_by(ClassSubject.class_id)
+        .all()
+    )
+    student_class_pairs = []
+    if year_id:
+        if viewing_archived:
+            student_class_pairs = list(_student_class_map_for_display_year(
+                academic_year, viewing_archived=True,
+            ).items())
+        else:
+            student_class_pairs = (
+                _students_for_display_year(academic_year, history_mode=False)
+                .with_entities(Student.id, Student.klass_id)
+                .all()
             )
-            if academic_year else []
-        )
 
-        subject_names = {
-            row.subject_name
-            for row in ClassSubject.query.filter_by(class_id=klass.id).all()
-            if row.subject_name
-        }
-        for alloc in ClassSubjectTeacher.query.filter_by(class_id=klass.id).all():
-            if alloc.subject_name:
-                subject_names.add(alloc.subject_name)
+    by_class = {}
+    for sid, cid in student_class_pairs:
+        if not cid:
+            continue
+        by_class.setdefault(cid, []).append(sid)
 
-        grade_count = _vpa_year_grade_query(academic_year).filter_by(class_id=klass.id).count()
-        assessment_count = _vpa_year_assessment_query(academic_year).filter_by(klass_id=klass.id).count()
-
-        averages = [_vpa_student_average(s, academic_year) for s in students]
-        valid_avgs = [avg for avg in averages if avg is not None]
+    for klass in Class.query.order_by(Class.grade_level.asc(), Class.name.asc()).all():
+        student_ids = by_class.get(klass.id, [])
+        valid_avgs = [averages_map[sid] for sid in student_ids if sid in averages_map]
         passing = sum(1 for avg in valid_avgs if avg >= MOE_PASSING_SCORE)
         failing = sum(1 for avg in valid_avgs if avg < MOE_PASSING_SCORE)
         class_avg = round(sum(valid_avgs) / len(valid_avgs), 1) if valid_avgs else None
         passing_rate = round(passing / len(valid_avgs) * 100, 1) if valid_avgs else 0.0
-
         snapshots.append({
             'klass': klass,
-            'student_count': len(students),
-            'subject_count': len(subject_names),
-            'grade_count': grade_count,
-            'assessment_count': assessment_count,
+            'student_count': len(student_ids),
+            'subject_count': subject_counts.get(klass.id, 0),
+            'grade_count': grade_counts.get(klass.id, 0),
+            'assessment_count': assessment_counts.get(klass.id, 0),
             'class_avg': class_avg,
             'passing_rate': passing_rate,
             'failing_count': failing,
@@ -14858,19 +21386,14 @@ def _vpa_build_class_snapshots(academic_year, *, viewing_archived=False):
     return snapshots
 
 
-def _vpa_performance_bands(academic_year, *, viewing_archived=False):
-    if academic_year:
-        students = _students_for_display_year(
-            academic_year, history_mode=viewing_archived,
-        ).all()
-    else:
-        students = []
+def _vpa_performance_bands(academic_year, *, viewing_archived=False, averages_map=None, enrolled_count=0):
+    if averages_map is None:
+        averages_map = _vpa_averages_map(academic_year)
     bands = {'excellent': 0, 'good': 0, 'average': 0, 'needs_improvement': 0, 'no_grades': 0}
-    for student in students:
-        avg = _vpa_student_average(student, academic_year)
-        if avg is None:
-            bands['no_grades'] += 1
-        elif avg >= 90:
+    graded = 0
+    for avg in averages_map.values():
+        graded += 1
+        if avg >= 90:
             bands['excellent'] += 1
         elif avg >= 80:
             bands['good'] += 1
@@ -14878,66 +21401,76 @@ def _vpa_performance_bands(academic_year, *, viewing_archived=False):
             bands['average'] += 1
         else:
             bands['needs_improvement'] += 1
+    bands['no_grades'] = max(0, int(enrolled_count or 0) - graded)
     return bands
 
 
 def _vpa_grade_letter_distribution(academic_year):
     buckets = {'A': 0, 'B': 0, 'C': 0, 'D': 0, 'F': 0}
-    for grade in _vpa_year_grade_query(academic_year).all():
-        if grade.score is None:
-            continue
-        letter = SchoolEngine.get_grade_letter(grade.score)
-        if letter in buckets:
-            buckets[letter] += 1
+    if not academic_year:
+        return buckets
+    letter = case(
+        (Grade.score >= 90, 'A'),
+        (Grade.score >= 80, 'B'),
+        (Grade.score >= 70, 'C'),
+        (Grade.score >= 60, 'D'),
+        else_='F',
+    )
+    rows = db.session.query(letter, func.count(Grade.id)).filter(
+        Grade.academic_year_id == academic_year.id,
+        Grade.score.isnot(None),
+    ).group_by(letter).all()
+    for key, count in rows:
+        if key in buckets:
+            buckets[key] = count
     return buckets
 
 
-def _vpa_at_risk_students(academic_year, class_id=None, limit=10, *, viewing_archived=False):
-    rows = []
-    if class_id and academic_year:
-        klass = db.session.get(Class, class_id)
-        student_list = (
-            _principal_students_for_class(
-                klass, academic_year, viewing_archived=viewing_archived,
-            )
-            if klass else []
+def _vpa_ranked_students_by_average(academic_year, class_id=None, limit=10, *, below_moe=False, viewing_archived=False):
+    if not academic_year:
+        return []
+    avg_sub = (
+        db.session.query(
+            Grade.student_id.label('student_id'),
+            func.avg(Grade.score).label('avg_score'),
         )
-    elif academic_year:
-        student_list = _students_for_display_year(
-            academic_year, history_mode=viewing_archived,
-        ).all()
+        .filter(Grade.academic_year_id == academic_year.id, Grade.score.isnot(None))
+        .group_by(Grade.student_id)
+        .subquery()
+    )
+    query = db.session.query(Student, avg_sub.c.avg_score).join(
+        avg_sub, Student.id == avg_sub.c.student_id
+    )
+    if below_moe:
+        query = query.filter(avg_sub.c.avg_score < MOE_PASSING_SCORE).order_by(avg_sub.c.avg_score.asc())
     else:
-        student_list = []
-    for student in student_list:
-        avg = _vpa_student_average(student, academic_year)
-        if avg is not None and avg < MOE_PASSING_SCORE:
-            rows.append({'student': student, 'average': avg})
-    rows.sort(key=lambda row: row['average'])
-    return rows[:limit]
+        query = query.order_by(avg_sub.c.avg_score.desc())
+    if class_id:
+        student_ids = [
+            s.id for s in _principal_students_for_class(
+                db.session.get(Class, class_id), academic_year, viewing_archived=viewing_archived,
+            )
+        ]
+        if not student_ids:
+            return []
+        query = query.filter(Student.id.in_(student_ids))
+    rows = []
+    for student, avg in query.limit(limit).all():
+        rows.append({'student': student, 'average': round(float(avg), 1)})
+    return rows
+
+
+def _vpa_at_risk_students(academic_year, class_id=None, limit=10, *, viewing_archived=False):
+    return _vpa_ranked_students_by_average(
+        academic_year, class_id=class_id, limit=limit, below_moe=True, viewing_archived=viewing_archived,
+    )
 
 
 def _vpa_top_students(academic_year, class_id=None, limit=8, *, viewing_archived=False):
-    rows = []
-    if class_id and academic_year:
-        klass = db.session.get(Class, class_id)
-        student_list = (
-            _principal_students_for_class(
-                klass, academic_year, viewing_archived=viewing_archived,
-            )
-            if klass else []
-        )
-    elif academic_year:
-        student_list = _students_for_display_year(
-            academic_year, history_mode=viewing_archived,
-        ).all()
-    else:
-        student_list = []
-    for student in student_list:
-        avg = _vpa_student_average(student, academic_year)
-        if avg is not None:
-            rows.append({'student': student, 'average': avg})
-    rows.sort(key=lambda row: row['average'], reverse=True)
-    return rows[:limit]
+    return _vpa_ranked_students_by_average(
+        academic_year, class_id=class_id, limit=limit, below_moe=False, viewing_archived=viewing_archived,
+    )
+
 
 #--------------------vpa/dashboard----------------------#
 @app.route('/vpa/dashboard', methods=['GET'])
@@ -14956,34 +21489,47 @@ def vpa_dashboard():
     class_id = request.args.get('class_id', type=int)
     search_q = (request.args.get('q') or '').strip()
     selected_class = db.session.get(Class, class_id) if class_id else None
+    page, per_page = clamp_page(request.args.get('page'), DASHBOARD_PAGE_SIZE)
+    averages_map = _vpa_averages_map(display_year)
 
     if class_id and selected_class and display_year:
-        students = _principal_students_for_class(
+        roster = _principal_students_for_class(
             selected_class, display_year, viewing_archived=viewing_archived,
         )
+        if search_q:
+            needle = search_q.lower()
+            roster = [
+                student for student in roster
+                if needle in ' '.join(filter(None, [
+                    student.first_name, student.last_name, student.student_id, student.full_name,
+                ])).lower()
+            ]
+        registry_total = len(roster)
+        students = roster[(page - 1) * per_page: page * per_page]
     elif display_year:
-        students = (
-            _students_for_display_year(display_year, history_mode=viewing_archived)
-            .order_by(Student.last_name.asc(), Student.first_name.asc())
-            .all()
+        students_query = _students_for_display_year(
+            display_year, history_mode=viewing_archived,
         )
+        if search_q:
+            like = f"%{search_q}%"
+            students_query = students_query.filter(or_(
+                Student.first_name.ilike(like),
+                Student.last_name.ilike(like),
+                Student.student_id.ilike(like),
+            ))
+        students_query = students_query.order_by(Student.last_name.asc(), Student.first_name.asc())
+        registry_total = students_query.count()
+        students = students_query.offset((page - 1) * per_page).limit(per_page).all()
     else:
         students = []
-    if search_q:
-        needle = search_q.lower()
-        students = [
-            student for student in students
-            if needle in ' '.join(filter(None, [
-                student.first_name,
-                student.last_name,
-                student.student_id,
-                student.full_name,
-            ])).lower()
-        ]
+        registry_total = 0
+    registry_pages = max(1, (registry_total + per_page - 1) // per_page) if registry_total else 1
+    if page > registry_pages:
+        page = registry_pages
     _attach_display_class(students, display_year, viewing_archived=viewing_archived)
 
     for student in students:
-        student.academic_average = _vpa_student_average(student, display_year)
+        student.academic_average = averages_map.get(student.id)
         student.grade_letter = (
             SchoolEngine.get_grade_letter(student.academic_average)
             if student.academic_average is not None
@@ -14994,11 +21540,16 @@ def vpa_dashboard():
             else 'Below MoE Standard'
         ) if student.academic_average is not None else 'No grades'
 
-    performance_bands = _vpa_performance_bands(display_year, viewing_archived=viewing_archived)
     enrolled_count = (
         _students_for_display_year(display_year, history_mode=viewing_archived).count()
         if display_year
         else 0
+    )
+    performance_bands = _vpa_performance_bands(
+        display_year,
+        viewing_archived=viewing_archived,
+        averages_map=averages_map,
+        enrolled_count=enrolled_count,
     )
     graded_students = enrolled_count - performance_bands['no_grades']
     passing_count = (
@@ -15026,6 +21577,14 @@ def vpa_dashboard():
         'total_assessments': assessment_query.count(),
         'grades_entered': grade_query.count(),
         'grades_published': grade_query.filter_by(submitted=True).count(),
+        'pending_vpa_releases': (
+            GradeRelease.query.filter_by(
+                academic_year_id=display_year.id,
+                status=GradeRelease.STATUS_PENDING_VPA,
+            ).count()
+            if display_year else 0
+        ),
+        'pending_transcript_releases': count_pending_transcript_releases(display_year),
         'passing_rate': passing_rate,
         'failing_count': performance_bands['needs_improvement'],
         'no_grade_data': performance_bands['no_grades'],
@@ -15053,6 +21612,24 @@ def vpa_dashboard():
         viewing_archived=viewing_archived,
     )
 
+    class_snapshots = _vpa_build_class_snapshots(
+        display_year, viewing_archived=viewing_archived, averages_map=averages_map,
+    )
+    class_snapshots_by_division = group_items_by_class(
+        class_snapshots,
+        lambda snap: snap.get('klass') if isinstance(snap, dict) else None,
+    )
+    if not class_snapshots_by_division:
+        _all_classes, class_snapshots_by_division = list_classes_grouped()
+        class_snapshots_by_division = [
+            {
+                'key': group['key'],
+                'label': group['label'],
+                'classes': [{'klass': klass} for klass in group['classes']],
+            }
+            for group in class_snapshots_by_division
+        ]
+
     return render_template(
         'vpa_dashboard.html',
         current_user=current_user,
@@ -15066,10 +21643,12 @@ def vpa_dashboard():
         class_id=class_id,
         search_q=search_q,
         students=students,
+        registry_page=page,
+        registry_pages=registry_pages,
+        registry_total=registry_total,
         stats=stats,
-        class_snapshots=_vpa_build_class_snapshots(
-            display_year, viewing_archived=viewing_archived,
-        ),
+        class_snapshots=class_snapshots,
+        class_snapshots_by_division=class_snapshots_by_division,
         grade_letter_distribution=_vpa_grade_letter_distribution(display_year),
         performance_bands=performance_bands,
         at_risk_students=at_risk_students,
@@ -15077,7 +21656,252 @@ def vpa_dashboard():
         recent_grades=recent_grades,
         recent_assessments=recent_assessments,
         grading_periods=MOE_GRADING_PERIODS,
+        pending_vpa_releases=stats.get('pending_vpa_releases', 0),
+        pending_transcript_releases=stats.get('pending_transcript_releases', 0),
     )
+
+
+def _grade_release_queue_rows(display_year=None, status=None):
+    """Class/period packages waiting on or recently reviewed by VPA."""
+    query = GradeRelease.query
+    if display_year:
+        query = query.filter_by(academic_year_id=display_year.id)
+    if status:
+        query = query.filter_by(status=status)
+    else:
+        query = query.filter(GradeRelease.status.in_((
+            GradeRelease.STATUS_PENDING_VPA,
+            GradeRelease.STATUS_RETURNED,
+            GradeRelease.STATUS_APPROVED,
+        )))
+    releases = query.order_by(GradeRelease.id.desc()).all()
+    rows = []
+    for release in releases:
+        klass = release.klass or db.session.get(Class, release.class_id)
+        year = release.academic_year or db.session.get(AcademicYear, release.academic_year_id)
+        submitted_count = 0
+        for grade in Grade.query.filter_by(
+            class_id=release.class_id,
+            academic_year_id=release.academic_year_id,
+            submitted=True,
+        ).all():
+            if _grade_release_period(grade) == release.period:
+                submitted_count += 1
+        sample_student = None
+        if year:
+            roster = get_class_students_for_year(release.class_id, year)
+            sample_student = roster[0] if roster else None
+        period_label = grading_period_label(release.period)
+        class_name = klass.name if klass else 'Class'
+        rows.append({
+            'release': release,
+            'klass': klass,
+            'year': year,
+            'period_label': period_label,
+            'class_period_label': f'{class_name} — {period_label}',
+            'submitted_count': submitted_count,
+            'publisher': release.published_by,
+            'approver': release.approved_by,
+            'sample_student': sample_student,
+        })
+    return rows
+
+
+def _load_reviewable_grade_release(release_id):
+    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    if blocked:
+        return blocked, None
+    release = db.session.get(GradeRelease, release_id)
+    if not release:
+        flash('That grade package was not found.', 'danger')
+        return redirect(url_for('vpa_grade_releases')), None
+    return None, release
+
+
+@app.route('/vpa/grade-releases', methods=['GET'])
+@login_required
+def vpa_grade_releases():
+    """VPA queue: approve or return teacher-published class/period packages."""
+    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    if blocked:
+        return blocked
+
+    display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
+        session_key=VPA_YEAR_SESSION_KEY,
+    )
+    rows = _grade_release_queue_rows(display_year)
+    pending_rows = [row for row in rows if row['release'].status == GradeRelease.STATUS_PENDING_VPA]
+    returned_rows = [row for row in rows if row['release'].status == GradeRelease.STATUS_RETURNED]
+    approved_rows = [row for row in rows if row['release'].status == GradeRelease.STATUS_APPROVED][:12]
+    return render_template(
+        'vpa_grade_releases.html',
+        display_year=display_year,
+        active_year=active_year,
+        years=years,
+        viewing_archived=viewing_archived,
+        pending_rows=pending_rows,
+        returned_rows=returned_rows,
+        approved_rows=approved_rows,
+    )
+
+
+@app.route('/vpa/grade-releases/<int:release_id>/approve', methods=['POST'])
+@login_required
+def vpa_approve_grade_release(release_id):
+    blocked, release = _load_reviewable_grade_release(release_id)
+    if blocked:
+        return blocked
+    comment = (request.form.get('review_comment') or '').strip() or None
+    release.status = GradeRelease.STATUS_APPROVED
+    release.approved_by_id = current_user.id
+    release.approved_at = datetime.now(timezone.utc)
+    release.returned_by_id = None
+    release.returned_at = None
+    if comment:
+        release.review_comment = comment
+    db.session.commit()
+    flash(
+        f'{grading_period_label(release.period)} for '
+        f'{(release.klass.name if release.klass else "this class")} is approved. '
+        'Students may now view, download, and print official scores for this period.',
+        'success',
+    )
+    return redirect(url_for('vpa_grade_releases'))
+
+
+@app.route('/vpa/grade-releases/<int:release_id>/return', methods=['POST'])
+@login_required
+def vpa_return_grade_release(release_id):
+    blocked, release = _load_reviewable_grade_release(release_id)
+    if blocked:
+        return blocked
+    comment = (request.form.get('review_comment') or '').strip()
+    if not comment:
+        flash('Please add a short comment so the teacher knows what to correct.', 'warning')
+        return redirect(url_for('vpa_grade_releases'))
+    release.status = GradeRelease.STATUS_RETURNED
+    release.returned_by_id = current_user.id
+    release.returned_at = datetime.now(timezone.utc)
+    release.approved_by_id = None
+    release.approved_at = None
+    release.review_comment = comment
+    db.session.commit()
+    flash(
+        f'{grading_period_label(release.period)} was returned to the teacher. '
+        'Students cannot view this period until it is published and approved again. '
+        'Previously approved periods remain available.',
+        'warning',
+    )
+    return redirect(url_for('vpa_grade_releases'))
+
+
+def _transcript_release_queue_context(display_year):
+    """Students waiting on Official Transcript approval, plus recent approvals."""
+    year_wide = None
+    approved_student_ids = set()
+    approved_rows = []
+    if display_year:
+        year_wide = TranscriptRelease.query.filter(
+            TranscriptRelease.academic_year_id == display_year.id,
+            TranscriptRelease.student_id.is_(None),
+            TranscriptRelease.status == TranscriptRelease.STATUS_APPROVED,
+        ).first()
+        student_releases = TranscriptRelease.query.filter(
+            TranscriptRelease.academic_year_id == display_year.id,
+            TranscriptRelease.student_id.isnot(None),
+            TranscriptRelease.status == TranscriptRelease.STATUS_APPROVED,
+        ).order_by(TranscriptRelease.approved_at.desc()).all()
+        for release in student_releases:
+            approved_student_ids.add(release.student_id)
+            student = release.student or db.session.get(Student, release.student_id)
+            if not student:
+                continue
+            klass = get_student_class_for_year(student, display_year.id)
+            approved_rows.append({
+                'release': release,
+                'student': student,
+                'klass': klass,
+                'approver': release.approved_by,
+            })
+
+    pending_rows = []
+    if display_year and not year_wide:
+        students = _students_for_display_year(
+            display_year, history_mode=True,
+        ).order_by(Student.last_name.asc(), Student.first_name.asc()).all()
+        for student in students:
+            if student.id in approved_student_ids:
+                continue
+            pending_rows.append({
+                'student': student,
+                'klass': get_student_class_for_year(student, display_year.id),
+            })
+    return year_wide, pending_rows, approved_rows[:20]
+
+
+@app.route('/vpa/transcript-releases', methods=['GET'])
+@login_required
+def vpa_transcript_releases():
+    """VPA / Principal queue: release Official Transcripts to students and parents."""
+    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    if blocked:
+        return blocked
+
+    display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
+        session_key=VPA_YEAR_SESSION_KEY,
+    )
+    year_wide, pending_rows, approved_rows = _transcript_release_queue_context(display_year)
+    return render_template(
+        'vpa_transcript_releases.html',
+        display_year=display_year,
+        active_year=active_year,
+        years=years,
+        viewing_archived=viewing_archived,
+        year_wide=year_wide,
+        pending_rows=pending_rows,
+        approved_rows=approved_rows,
+    )
+
+
+@app.route('/vpa/transcript-releases/approve-year', methods=['POST'])
+@login_required
+def vpa_approve_year_transcripts():
+    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    if blocked:
+        return blocked
+    year_id = request.form.get('academic_year_id', type=int)
+    display_year = db.session.get(AcademicYear, year_id) if year_id else get_active_academic_year()
+    if not display_year:
+        flash('Select an academic year before releasing transcripts.', 'warning')
+        return redirect(url_for('vpa_transcript_releases'))
+    approve_official_transcript(display_year.id, student_id=None, user=current_user)
+    flash(
+        f'Official Transcripts for {display_year.name} are released. '
+        'Students and parents may now view the portrait document in the portal.',
+        'success',
+    )
+    return redirect(url_for('vpa_transcript_releases', academic_year_id=display_year.id))
+
+
+@app.route('/vpa/transcript-releases/<int:student_id>/approve', methods=['POST'])
+@login_required
+def vpa_approve_student_transcript(student_id):
+    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    if blocked:
+        return blocked
+    student = Student.query.get_or_404(student_id)
+    year_id = request.form.get('academic_year_id', type=int)
+    display_year = db.session.get(AcademicYear, year_id) if year_id else get_active_academic_year()
+    if not display_year:
+        flash('Select an academic year before releasing a transcript.', 'warning')
+        return redirect(url_for('vpa_transcript_releases'))
+    approve_official_transcript(display_year.id, student_id=student.id, user=current_user)
+    flash(
+        f'Official Transcript for {student.full_name} is released for {display_year.name}.',
+        'success',
+    )
+    return redirect(url_for('vpa_transcript_releases', academic_year_id=display_year.id))
+
 
 @app.route('/payroll', methods=['GET', 'POST'])
 @login_required
@@ -15110,27 +21934,9 @@ def payroll():
 @login_required
 def report_card_pdf(student_id):
     student = Student.query.get_or_404(student_id)
-    grades = Grade.query.filter_by(student_id=student_id).all()
-
-    buffer = BytesIO()
-    p = canvas.Canvas(buffer)
-    p.setFont("Helvetica-Bold", 16)
-    p.drawString(200, 800, "Student Report Card")
-
-    y = 760
-    p.setFont("Helvetica", 12)
-    p.drawString(50, y, f"Student Name: {student.full_name}")
-    y -= 30
-    for g in grades:
-        p.drawString(50, y, f"{g.subject_name} - {g.score}")
-        y -= 20
-
-    p.showPage()
-    p.save()
-    buffer.seek(0)
-
-    return Response(buffer, mimetype='application/pdf',
-                    headers={"Content-Disposition": f"attachment;filename={student.full_name}_report.pdf"})
+    active_year = get_active_academic_year()
+    year_id = request.args.get('academic_year_id', type=int) or (active_year.id if active_year else None)
+    return build_official_grade_sheet_pdf(student, year_id, kind='report')
 
 # ------------------------ ANALYTICS ENDPOINTS ------------------------
 from flask import jsonify
@@ -15208,6 +22014,82 @@ def analytics_payments():
 
 #----------------User profile---------------------#
 
+@app.route('/account/settings', methods=['GET', 'POST'])
+@login_required
+def account_settings():
+    """Logged-in user: change password and upload a square profile photo."""
+    password_form = AccountPasswordForm()
+    photo_form = AccountPhotoForm()
+
+    if request.method == 'POST' and photo_form.submit_photo.data:
+        if photo_form.validate():
+            photo_file = photo_form.photo.data
+            upload_dir = os.path.join(current_app.root_path, 'static', 'uploads', 'photos')
+            os.makedirs(upload_dir, exist_ok=True)
+            ext = (secure_filename(photo_file.filename).rsplit('.', 1)[-1] or 'jpg').lower()
+            if ext not in ('jpg', 'jpeg', 'png', 'gif', 'webp'):
+                ext = 'jpg'
+            filename = f"{current_user.id}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}.{ext}"
+            file_path = os.path.join(upload_dir, filename)
+            try:
+                if Image is not None:
+                    img = Image.open(photo_file.stream)
+                    if ImageOps is not None:
+                        img = ImageOps.exif_transpose(img)
+                    if img.mode not in ('RGB', 'RGBA'):
+                        img = img.convert('RGB')
+                    width, height = img.size
+                    side = min(width, height)
+                    left = (width - side) // 2
+                    top = (height - side) // 2
+                    img = img.crop((left, top, left + side, top + side))
+                    resample = getattr(getattr(Image, 'Resampling', Image), 'LANCZOS', Image.LANCZOS)
+                    img = img.resize((400, 400), resample)
+                    save_kwargs = {}
+                    if ext in ('jpg', 'jpeg'):
+                        img = img.convert('RGB')
+                        save_kwargs['quality'] = 88
+                    img.save(file_path, **save_kwargs)
+                else:
+                    photo_file.save(file_path)
+                current_user.photo = os.path.join('uploads', 'photos', filename).replace('\\', '/')
+                db.session.commit()
+                flash("Profile photo updated.", "success")
+                return redirect(url_for('account_settings'))
+            except Exception as exc:
+                db.session.rollback()
+                current_app.logger.error(f"Account photo upload failed: {exc}")
+                flash("Could not save that photo. Try a JPG or PNG.", "danger")
+        else:
+            flash("Choose a valid image (JPG, PNG, GIF, or WebP).", "danger")
+
+    elif request.method == 'POST' and password_form.submit_password.data:
+        if password_form.validate():
+            if password_form.new_password.data != password_form.confirm_password.data:
+                flash("New password and confirmation do not match.", "danger")
+            elif not check_password_hash(current_user.password_hash, password_form.current_password.data):
+                flash("Current password is incorrect.", "danger")
+            else:
+                current_user.set_password(password_form.new_password.data)
+                current_user.must_change_password = False
+                db.session.commit()
+                flash("Password updated.", "success")
+                return redirect(url_for(home_endpoint_for_role(current_user)))
+        else:
+            flash("Please correct the password fields and try again.", "danger")
+
+    home_endpoint = home_endpoint_for_role(current_user)
+    return render_template(
+        'account_settings.html',
+        password_form=password_form,
+        photo_form=photo_form,
+        dashboard_url=url_for(home_endpoint),
+        role_label=dashboard_role_label(current_user),
+        preview_url=current_user.photo_url,
+        default_avatar_url=default_static_photo_url(),
+    )
+
+
 @app.route('/api/profile', methods=['GET'])
 @login_required
 def api_profile():
@@ -15269,6 +22151,12 @@ def edit_user(user_id):
 
     from forms import EditUserForm
     user = db.first_or_404(db.select(User).filter_by(id=user_id))
+    current_role = normalize_role(current_user)
+
+    if current_role == 'principal' and normalize_role(user) == 'admin':
+        flash("This admin account cannot be managed here.", "danger")
+        return redirect(url_for('admin_users'))
+
     form = EditUserForm(obj=user)
 
     if form.validate_on_submit():
@@ -15278,6 +22166,11 @@ def edit_user(user_id):
             return render_template('admin_edit_user.html', form=form, user=user)
         if username and User.query.filter(User.username == username, User.id != user_id).first():
             flash("That username is already assigned to another user.", "danger")
+            return render_template('admin_edit_user.html', form=form, user=user)
+
+        requested_role = (form.role.data or '').strip().lower()
+        if current_role == 'principal' and requested_role == 'admin' and user_id != current_user.id:
+            flash("Only an admin can assign the admin role.", "danger")
             return render_template('admin_edit_user.html', form=form, user=user)
 
         if user_id == current_user.id:
@@ -15295,6 +22188,7 @@ def edit_user(user_id):
 
         if form.password.data:
             user.set_password(form.password.data)
+            user.must_change_password = True
 
         photo_file = form.photo.data
         if photo_file and getattr(photo_file, 'filename', None):
@@ -15418,10 +22312,22 @@ def admin_users():
     classes = db.session.execute(db.select(Class).order_by(Class.name)).scalars().all()
 
     if form.validate_on_submit():
+        submitted_email = (form.email.data or '').strip()
+        existing_email_user = User.query.filter(
+            func.lower(User.email) == submitted_email.lower()
+        ).first()
+        if existing_email_user:
+            flash(
+                f"A user with the email '{submitted_email}' already exists "
+                f"({existing_email_user.full_name}). Please use a different email address.",
+                "danger",
+            )
+            return render_template('admin_users.html', form=form, users=users, classes=classes)
+
         try:
             # Create user entity schema array
             user = User(
-                email=form.email.data,
+                email=submitted_email,
                 full_name=form.full_name.data,
                 role=form.role.data,
                 home_address=form.home_address.data,
@@ -15471,6 +22377,14 @@ def admin_users():
             flash(f"User {user.full_name} ({user.role}) created successfully.", "success")
             return redirect(url_for('admin_users'))
 
+        except IntegrityError as e:
+            db.session.rollback()
+            if 'users.email' in str(e.orig):
+                flash(f"A user with the email '{submitted_email}' already exists. Please use a different email address.", "danger")
+            elif 'users.username' in str(e.orig):
+                flash("That username is already taken. Please choose a different one.", "danger")
+            else:
+                flash("Could not create user because it conflicts with an existing record.", "danger")
         except Exception as e:
             db.session.rollback()
             flash(f"Database write fault occurred during enrollment processing: {str(e)}", "danger")
@@ -15533,36 +22447,48 @@ with app.app_context():
     try:
         db.create_all()
         ensure_legacy_sqlite_schema()
-        repair_submission_legacy_links()
-        relocated_media = normalize_misplaced_school_media()
-        if relocated_media:
-            print(f"School media repair: moved {relocated_media} photo/video item(s) out of entrance/info sections.")
-        repaired_links = repair_student_portal_links()
-        if repaired_links:
-            print(f"Student portal repair: linked {repaired_links} student profile(s) to login account(s).")
-        repaired_classes = repair_stale_student_class_assignments()
-        if repaired_classes:
-            print(f"Student class repair: synced {repaired_classes} stale class assignment(s) after rollover.")
-        repaired_qr = repair_student_qr_tokens()
-        if repaired_qr:
-            print(f"Student QR repair: issued secure verification tokens for {repaired_qr} student profile(s).")
-        repaired_parent_qr = repair_parent_report_tokens()
-        if repaired_parent_qr:
-            print(f"Parent report QR repair: issued tokens for {repaired_parent_qr} student profile(s).")
-        synced = backfill_student_payments_to_income_ledger()
-        if synced:
-            print(f"Business ledger sync: posted {synced} historical student fee payment(s) as income.")
-        print("Database structural integrity checked: all tables verified/created successfully.")
+        ensure_grade_releases_table()
+        ensure_transcript_releases_table()
+        ensure_scale_indexes(db)
+        sealed = seal_academic_year_folders(db)
+        if sealed:
+            print(f"Year folders: tagged {sealed} unassigned record(s) into their academic year.")
+        run_repairs = os.environ.get('RUN_BOOT_REPAIRS', '').lower() in ('1', 'true', 'yes')
+        if run_repairs:
+            repair_submission_legacy_links()
+            relocated_media = normalize_misplaced_school_media()
+            if relocated_media:
+                print(f"School media repair: moved {relocated_media} photo/video item(s) out of entrance/info sections.")
+            repaired_links = repair_student_portal_links()
+            if repaired_links:
+                print(f"Student portal repair: linked {repaired_links} student profile(s) to login account(s).")
+            repaired_classes = repair_stale_student_class_assignments()
+            if repaired_classes:
+                print(f"Student class repair: synced {repaired_classes} stale class assignment(s) after rollover.")
+            repaired_qr = repair_student_qr_tokens()
+            if repaired_qr:
+                print(f"Student QR repair: issued secure verification tokens for {repaired_qr} student profile(s).")
+            repaired_parent_qr = repair_parent_report_tokens()
+            if repaired_parent_qr:
+                print(f"Parent report QR repair: issued tokens for {repaired_parent_qr} student profile(s).")
+            synced = backfill_student_payments_to_income_ledger()
+            if synced:
+                print(f"Business ledger sync: posted {synced} historical student fee payment(s) as income.")
+        print("Database ready. Year indexes on. Set RUN_BOOT_REPAIRS=1 only to run a full data-repair pass.")
     except Exception as db_err:
         print(f"Warning: table auto-generation bypass encountered: {db_err}")
 
 if __name__ == '__main__':
+    _start_rembg_session_preload()
     host = os.environ.get('BIND_HOST', '0.0.0.0')
     port = int(os.environ.get('PORT', '3000'))
-    threads = int(os.environ.get('WAITRESS_THREADS', '8'))
+    threads = recommended_waitress_threads()
+    connection_limit = env_int('WAITRESS_CONNECTION_LIMIT', 200, minimum=20, maximum=2000)
+    channel_timeout = env_int('WAITRESS_CHANNEL_TIMEOUT', 480, minimum=30, maximum=600)
+    backlog = env_int('WAITRESS_BACKLOG', 256, minimum=16, maximum=2048)
     
     print("\n" + "=" * 50)
-    print(f"  Server active on port {port}")
+    print(f"  Server active on port {port} ({threads} Waitress threads)")
     print(f"  > Local Access:   http://localhost:{port}")
     print(f"  > Loopback IP:    http://127.0.0.1:{port}")
     print(f"  > Network Bind:   http://0.0.0.0:{port}")
@@ -15570,7 +22496,15 @@ if __name__ == '__main__':
     
     try:
         from waitress import serve
-        serve(app, host=host, port=port, threads=threads)
+        serve(
+            app,
+            host=host,
+            port=port,
+            threads=threads,
+            connection_limit=connection_limit,
+            channel_timeout=channel_timeout,
+            backlog=backlog,
+        )
     except Exception as e:
         print(f"Waitress production engine failed: {e}")
         print("Falling back to local development server...")

@@ -1,4 +1,4 @@
-from app import app, db
+from app import app, db, ensure_transcript_releases_table
 from sqlalchemy import text, exc
 
 # Schema patches for legacy SQLite databases (table names match models.py)
@@ -6,6 +6,7 @@ SCHEMA_UPDATES = (
     {"table": "users", "description": "Add photo column", "sql": "ALTER TABLE users ADD COLUMN photo VARCHAR(255);"},
     {"table": "users", "description": "Add totp_secret column", "sql": "ALTER TABLE users ADD COLUMN totp_secret VARCHAR(32);"},
     {"table": "users", "description": "Add username column", "sql": "ALTER TABLE users ADD COLUMN username VARCHAR(80);"},
+    {"table": "users", "description": "Add must_change_password column", "sql": "ALTER TABLE users ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT 0;"},
 
     {"table": "grades", "description": "Add period column", "sql": "ALTER TABLE grades ADD COLUMN period VARCHAR(50);"},
     {"table": "grades", "description": "Add activity_type column", "sql": "ALTER TABLE grades ADD COLUMN activity_type VARCHAR(50);"},
@@ -29,6 +30,10 @@ SCHEMA_UPDATES = (
     {"table": "students", "description": "Add registration_fees column", "sql": "ALTER TABLE students ADD COLUMN registration_fees NUMERIC(10,2) DEFAULT 0.0;"},
     {"table": "students", "description": "Add is_promoted column", "sql": "ALTER TABLE students ADD COLUMN is_promoted BOOLEAN DEFAULT 0;"},
     {"table": "students", "description": "Add is_registered column", "sql": "ALTER TABLE students ADD COLUMN is_registered BOOLEAN DEFAULT 1;"},
+    {"table": "students", "description": "Add signature_filename column", "sql": "ALTER TABLE students ADD COLUMN signature_filename VARCHAR(200);"},
+    {"table": "students", "description": "Add id_card_ready column", "sql": "ALTER TABLE students ADD COLUMN id_card_ready BOOLEAN NOT NULL DEFAULT 0;"},
+    {"table": "students", "description": "Add id_expiration_date column", "sql": "ALTER TABLE students ADD COLUMN id_expiration_date DATE;"},
+    {"table": "students", "description": "Add guardian_name column", "sql": "ALTER TABLE students ADD COLUMN guardian_name VARCHAR(120);"},
 
     {"table": "business_transactions", "description": "Add academic_year column", "sql": "ALTER TABLE business_transactions ADD COLUMN academic_year VARCHAR(32);"},
     {"table": "business_transactions", "description": "Add is_deleted column", "sql": "ALTER TABLE business_transactions ADD COLUMN is_deleted BOOLEAN DEFAULT 0;"},
@@ -43,6 +48,7 @@ if __name__ == "__main__":
     with app.app_context():
         print("Ensuring all tables exist...")
         db.create_all()
+        ensure_transcript_releases_table()
 
         print("Applying schema updates for existing tables...")
         for update in SCHEMA_UPDATES:

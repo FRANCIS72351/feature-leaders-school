@@ -4,9 +4,13 @@ import io
 import os
 import re
 import uuid
+from urllib.parse import urlparse
 
 import qrcode
-from flask import current_app, has_request_context, request
+from flask import current_app, has_app_context, has_request_context, request
+
+_LOOPBACK_HOSTS = frozenset({'localhost', '127.0.0.1', '::1', '0.0.0.0'})
+_SITE_URL_ENV_KEYS = ('SITE_URL', 'PUBLIC_SITE_URL')
 
 try:
     from PIL import Image
@@ -23,18 +27,118 @@ UUID_PATTERN = re.compile(
 )
 
 
+def _first_forwarded_value(header_name):
+    raw = (request.headers.get(header_name) or '').strip()
+    if not raw:
+        return ''
+    return raw.split(',')[0].strip()
+
+
+def _hostname_of(url_or_host):
+    value = (url_or_host or '').strip()
+    if not value:
+        return ''
+    if '://' not in value:
+        value = f'http://{value}'
+    try:
+        return (urlparse(value).hostname or '').strip().lower()
+    except ValueError:
+        return ''
+
+
+def site_url_is_loopback(url_or_host):
+    """True when the URL/host is localhost, 127.0.0.1, or another loopback address."""
+    host = _hostname_of(url_or_host)
+    return bool(host) and host in _LOOPBACK_HOSTS
+
+
+def _normalize_origin(url):
+    return (url or '').strip().rstrip('/')
+
+
+def _configured_site_urls():
+    seen = []
+    if has_app_context():
+        for key in _SITE_URL_ENV_KEYS:
+            value = _normalize_origin(current_app.config.get(key) or os.environ.get(key) or '')
+            if value and value not in seen:
+                seen.append(value)
+    for key in _SITE_URL_ENV_KEYS:
+        value = _normalize_origin(os.environ.get(key) or '')
+        if value and value not in seen:
+            seen.append(value)
+    return seen
+
+
+def _forwarded_public_base_url():
+    """Public origin from VS Code / GitHub Dev Tunnels (or Nginx) proxy headers."""
+    if not (has_request_context() and request):
+        return ''
+    forwarded_host = _first_forwarded_value('X-Forwarded-Host')
+    if not forwarded_host or site_url_is_loopback(forwarded_host):
+        return ''
+    forwarded_proto = _first_forwarded_value('X-Forwarded-Proto').lower()
+    if forwarded_proto not in ('http', 'https'):
+        forwarded_proto = 'https' if request.is_secure else (request.scheme or 'https')
+    if forwarded_proto not in ('http', 'https'):
+        forwarded_proto = 'https'
+    return f'{forwarded_proto}://{forwarded_host}'
+
+
+def _request_host_base_url():
+    if not (has_request_context() and request):
+        return ''
+    return _normalize_origin(request.host_url)
+
+
+def _request_is_loopback():
+    """True when Flask sees localhost / 127.0.0.1 (typical behind a local Dev Tunnel)."""
+    if not (has_request_context() and request):
+        return False
+    return site_url_is_loopback(request.host) or site_url_is_loopback(request.host_url)
+
+
 def get_site_base_url():
-    """Resolve public base URL for QR links (SITE_URL env or current request host)."""
-    base = ''
-    if current_app:
-        base = (current_app.config.get('SITE_URL') or os.environ.get('SITE_URL') or '').strip()
-    if not base and has_request_context() and request:
-        base = request.host_url.rstrip('/')
-    return (base or '').rstrip('/')
+    """
+    Public origin for printed QR links.
+
+    Prefer SITE_URL / PUBLIC_SITE_URL when they are a real public host. Never bake
+    localhost or 127.0.0.1 into a QR: if this request is loopback but SITE_URL is
+    set, use SITE_URL. Otherwise use a forwarded public host (Dev Tunnels set
+    X-Forwarded-Host + X-Forwarded-Proto).
+    """
+    configured = _configured_site_urls()
+    public_configured = next((url for url in configured if not site_url_is_loopback(url)), '')
+    forwarded = _forwarded_public_base_url()
+    request_base = _request_host_base_url()
+    public_request = request_base if request_base and not site_url_is_loopback(request_base) else ''
+
+    # Phones cannot open localhost. Loopback request + public SITE_URL → SITE_URL.
+    if public_configured and _request_is_loopback():
+        return public_configured
+    if public_configured:
+        return public_configured
+    if forwarded:
+        return forwarded
+    if public_request:
+        return public_request
+    if configured:
+        return configured[0]
+    return request_base
+
+
+def build_student_portal_qr_url(student, base_url=None):
+    """Public URL encoded on the ID card QR — opens student portal sign-in."""
+    if not student or not getattr(student, 'secure_qr_token', None):
+        return None
+    base = (base_url or get_site_base_url()).rstrip('/')
+    if not base:
+        return None
+    return f'{base}/student/id-portal/{student.secure_qr_token}'
 
 
 def build_student_verify_url(student, base_url=None):
-    """Build the public verification URL encoded in the student QR code."""
+    """Staff identity-check URL (not printed on the student ID QR)."""
     if not student or not getattr(student, 'secure_qr_token', None):
         return None
     base = (base_url or get_site_base_url()).rstrip('/')
@@ -44,12 +148,12 @@ def build_student_verify_url(student, base_url=None):
 def generate_student_scanner_code(student, base_url=None):
     """
     Return a base64 data-URI PNG QR image for template embedding.
-    Encodes the secure verification URL for this student.
+    Encodes the student portal access URL for this ID card.
     """
-    verify_url = build_student_verify_url(student, base_url=base_url)
-    if not verify_url:
+    portal_url = build_student_portal_qr_url(student, base_url=base_url)
+    if not portal_url:
         return None
-    return qr_data_uri_for_url(verify_url)
+    return qr_data_uri_for_url(portal_url)
 
 
 def build_parent_report_url(student, academic_year_id=None, base_url=None):

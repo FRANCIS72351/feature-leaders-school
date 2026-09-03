@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Official Tuition Receipt — {{ receipt_no }}</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --flpa-red: #c82828;
+            --ink: #111827;
+            --muted: #4b5563;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 24px 16px 40px;
+            background: #f8f4ea;
+            color: var(--ink);
+            font-family: "Segoe UI", system-ui, sans-serif;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .action-bar {
+            max-width: 8.5in;
+            margin: 0 auto 16px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+        .btn-print, .btn-back {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 18px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .btn-print { background: var(--flpa-red); color: #fff; }
+        .btn-back { background: #fff; color: var(--flpa-red); border: 1px solid var(--flpa-red); }
+        .sheet {
+            width: 8.5in;
+            max-width: 100%;
+            margin: 0 auto;
+            background: #fff;
+            border: 1.5px solid #111;
+            padding: 0.55in 0.55in 0.45in;
+            box-shadow: 0 10px 28px rgba(17, 24, 39, 0.12);
+        }
+        .brand-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            border-bottom: 3px solid var(--flpa-red);
+            padding-bottom: 12px;
+            margin-bottom: 16px;
+        }
+        .brand-logo {
+            width: 72px;
+            height: 72px;
+            object-fit: contain;
+            flex-shrink: 0;
+        }
+        .brand-center { flex: 1; text-align: center; }
+        .brand-center h1 {
+            margin: 0;
+            font-size: 1.15rem;
+            letter-spacing: 0.04em;
+            color: var(--flpa-red);
+        }
+        .brand-center p {
+            margin: 2px 0 0;
+            font-size: 0.78rem;
+            color: var(--muted);
+        }
+        .doc-title {
+            text-align: center;
+            font-size: 0.95rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--flpa-red);
+            margin: 0 0 18px;
+        }
+        .amount-banner {
+            text-align: center;
+            background: #faf6ee;
+            border: 1px solid #eadfc8;
+            border-radius: 10px;
+            padding: 14px 12px;
+            margin-bottom: 18px;
+        }
+        .amount-banner .label {
+            margin-bottom: 4px;
+        }
+        .amount-banner .paid {
+            font-size: 1.85rem;
+            font-weight: 800;
+            color: var(--flpa-red);
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px 22px;
+            border-top: 1px solid #e5e7eb;
+            padding-top: 14px;
+        }
+        .field.span-2 { grid-column: 1 / -1; }
+        .label {
+            display: block;
+            font-size: 0.68rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--flpa-red);
+            margin-bottom: 2px;
+        }
+        .value {
+            font-size: 0.95rem;
+            font-weight: 600;
+            word-break: break-word;
+        }
+        .sheet-foot {
+            margin-top: 28px;
+            padding-top: 10px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--muted);
+        }
+        @media print {
+            body { background: #fff; padding: 0; }
+            .action-bar { display: none !important; }
+            .sheet {
+                box-shadow: none;
+                border: 0;
+                width: auto;
+                padding: 0.35in;
+            }
+        }
+        @media (max-width: 700px) {
+            .sheet { width: 100%; padding: 18px; }
+            .grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    {% set brand = school_print_brand %}
+    {% set session_name = display_year.name if display_year else (payment.academic_year.name if payment.academic_year else '—') %}
+
+    <div class="action-bar">
+        <a class="btn-back" href="{{ url_for('business_dashboard', tab='tuition') }}"><i class="fas fa-arrow-left"></i> Back to Business Office</a>
+        <button type="button" class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Print receipt</button>
+    </div>
+
+    <article class="sheet">
+        <div class="brand-row">
+            <img class="brand-logo" src="{{ school_logo_url }}" alt="School logo" onerror="this.style.visibility='hidden'">
+            <div class="brand-center">
+                <h1>{{ brand.name|upper }}</h1>
+                <p>{{ brand.full_address }}</p>
+                <p>{{ brand.phones }}{% if brand.email_address or brand.email %} · {{ brand.email_address or brand.email }}{% endif %}</p>
+            </div>
+            <img class="brand-logo" src="{{ school_logo_url }}" alt="" onerror="this.style.visibility='hidden'">
+        </div>
+        <p class="doc-title">Official Tuition Receipt</p>
+
+        <div class="amount-banner">
+            <span class="label">Amount paid</span>
+            <div class="paid">${{ "{:,.2f}".format(payment.amount_paid|float) }}</div>
+        </div>
+
+        <div class="grid">
+            <div class="field">
+                <span class="label">Student</span>
+                <span class="value">{{ student.full_name if student else '—' }}</span>
+            </div>
+            <div class="field">
+                <span class="label">Student ID</span>
+                <span class="value">{{ student.student_id if student and student.student_id else '—' }}</span>
+            </div>
+            <div class="field">
+                <span class="label">Class</span>
+                <span class="value">{{ class_label or '—' }}</span>
+            </div>
+            <div class="field">
+                <span class="label">Session</span>
+                <span class="value">{{ session_name }}</span>
+            </div>
+            <div class="field">
+                <span class="label">Amount</span>
+                <span class="value">${{ "{:,.2f}".format(payment.amount_paid|float) }}</span>
+            </div>
+            <div class="field">
+                <span class="label">Term / Installment</span>
+                <span class="value">Term {{ payment.term or '—' }}{% if payment.installment %} · Installment {{ payment.installment }}{% endif %}</span>
+            </div>
+            <div class="field span-2">
+                <span class="label">Description</span>
+                <span class="value">{{ payment.description or 'Tuition Payment' }}</span>
+            </div>
+            <div class="field">
+                <span class="label">Remaining balance</span>
+                <span class="value">${{ "{:,.2f}".format(remaining|float) }}</span>
+            </div>
+            <div class="field">
+                <span class="label">Receipt no.</span>
+                <span class="value">{{ receipt_no }}</span>
+            </div>
+            <div class="field">
+                <span class="label">Collected by</span>
+                <span class="value">{{ collected_by or 'Business Office' }}</span>
+            </div>
+            <div class="field">
+                <span class="label">Date</span>
+                <span class="value">{{ payment.paid_on.strftime('%d %b %Y, %H:%M') if payment.paid_on else '—' }}</span>
+            </div>
+        </div>
+
+        <div class="sheet-foot">
+            <span>Official tuition receipt {{ receipt_no }}</span>
+            <span>This document is a record of payment received.</span>
+        </div>
+    </article>
+    <script>
+        window.addEventListener('load', function () {
+            window.print();
+        });
+    </script>
+</body>
+</html>

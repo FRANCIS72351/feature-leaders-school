@@ -157,19 +157,25 @@ sudo nginx -t && sudo systemctl reload nginx
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `WEB_CONCURRENCY` | `1` with SQLite | Use **1 worker** for SQLite. Increase only with PostgreSQL. |
+| `WEB_CONCURRENCY` | `1` with SQLite | Use **1 worker** for SQLite (max 2). Increase only with PostgreSQL. |
 | `GUNICORN_THREADS` | `8` | Threads per worker — good for I/O-bound Flask routes |
 | `GUNICORN_TIMEOUT` | `120` | PDF/report generation may need this |
 | `GUNICORN_PRELOAD` | `true` | Loads app once before forking workers |
+| `WAITRESS_THREADS` | `16` | Used by `python app.py` on Windows |
+| `DB_POOL_SIZE` | `10` | Postgres/MySQL only (per worker) |
+| `GZIP_MIN_BYTES` | `500` | Flask gzips HTML/JSON when the client accepts gzip |
 | `MAX_UPLOAD_MB` | `16` | Student assignment uploads |
 
-SQLite optimizations (automatic in production):
+SQLite optimizations (automatic):
 
-- WAL journal mode
-- `busy_timeout=5000` for concurrent reads
-- Nginx serves `/static/` directly
+- WAL journal mode, `busy_timeout=8000`, 64 MB page cache, mmap
+- Year-scoped indexes on students, grades, attendance, enrollments, payments
+- Nginx serves `/static/` directly (gzip + 30-day cache)
+- Flask gzip + `Cache-Control` still apply when you run Waitress without Nginx
 
-### Scaling to PostgreSQL (recommended for 100+ concurrent users)
+**Realistic capacity:** SQLite + one Gunicorn/Waitress process can handle dozens to a few hundred *concurrent readers* (dashboards, report cards). Writes still serialize. This is **not** 1000 concurrent writers. For that you need PostgreSQL, more workers, and more RAM.
+
+### Scaling to PostgreSQL (required for ~1000 concurrent users)
 
 ```bash
 sudo apt install postgresql postgresql-contrib
@@ -183,7 +189,11 @@ In `/etc/school-management/env`:
 ```
 DATABASE_URL=postgresql+psycopg2://schooluser:YOUR_PASSWORD@127.0.0.1:5432/school_db
 WEB_CONCURRENCY=4
+GUNICORN_THREADS=8
+DB_POOL_SIZE=10
 ```
+
+Also give the box enough RAM (2–4 GB+), keep Nginx in front, and put photos on disk or a CDN. A Dev Tunnel / `SITE_URL` only fixes QR links — it does not make a slow phone network fast.
 
 ## Environment variables
 

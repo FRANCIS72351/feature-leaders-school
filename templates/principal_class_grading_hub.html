@@ -128,6 +128,7 @@
         .principal-grading-hub { padding: 1rem 0.5rem 2rem; }
     }
 </style>
+{% include 'partials/roster_status_styles.html' %}
 
 <div class="principal-grading-hub principal-terminal">
     <div class="hub-header mb-3">
@@ -237,9 +238,16 @@
         <ol class="workflow-steps">
             <li><span class="step-num">1</span> Teacher grades classroom activities during the period</li>
             <li><span class="step-num">2</span> Student dashboard shows draft standing automatically</li>
-            <li><span class="step-num">3</span> Principal reviews and publishes the final period grade</li>
+            <li><span class="step-num">3</span> Principal reviews and publishes the final period grade to VPA</li>
         </ol>
-        <p class="small text-white mb-0 mt-2" style="opacity:0.88;">Draft grades remain visible on the student dashboard as standing. Publishing moves the same result to the official student grade sheet and principal oversight records.</p>
+        <p class="small text-white mb-0 mt-2" style="opacity:0.88;">Draft grades remain visible on the student dashboard as standing. Publishing submits the period to the VPA. Students cannot view the official report card or grade sheet until approved.</p>
+        {% if grade_release and grade_release.status == 'pending_vpa' %}
+        <p class="small text-warning mb-0 mt-2">This period is pending VPA approval. Students cannot view this period yet. Previously approved periods remain available.</p>
+        {% elif grade_release and grade_release.status == 'returned' %}
+        <p class="small text-danger mb-0 mt-2">Returned by VPA{% if grade_release.review_comment %}: {{ grade_release.review_comment }}{% endif %}</p>
+        {% elif grade_release and grade_release.status == 'approved' %}
+        <p class="small text-success mb-0 mt-2">VPA approved this period. Publishing again will require a new approval.</p>
+        {% endif %}
     </div>
 
     {% if is_semester_exam %}
@@ -285,17 +293,22 @@
                             <td class="text-center fw-bold hub-grade-letter">
                                 {% if total is not none and total != '' %}{{ total | grade_letter }}{% else %}--{% endif %}
                             </td>
-                            <td class="pe-3 small">
+                            <td class="pe-3 small roster-status-cell">
+                                <div class="roster-status-cluster">
                                 {% if existing and existing.submitted %}
-                                <span class="badge bg-success">Published</span>
+                                <span class="badge bg-success roster-status-pill">Published</span>
                                 {% elif existing %}
-                                <span class="badge bg-warning text-dark">Draft</span>
+                                <span class="badge bg-warning text-dark roster-status-pill">Draft</span>
                                 {% else %}
-                                <span class="badge bg-secondary">—</span>
+                                <span class="badge bg-secondary roster-status-pill">—</span>
                                 {% endif %}
+                                <a href="{{ url_for('report_card', student_id=student.id) }}" class="roster-grade-sheet-link" title="Grade sheet" aria-label="Grade sheet">
+                                    <i class="fas fa-file-alt" aria-hidden="true"></i>
+                                </a>
                                 {% if attribution %}
                                 <div class="attribution-badge mt-1" title="Entry attribution">{{ attribution }}</div>
                                 {% endif %}
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -352,19 +365,22 @@
                         <td class="text-center fw-bold">
                             {% if existing and existing.score is not none %}{{ existing.score | grade_letter }}{% else %}--{% endif %}
                         </td>
-                        <td class="pe-3 text-center small">
+                        <td class="pe-3 text-center small roster-status-cell">
+                            <div class="roster-status-cluster justify-content-center">
                             {% if existing and existing.submitted %}
-                            <span class="badge bg-success">Published</span>
-                            <div class="text-muted small mt-1">Official record</div>
+                            <span class="badge bg-success roster-status-pill">Published</span>
                             {% elif existing and existing.score is not none %}
-                            <span class="badge bg-warning text-dark">Draft Standing</span>
-                            <div class="text-muted small mt-1">Visible on student dashboard</div>
+                            <span class="badge bg-warning text-dark roster-status-pill">Draft Standing</span>
                             {% else %}
-                            <span class="badge bg-secondary">Pending</span>
+                            <span class="badge bg-secondary roster-status-pill">Pending</span>
                             {% endif %}
+                            <a href="{{ url_for('report_card', student_id=student.id) }}" class="roster-grade-sheet-link" title="Grade sheet" aria-label="Grade sheet">
+                                <i class="fas fa-file-alt" aria-hidden="true"></i>
+                            </a>
                             {% if attribution %}
                             <div class="attribution-badge mt-1" title="Entry attribution">{{ attribution }}</div>
                             {% endif %}
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
@@ -374,7 +390,7 @@
     </div>
 
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mt-4">
-        <p class="small text-white mb-0" style="opacity:0.78;">The principal view tracks the same period result seen by students. Draft standing stays visible to students; publishing confirms the official period grade.</p>
+        <p class="small text-white mb-0" style="opacity:0.78;">The principal view tracks the same period result. Draft standing stays visible to students; publishing submits the official period to the VPA. Students cannot view the report card or grade sheet until approved.</p>
         {% set draft_count = grade_rows|length - (grade_rows.values()|selectattr('submitted')|list|length) %}
         {% if draft_count > 0 %}
         <form method="POST" action="{{ url_for('principal_publish_period_grades', class_id=klass.id) }}" onsubmit="return confirm('Publish {{ draft_count }} draft grade(s) for {{ selected_subject }} · {{ period_label }}?');">

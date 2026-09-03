@@ -108,6 +108,24 @@
         <a href="{{ url_for('principal_dashboard', **year_param) }}" class="btn btn-sm btn-outline-primary">Principal Hub</a>
     </div>
     {% endif %}
+    <div class="biz-card p-3 mb-3 d-flex flex-wrap align-items-center justify-content-between gap-3">
+        <div class="d-flex align-items-center gap-3">
+            <img src="{{ current_user.photo_url }}" alt="{{ current_user.full_name }}"
+                 class="rounded-circle border" width="64" height="64" style="object-fit:cover;"
+                 onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
+            <div>
+                <div class="fw-bold">{{ current_user.full_name }}</div>
+                <span class="badge bg-primary">{{ current_user.role|title }}</span>
+                <div class="small text-muted mt-1">
+                    <i class="fas fa-envelope me-1"></i>{{ current_user.email }}
+                    {% if current_user.telephone_number %}
+                    <span class="ms-2"><i class="fas fa-phone me-1"></i>{{ current_user.telephone_number }}</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% include 'partials/account_settings_link.html' %}
+    </div>
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
         <div>
             <h1 class="h4 fw-bold mb-1">Business Office</h1>
@@ -124,6 +142,7 @@
                 <input type="hidden" name="tab" value="{{ active_tab }}">
                 {% if selected_class_id %}<input type="hidden" name="class_id" value="{{ selected_class_id }}">{% endif %}
                 {% if selected_student_id %}<input type="hidden" name="student_id" value="{{ selected_student_id }}">{% endif %}
+                {% if search_student %}<input type="hidden" name="search_student" value="{{ search_student }}">{% endif %}
                 <label for="academic_year_id" class="small text-muted mb-0">Year</label>
                 <select name="academic_year_id" id="academic_year_id" class="form-select form-select-sm" style="min-width: 140px;" onchange="this.form.submit()">
                     {% for y in (years or all_years or []) %}
@@ -217,9 +236,19 @@
                     {% if not selected_class_id %}
                     <p class="text-muted small">Select a class to see students.</p>
                     {% else %}
+                    <form method="get" class="mb-3">
+                        <input type="hidden" name="tab" value="tuition">
+                        {% if display_year %}<input type="hidden" name="academic_year_id" value="{{ display_year.id }}">{% endif %}
+                        <input type="hidden" name="class_id" value="{{ selected_class_id }}">
+                        {% if search_class %}<input type="hidden" name="search_class" value="{{ search_class }}">{% endif %}
+                        <div class="input-group input-group-sm">
+                            <input type="text" name="search_student" class="form-control" placeholder="Search student name or ID..." value="{{ search_student or '' }}">
+                            <button class="btn btn-primary" type="submit">Search</button>
+                        </div>
+                    </form>
                     <div class="d-flex flex-column gap-2" style="max-height: 480px; overflow-y: auto;">
                         {% for s in class_roster %}
-                        <a href="{{ url_for('business_dashboard', tab='tuition', class_id=selected_class_id, student_id=s.id, **year_param) }}"
+                        <a href="{{ url_for('business_dashboard', tab='tuition', class_id=selected_class_id, student_id=s.id, search_student=search_student, **year_param) if search_student else url_for('business_dashboard', tab='tuition', class_id=selected_class_id, student_id=s.id, **year_param) }}"
                            class="student-row {% if selected_student_id == s.id %}selected{% endif %}">
                             <div class="d-flex justify-content-between align-items-start gap-2">
                                 <div>
@@ -257,7 +286,7 @@
                             {% endif %}
                         </a>
                         {% else %}
-                        <p class="text-muted small">No students in this class for the active year.</p>
+                        <p class="text-muted small">{% if search_student %}No students match "{{ search_student }}".{% else %}No students in this class for the active year.{% endif %}</p>
                         {% endfor %}
                     </div>
                     {% endif %}
@@ -328,6 +357,24 @@
                             <i class="fas fa-check me-1"></i> Post Tuition Payment
                         </button>
                     </form>
+                    {% if selected_student_payments %}
+                    <div class="mt-4">
+                        <h3 class="h6 fw-bold mb-2">Past payments</h3>
+                        <div class="d-flex flex-column gap-2">
+                            {% for p in selected_student_payments %}
+                            <div class="border rounded-3 p-2 small d-flex justify-content-between align-items-start gap-2">
+                                <div>
+                                    <div class="fw-semibold text-success">${{ "{:,.2f}".format(p.amount_paid|float) }}</div>
+                                    <div class="text-muted">{{ p.paid_on.strftime('%b %d, %Y') if p.paid_on else '—' }}</div>
+                                    <div>{{ p.description or 'Tuition Payment' }}</div>
+                                </div>
+                                <a class="btn btn-sm btn-outline-danger flex-shrink-0" target="_blank"
+                                   href="{{ url_for('print_business_payment_receipt', payment_id=p.id) }}">Print receipt</a>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
                     {% endif %}
                 </div>
             </div>

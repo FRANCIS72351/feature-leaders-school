@@ -184,9 +184,13 @@
             <div class="alumni-section alumni-actions">
                 <h3><i class="fas fa-folder-open text-cyan me-2"></i>Your Records</h3>
                 <div class="d-flex flex-wrap gap-2">
-                    <a class="btn btn-alumni-primary" href="{{ url_for('transcript', student_id=student.id) }}">
+                    {% if transcript_released %}
+                    <a class="btn btn-alumni-primary" href="{{ url_for('transcript', student_id=student.id) }}{% if display_year %}?academic_year_id={{ display_year.id }}{% endif %}">
                         <i class="fas fa-scroll me-2"></i>Official Transcript
                     </a>
+                    {% else %}
+                    <span class="small text-muted align-self-center">Official Transcript is not released yet.</span>
+                    {% endif %}
                     {% if display_year %}
                     <a class="btn btn-outline-info" href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ display_year.id }}">
                         <i class="fas fa-file-invoice me-2"></i>Report Card ({{ display_year.name }})

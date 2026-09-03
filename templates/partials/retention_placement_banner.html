@@ -1,0 +1,12 @@
+{# Big Repeat class / Summer School banner for registrar folder + registration. #}
+{% set _ret = (student.status or '')|upper %}
+{% if _ret in ('REPEAT', 'SUMMER_SCHOOL') %}
+{% set _is_repeat = _ret == 'REPEAT' %}
+<div class="retention-placement-banner {{ 'is-repeat' if _is_repeat else 'is-summer' }}" role="status">
+    <div class="retention-title">{% if _is_repeat %}Repeat class{% else %}Summer School{% endif %}</div>
+    <div class="retention-detail">They stay in the same grade, not promoted.</div>
+    {% if student.klass %}
+    <div class="retention-class">Class: {{ student.klass.name }}{% if student.klass.stream %} ({{ student.klass.stream }}){% endif %}</div>
+    {% endif %}
+</div>
+{% endif %}

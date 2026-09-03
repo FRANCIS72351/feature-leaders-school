@@ -14,7 +14,13 @@ if [[ ! -d .venv ]]; then
 fi
 
 PYTHON="${APP_DIR}/.venv/bin/python"
-FRESH_DATABASE="${FRESH_DATABASE:-1}"
+FRESH_DATABASE="${FRESH_DATABASE:-0}"
+
+if [[ "${FLASK_ENV:-}" == "production" ]]; then
+  echo "ERROR: This initialization script is blocked in production."
+  echo "Use init_db.py for a non-destructive schema update."
+  exit 1
+fi
 
 mkdir -p "${APP_DIR}/instance"
 
