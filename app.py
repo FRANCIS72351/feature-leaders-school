@@ -5792,6 +5792,17 @@ def load_user(user_id):
 # Routes
 # -------------------------------------------------------------------
 
+@app.route('/health')
+def health():
+    """Liveness/readiness probe for Docker, ALB, and deploy scripts."""
+    try:
+        db.session.execute(db.select(1))
+        return jsonify(status='ok', service='school-management', database='connected'), 200
+    except Exception:
+        logger.exception('Health check database probe failed')
+        return jsonify(status='error', service='school-management', database='unreachable'), 503
+
+
 @app.route('/')
 def index():
     # Show the next three upcoming events on the public homepage
