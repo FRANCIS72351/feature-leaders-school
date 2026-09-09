@@ -32,6 +32,15 @@
     </div>
     <div class="staff-id-toolbar">
         <a href="{{ url_for('id_cards_folder_hub') }}" class="staff-id-btn staff-id-btn-secondary"><i class="fas fa-arrow-left"></i> Student ID Folder</a>
+        {% if buildable_count %}
+        <form method="post" action="{{ url_for('build_staff_ids_from_accounts') }}" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="staff-id-btn staff-id-btn-primary">
+                <i class="fas fa-wand-magic-sparkles"></i>
+                Build {{ buildable_count }} ID photo{{ 's' if buildable_count != 1 else '' }} from account photos
+            </button>
+        </form>
+        {% endif %}
         {% if cards %}
         <a href="{{ download_url }}" class="staff-id-btn staff-id-btn-primary"><i class="fas fa-file-pdf"></i> Download All Staff IDs</a>
         {% endif %}

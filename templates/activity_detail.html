@@ -37,11 +37,6 @@
                     <i class="bi bi-grid-3x3-gap me-1"></i>Period Grades
                 </a>
                 {% endif %}
-                {% if ocr_available %}
-                <a href="{{ url_for('activity_batch_scan', assessment_id=activity.id) }}" class="btn btn-cyber-primary btn-sm fw-semibold">
-                    <i class="bi bi-upc-scan me-1"></i>Batch Scan
-                </a>
-                {% endif %}
                 {% if activity.file_name %}
                 <a href="{{ url_for('teacher_download_activity', assessment_id=activity.id) }}" class="btn btn-outline-light btn-sm">
                     <i class="bi bi-download me-1"></i>Task File
@@ -150,14 +145,9 @@
 
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
             <p class="text-muted small mb-0">
-                Enter scores (0–{{ activity.max_score or 100 }}). Use <strong>Scan</strong> or <strong>Batch Scan</strong> for photos. Review every suggestion before saving.
+                Enter scores (0–{{ activity.max_score or 100 }}). Use <strong>Scan</strong> for photos. Review every suggestion before saving.
             </p>
             <div class="d-flex flex-wrap gap-2">
-                {% if ocr_available %}
-                <a href="{{ url_for('activity_batch_scan', assessment_id=activity.id) }}" class="btn btn-outline-primary btn-sm">
-                    <i class="bi bi-upc-scan me-1"></i>Batch Scan
-                </a>
-                {% endif %}
                 <button type="submit" name="publish_action" value="draft" class="btn btn-outline-secondary btn-sm">
                     <i class="bi bi-save me-1"></i>Save Draft
                 </button>

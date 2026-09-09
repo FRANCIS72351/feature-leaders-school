@@ -13,9 +13,12 @@ Internet → Nginx (port 80/443) → Gunicorn (127.0.0.1:8000) → Flask app →
 ## Requirements
 
 - Ubuntu 22.04+ or Debian 11+
-- 1 GB RAM minimum (2 GB recommended)
+- **2 GB RAM minimum, 4 GB recommended.** ID-card background removal (`rembg`)
+  loads a ~176 MB u2net model into memory; on a 1 GB box the process is killed
+  mid-upload and staff see "Background could not be removed" on every photo.
 - Python 3.10+
-- Domain pointed to your server IP (for HTTPS)
+- Domain pointed to your server IP — required for HTTPS, which in turn is
+  required for the installable app (see below)
 
 ## Database on cloud server (fresh start)
 
@@ -75,14 +78,14 @@ sudo bash deploy/install-linux.sh
 ```bash
 sudo nano /etc/school-management/env
 sudo nano /etc/nginx/sites-available/school-management
-# Replace your-domain.com with your real domain
+# server_name is already set to flpa2015.com — change it only if you use another domain
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
 4. Enable HTTPS:
 
 ```bash
-sudo certbot --nginx -d your-domain.com
+sudo certbot --nginx -d flpa2015.com
 ```
 
 Uncomment the HTTPS `server { }` block in the nginx config if you prefer manual SSL setup.
@@ -151,6 +154,50 @@ sudo cp deploy/nginx/school-management.conf /etc/nginx/sites-available/school-ma
 sudo ln -s /etc/nginx/sites-available/school-management /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
+```
+
+## Installable app (phone & desktop)
+
+Staff can pin the portal to a phone home screen or install it as a desktop app.
+It opens in its own window, without browser tabs or an address bar.
+
+**HTTPS is mandatory.** Browsers refuse to register a service worker or offer
+installation over plain HTTP, so on a bare server IP the portal still works but
+cannot be installed. Finish Certbot first:
+
+```bash
+sudo certbot --nginx -d flpa2015.com -d www.flpa2015.com
+```
+
+Then enable the `443` block in `deploy/nginx/school-management.conf` and set the
+public address so ID-card and report-card QR codes resolve:
+
+```
+SITE_URL=https://flpa2015.com
+```
+
+**What works without a connection.** Only the shell is stored on the device:
+logo, icons, and the offline notice. Pages are always fetched from the server,
+so student records are never left behind on a shared phone. Losing the network
+shows a branded offline screen instead of the browser error page.
+
+**What still needs a connection: saving data.** Every form posts to the server.
+If the network drops while someone is typing, `static/js/flpa-offline.js` shows
+a red banner, holds the first save attempt back instead of blanking the page,
+and keeps what was typed on that device for 12 hours. On the next visit that
+form offers the work back with a Restore button. Drafts are stored per signed-in
+user, cleared at logout, and never include passwords or file uploads. This is a
+safety net, not a sync engine — nothing reaches other users until someone
+reconnects and presses save.
+
+**Updating the app shell.** Bump `CACHE_VERSION` in `static/sw.js` whenever the
+offline page or icons change; devices pick it up on the next visit. `/sw.js` is
+served with `no-cache` by both Flask and Nginx so an old worker can never stick.
+
+**Re-render the icons** after replacing `static/images/LOGO.png`:
+
+```bash
+python scripts/build_pwa_icons.py
 ```
 
 ## Performance settings
@@ -256,3 +303,5 @@ sudo chown -R www-data:www-data /var/www/school-management/static/uploads
 - [ ] Firewall: `sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw enable`
 - [ ] Restrict `/etc/school-management/env` to root (`chmod 600`)
 - [ ] Regular backups of `instance/future_leaders_full.db`
+- [ ] Back up `static/uploads/` too — ID photos, signatures, and scanned
+      documents live on disk, not in the database

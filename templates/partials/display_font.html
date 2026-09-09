@@ -1,0 +1,19 @@
+{# Algerian for the school name on official documents (grade sheets, report cards).
+
+   Algerian is a licensed Monotype face bundled with Windows/Office, so it is not
+   vendored in this repo. local() picks up an installed copy without a download;
+   the url() source is only emitted when someone has dropped a copy at
+   static/fonts/algerian.woff2 (or .ttf), which is what non-Windows machines need.
+   See register_display_font() in app.py for the matching PDF side. #}
+<style>
+    @font-face {
+        font-family: "FLPA Display";
+        src: local("Algerian"), local("Algerian Regular"), local("ALGER")
+             {%- if display_font_url %},
+             url("{{ display_font_url }}") format("{{ 'woff2' if display_font_url.endswith('.woff2') else 'truetype' }}")
+             {%- endif %};
+        font-weight: normal;
+        font-style: normal;
+        font-display: swap;
+    }
+</style>

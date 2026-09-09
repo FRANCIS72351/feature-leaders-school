@@ -6,6 +6,7 @@
     <title>Student Report Card - {{ data.student_name }}</title>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Source+Serif+4:wght@400;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    {% include 'partials/display_font.html' %}
     <style>
         :root {
             --flpa-red: #c82828;
@@ -128,7 +129,7 @@
             padding: 0 8px;
         }
         .official-school-name {
-            font-family: Algerian, 'Times New Roman', Times, serif;
+            font-family: "FLPA Display", Algerian, 'Times New Roman', Times, serif;
             font-size: 22px;
             font-weight: 700;
             color: var(--flpa-red);
@@ -526,7 +527,7 @@
         <div class="parent-report-qr-block" style="margin-top:2rem;padding:1rem 1.25rem;border:1px dashed #fbbf24;border-radius:12px;background:#fffbeb;font-family:system-ui,sans-serif;">
             <p style="margin:0;font-size:0.85rem;color:#92400e;">
                 <i class="fas fa-exclamation-triangle"></i>
-                Parent QR could not be generated. Set <strong>SITE_URL</strong> in your server environment to your public school address (e.g. <code>https://school.example.com</code>) so printed QR codes work on parent phones.
+                Parent QR could not be generated. Set <strong>SITE_URL</strong> in your server environment to the school's public address (<code>https://flpa2015.com</code>) so printed QR codes work on parent phones.
             </p>
         </div>
         {% endif %}

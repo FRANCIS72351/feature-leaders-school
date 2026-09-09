@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+{% block title %}Staff Folders{% endblock %}
+{% block content %}
+<style>
+    .staff-folders-page { max-width:1180px; margin:0 auto; padding:2rem 1rem 3rem; }
+    .staff-folders-head { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:flex-end; gap:1rem; margin-bottom:1.25rem; }
+    .staff-folders-title { color:#002d62; font-weight:800; margin:0; }
+    .staff-folders-sub { color:#64748b; margin:.35rem 0 0; font-size:.92rem; }
+    .staff-stat-strip { display:flex; flex-wrap:wrap; gap:.6rem; }
+    .staff-stat { background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:.6rem 1rem; min-width:110px; }
+    .staff-stat-value { font-size:1.35rem; font-weight:800; color:#002d62; line-height:1; }
+    .staff-stat-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:#64748b; font-weight:700; margin-top:.25rem; }
+    .staff-filter-bar { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:1rem; margin-bottom:1.25rem; }
+    .staff-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:1rem; }
+    .staff-folder-card { display:flex; gap:.9rem; background:#fff; border:1px solid #e2e8f0; border-top:4px solid #002d62; border-radius:12px; padding:1rem; text-decoration:none; color:inherit; box-shadow:0 6px 18px rgba(15,23,42,.06); transition:transform .12s ease, box-shadow .12s ease; }
+    .staff-folder-card:hover { transform:translateY(-2px); box-shadow:0 12px 26px rgba(15,23,42,.12); color:inherit; }
+    .staff-folder-card.inactive { border-top-color:#94a3b8; opacity:.75; }
+    .staff-avatar { width:56px; height:56px; border-radius:50%; object-fit:cover; border:2px solid #dbe7f3; flex:0 0 auto; background:#f1f5f9; }
+    .staff-folder-name { font-weight:800; color:#002d62; margin:0; font-size:.98rem; line-height:1.25; }
+    .staff-folder-role { color:#c82828; font-weight:700; font-size:.76rem; text-transform:uppercase; letter-spacing:.05em; margin:.15rem 0 .35rem; }
+    .staff-folder-meta { color:#64748b; font-size:.8rem; margin:0; }
+    .staff-chip-row { display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.55rem; }
+    .staff-chip { font-size:.7rem; font-weight:700; padding:.18rem .5rem; border-radius:999px; background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; }
+    .staff-chip.docs { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+    .staff-chip.warn { background:#fffbeb; color:#92400e; border-color:#fde68a; }
+    .staff-chip.off { background:#f8fafc; color:#94a3b8; }
+    .staff-empty { background:#fff; border:1px dashed #cbd5e1; border-radius:12px; padding:2.5rem 1rem; text-align:center; color:#64748b; }
+</style>
+
+<div class="staff-folders-page">
+    <div class="staff-folders-head">
+        <div>
+            <h1 class="staff-folders-title"><i class="fas fa-folder-open me-2"></i>Staff Folders</h1>
+            <p class="staff-folders-sub">Open an employee to review their employment record, school duties, payroll history, and filed papers.</p>
+        </div>
+        <div class="staff-stat-strip">
+            <div class="staff-stat">
+                <div class="staff-stat-value">{{ total_count }}</div>
+                <div class="staff-stat-label">Folders</div>
+            </div>
+            <div class="staff-stat">
+                <div class="staff-stat-value">{{ incomplete_count }}</div>
+                <div class="staff-stat-label">Incomplete</div>
+            </div>
+        </div>
+    </div>
+
+    <form method="GET" class="staff-filter-bar">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-5">
+                <label for="q" class="form-label small fw-bold text-muted text-uppercase">Search</label>
+                <input type="search" class="form-control" id="q" name="q" value="{{ search }}" placeholder="Name, email, job title, or department">
+            </div>
+            <div class="col-md-3">
+                <label for="role" class="form-label small fw-bold text-muted text-uppercase">Role</label>
+                <select class="form-select" id="role" name="role">
+                    <option value="">All roles</option>
+                    {% for role in staff_roles %}
+                    <option value="{{ role }}" {% if role_filter == role %}selected{% endif %}>{{ role|title }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="inactive" name="inactive" value="1" {% if include_inactive %}checked{% endif %}>
+                    <label class="form-check-label small" for="inactive">Include inactive</label>
+                </div>
+            </div>
+            <div class="col-md-2 d-grid">
+                <button type="submit" class="btn btn-primary fw-bold"><i class="fas fa-search me-1"></i> Filter</button>
+            </div>
+        </div>
+    </form>
+
+    {% if rows %}
+    <div class="staff-grid">
+        {% for row in rows %}
+        <a class="staff-folder-card {% if not row.user.is_active %}inactive{% endif %}" href="{{ url_for('staff_folder_detail', user_id=row.user.id) }}">
+            <img class="staff-avatar" src="{{ row.user.photo_url }}" alt="" onerror="this.onerror=null;this.style.visibility='hidden';">
+            <div class="flex-grow-1 min-width-0">
+                <p class="staff-folder-name">{{ row.user.full_name }}</p>
+                <p class="staff-folder-role">{{ row.role_label }}</p>
+                <p class="staff-folder-meta">{{ row.user.job_title or 'Job title not set' }}</p>
+                <p class="staff-folder-meta">{{ row.staff_code }}</p>
+                <div class="staff-chip-row">
+                    <span class="staff-chip docs">{{ row.document_count }} document{{ 's' if row.document_count != 1 else '' }}</span>
+                    {% if row.incomplete %}<span class="staff-chip warn">Record incomplete</span>{% endif %}
+                    {% if not row.user.is_active %}<span class="staff-chip off">Inactive</span>{% endif %}
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="staff-empty">
+        <i class="fas fa-folder-open fa-2x mb-3 d-block text-muted"></i>
+        <p class="mb-0">No staff folders match this filter.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

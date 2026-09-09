@@ -122,9 +122,15 @@
                             <a class="btn btn-student-primary" href="{{ url_for('student_grade_sheet') }}?academic_year_id={{ display_year.id if display_year else '' }}">
                                 <i class="fas fa-table me-2"></i>Official Grade Sheet
                             </a>
+                            {% if official_documents and official_documents.report_card_unlocked %}
                             <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}">
                                 <i class="fas fa-file-invoice me-2"></i>Report Card
                             </a>
+                            {% else %}
+                            <span class="btn btn-outline-secondary btn-sm disabled" title="{{ official_documents.report_card_blocker_note if official_documents else '' }}">
+                                <i class="fas fa-lock me-2"></i>Report Card — year end
+                            </span>
+                            {% endif %}
                             <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('transcript', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}" {% if not transcript_released %}title="Official Transcript is not released yet."{% endif %}>
                                 <i class="fas fa-graduation-cap me-2"></i>Transcript
                             </a>

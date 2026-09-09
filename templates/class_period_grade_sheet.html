@@ -5,6 +5,7 @@
 {% set brand = data.school or school_print_brand %}
 {% set release = data.release %}
 {% set status = release.status if release else 'draft' %}
+{% include 'partials/display_font.html' %}
 <style>
     .cpgs-page { background:#e8edf3; padding:32px 16px; font-family:'Source Serif 4','Times New Roman',Times,serif; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     .cpgs-actions { max-width:1200px; margin:0 auto 16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; font-family:system-ui,sans-serif; }
@@ -22,7 +23,7 @@
     .cpgs-logo { width:72px; height:72px; border-radius:50%; border:2px solid #c82828; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; }
     .cpgs-logo img { width:64px; height:64px; object-fit:contain; }
     .cpgs-header-center { flex:1; text-align:center; }
-    .cpgs-school-name { font-family:Algerian,'Times New Roman',serif; font-size:19pt; font-weight:700; color:#002d62; margin:0; letter-spacing:0.02em; }
+    .cpgs-school-name { font-family:"FLPA Display",Algerian,'Times New Roman',serif; font-size:19pt; font-weight:700; color:#002d62; margin:0; letter-spacing:0.02em; }
     .cpgs-header-center p { margin:1px 0; font-size:9.5pt; color:#334155; }
     .cpgs-title-row { display:flex; justify-content:space-between; align-items:baseline; border-top:1.5px solid #111; border-bottom:1.5px solid #111; margin-top:10px; padding:6px 2px; }
     .cpgs-doc-title { font-weight:700; font-size:13pt; letter-spacing:0.03em; color:#c82828; text-transform:uppercase; }

@@ -379,5 +379,75 @@ class IdCardPdfTestCase(unittest.TestCase):
         self.assertIn('width: 100%', well)
 
 
+class StaffSignatureMarkTestCase(unittest.TestCase):
+    """Staff who never upload a handwritten signature are signed from their name."""
+
+    def mark(self, full_name, profile=None):
+        from app import _staff_signature_mark
+
+        return _staff_signature_mark(SimpleNamespace(full_name=full_name, teacher_profile=profile))
+
+    def test_given_name_middle_initial_surname(self):
+        self.assertEqual(self.mark('Othello B. Gbarjuewaye'), 'Othello B. Gbarjuewaye')
+        self.assertEqual(self.mark('Emmanuel Dahn'), 'Emmanuel Dahn')
+        self.assertEqual(self.mark('Mary Jane Watson'), 'Mary J. Watson')
+
+    def test_casing_is_repaired_without_breaking_real_spellings(self):
+        self.assertEqual(self.mark('JOSEPH T. KOLLIE'), 'Joseph T. Kollie')
+        self.assertEqual(self.mark('patrick o brien'), 'Patrick O. Brien')
+        self.assertEqual(self.mark('James McDonald'), 'James McDonald')
+        self.assertEqual(self.mark('Grace Nyanti-Sirleaf'), 'Grace Nyanti-Sirleaf')
+
+    def test_titles_dropped_and_suffixes_kept(self):
+        self.assertEqual(self.mark('Rev. Samuel Weah Jr.'), 'Samuel Weah Jr.')
+        self.assertEqual(self.mark('Dr. Anthony Kollie III'), 'Anthony Kollie III')
+
+    def test_surname_particles_stay_with_the_surname(self):
+        self.assertEqual(self.mark('Grace van Dyke'), 'Grace van Dyke')
+
+    def test_teacher_profile_names_win_over_display_name(self):
+        profile = SimpleNamespace(first_name='Othello', last_name='Gbarjuewaye')
+        self.assertEqual(self.mark('wrong name here', profile), 'Othello Gbarjuewaye')
+
+    def test_single_and_empty_names(self):
+        self.assertEqual(self.mark('Madonna'), 'Madonna')
+        self.assertEqual(self.mark(''), 'Authorized Staff')
+        self.assertEqual(self.mark('   '), 'Authorized Staff')
+
+    def test_signature_fits_the_ruled_line_without_clipping(self):
+        from reportlab.lib.units import mm
+        from reportlab.pdfgen.canvas import Canvas
+
+        from id_card_pdf import _fit_text, _register_signature_font, _signature_text_and_size
+
+        canvas = Canvas(BytesIO())
+        font = _register_signature_font()
+        line_w = 32 * mm
+
+        for mark in ('Emmanuel Dahn', 'Othello B. Gbarjuewaye', 'Othello B. Gbarjuewaye-Nyanti'):
+            text, size = _signature_text_and_size(canvas, mark, font, line_w)
+            self.assertLessEqual(size, 13.0)
+            self.assertGreaterEqual(size, 7.5)
+            self.assertLessEqual(canvas.stringWidth(text, font, size), line_w, mark)
+            # Never truncated mid-name, and the surname always survives.
+            self.assertEqual(_fit_text(canvas, text, font, size, line_w), text)
+            self.assertNotIn('…', text)
+            self.assertIn(mark.split()[-1], text)
+
+    def test_short_signature_keeps_the_full_written_name(self):
+        from reportlab.lib.units import mm
+        from reportlab.pdfgen.canvas import Canvas
+
+        from id_card_pdf import _register_signature_font, _signature_text_and_size
+
+        canvas = Canvas(BytesIO())
+        font = _register_signature_font()
+        text, size = _signature_text_and_size(canvas, 'Emmanuel Dahn', font, 32 * mm)
+        # Script faces are wide, so the size drops, but the name is written in full.
+        self.assertEqual(text, 'Emmanuel Dahn')
+        self.assertLessEqual(size, 13.0)
+        self.assertGreater(size, 7.5)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -8,6 +8,8 @@ from app import (
     mark_grade_package_pending_vpa,
     student_official_documents_state,
     STUDENT_GRADE_HOLD_MESSAGE,
+    STUDENT_REPORT_CARD_HOLD_MESSAGE,
+    STUDENT_PERIOD_HOLD_MESSAGE,
     awaiting_vpa_periods_note,
     build_report_card_structured_data,
     evaluate_class_rank,
@@ -169,13 +171,13 @@ class GradeReleaseAccessTestCase(unittest.TestCase):
             f'/report-card/{self.student_id}?academic_year_id={self.year_id}'
         )
         self.assertEqual(report.status_code, 200)
-        self.assertIn(STUDENT_GRADE_HOLD_MESSAGE.encode(), report.data)
+        self.assertIn(STUDENT_REPORT_CARD_HOLD_MESSAGE.encode(), report.data)
 
         download = self.client.get(
             f'/download-report-card/{self.student_id}?academic_year_id={self.year_id}'
         )
         self.assertEqual(download.status_code, 200)
-        self.assertIn(STUDENT_GRADE_HOLD_MESSAGE.encode(), download.data)
+        self.assertIn(STUDENT_REPORT_CARD_HOLD_MESSAGE.encode(), download.data)
 
     def test_unpublished_is_not_student_visible(self):
         with self.app.app_context():
@@ -200,7 +202,8 @@ class GradeReleaseAccessTestCase(unittest.TestCase):
         self.assertNotIn(STUDENT_GRADE_HOLD_MESSAGE.encode(), sheet.data)
         self.assertIn(b'No published grades', sheet.data)
 
-    def test_approved_unlocks_student_documents(self):
+    def test_approved_period_unlocks_only_that_period_sheet(self):
+        """Approving one period releases its grade sheet, never the report card."""
         with self.app.app_context():
             release = db.session.get(GradeRelease, self.release_id)
             release.status = GradeRelease.STATUS_APPROVED
@@ -217,8 +220,58 @@ class GradeReleaseAccessTestCase(unittest.TestCase):
             f'/report-card/{self.student_id}?academic_year_id={self.year_id}'
         )
         self.assertEqual(report.status_code, 200)
-        self.assertNotIn(STUDENT_GRADE_HOLD_MESSAGE.encode(), report.data)
-        self.assertIn(b'1st / 1', report.data)
+        self.assertIn(STUDENT_REPORT_CARD_HOLD_MESSAGE.encode(), report.data)
+
+    def test_report_card_unlocks_when_final_period_is_approved(self):
+        with self.app.app_context():
+            release = db.session.get(GradeRelease, self.release_id)
+            release.status = GradeRelease.STATUS_APPROVED
+            self._add_approved_period(6)
+            db.session.commit()
+            student = db.session.get(Student, self.student_id)
+            state = student_official_documents_state(student, self.year_id)
+            self.assertTrue(state['report_card_unlocked'])
+
+        self._login(self.student_user_id)
+        report = self.client.get(
+            f'/report-card/{self.student_id}?academic_year_id={self.year_id}'
+        )
+        self.assertEqual(report.status_code, 200)
+        self.assertNotIn(STUDENT_REPORT_CARD_HOLD_MESSAGE.encode(), report.data)
+
+    def test_gap_in_earlier_period_keeps_report_card_sealed(self):
+        """Final period approved is not enough while an earlier period is pending."""
+        with self.app.app_context():
+            release = db.session.get(GradeRelease, self.release_id)
+            release.status = GradeRelease.STATUS_PENDING_VPA
+            self._add_approved_period(6)
+            db.session.commit()
+            student = db.session.get(Student, self.student_id)
+            state = student_official_documents_state(student, self.year_id)
+            self.assertFalse(state['report_card_unlocked'])
+            self.assertIn('Period 1', state['report_card_blocker_note'])
+
+    def test_period_sheet_has_no_yearly_average(self):
+        """A single approved period must not print SEM.AVE or YEARLY figures."""
+        with self.app.app_context():
+            release = db.session.get(GradeRelease, self.release_id)
+            release.status = GradeRelease.STATUS_APPROVED
+            db.session.commit()
+            student = db.session.get(Student, self.student_id)
+            data = build_report_card_structured_data(
+                student, self.year_id, approved_only=True, view_period=1,
+            )
+            self.assertEqual(data['scope'], 'period')
+            self.assertIsNone(data['promotion'])
+            maths = next(
+                row for row in data['subjects']
+                if row['name'].lower().startswith('math')
+            )
+            self.assertEqual(str(maths['p1']), '88')
+            self.assertEqual(maths['sem1'], '')
+            self.assertEqual(maths['sem2'], '')
+            self.assertEqual(maths['final_avg'], '')
+            self.assertEqual(maths['yearly'], '')
 
     def test_republish_resets_approval_and_blocks_students(self):
         with self.app.app_context():
@@ -330,6 +383,28 @@ class GradeReleaseAccessTestCase(unittest.TestCase):
             self.created['releases'].append(release.id)
             return release.id
 
+    def _add_approved_period(self, period, score=80):
+        """Submit and approve one more marking period for the same class."""
+        grade = Grade(
+            student_id=self.student_id,
+            academic_year_id=self.year_id,
+            class_id=self.class_id,
+            subject='Mathematics',
+            subject_name='Mathematics',
+            score=score,
+            marking_period=period,
+            period=period,
+            submitted=True,
+        )
+        db.session.add(grade)
+        db.session.flush()
+        self.created['grades'].append(grade.id)
+        release = get_or_create_grade_release(self.year_id, self.class_id, period)
+        release.status = GradeRelease.STATUS_APPROVED
+        db.session.flush()
+        self.created['releases'].append(release.id)
+        return release.id
+
     def test_release_is_unique_per_year_class_period(self):
         with self.app.app_context():
             first = get_or_create_grade_release(self.year_id, self.class_id, 1)
@@ -369,14 +444,11 @@ class GradeReleaseAccessTestCase(unittest.TestCase):
         self.assertIn(awaiting_vpa_periods_note([2]).encode(), sheet.data)
         self.assertNotIn(b'>76<', sheet.data)
 
+        # The report card stays sealed: Period 2 is pending and the year is unfinished.
         report = self.client.get(
             f'/report-card/{self.student_id}?academic_year_id={self.year_id}'
         )
-        self.assertNotIn(STUDENT_GRADE_HOLD_MESSAGE.encode(), report.data)
-        self.assertIn(b'>AVERAGE<', report.data)
-        self.assertIn(b'>CONDUCT<', report.data)
-        self.assertIn(b'RANK IN CLASS:', report.data)
-        self.assertIn(awaiting_vpa_periods_note([2]).encode(), report.data)
+        self.assertIn(STUDENT_REPORT_CARD_HOLD_MESSAGE.encode(), report.data)
 
     def test_single_period_view_gates_only_that_period(self):
         with self.app.app_context():
@@ -402,13 +474,13 @@ class GradeReleaseAccessTestCase(unittest.TestCase):
         pending_view = self.client.get(
             f'/student/grade-sheet?academic_year_id={self.year_id}&period=2'
         )
-        self.assertIn(STUDENT_GRADE_HOLD_MESSAGE.encode(), pending_view.data)
+        self.assertIn(STUDENT_PERIOD_HOLD_MESSAGE.encode(), pending_view.data)
         self.assertNotIn(b'Published Grade Sheet', pending_view.data)
 
         pending_report = self.client.get(
             f'/report-card/{self.student_id}?academic_year_id={self.year_id}&period=2'
         )
-        self.assertIn(STUDENT_GRADE_HOLD_MESSAGE.encode(), pending_report.data)
+        self.assertIn(STUDENT_REPORT_CARD_HOLD_MESSAGE.encode(), pending_report.data)
 
     def test_republish_period_two_does_not_hide_period_one(self):
         with self.app.app_context():

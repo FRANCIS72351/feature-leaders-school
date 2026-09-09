@@ -6,6 +6,7 @@
     <title>Grade Sheet — {{ data.student_name }}</title>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Source+Serif+4:wght@400;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    {% include 'partials/display_font.html' %}
     <style>
         :root {
             --flpa-red: #c82828;
@@ -103,6 +104,53 @@
             background: #fff;
             color: #0f2744;
             border: 1px solid #cbd5e1;
+        }
+        .btn-action.locked {
+            background: #f1f5f9;
+            color: #64748b;
+            border: 1px dashed #cbd5e1;
+            cursor: not-allowed;
+        }
+
+        /* Scope rail: one pill per released period / semester. */
+        .sheet-scope-rail {
+            max-width: 1122px;
+            margin: 0 auto 12px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            font-family: system-ui, sans-serif;
+        }
+        .sheet-scope-label {
+            font-size: 0.78rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #64748b;
+            margin-right: 2px;
+        }
+        .scope-pill {
+            padding: 6px 14px;
+            border-radius: 999px;
+            border: 1px solid #cbd5e1;
+            background: #fff;
+            color: #0f2744;
+            font-size: 0.82rem;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .scope-pill:hover { border-color: #0f2744; }
+        .scope-pill.active {
+            background: #0f2744;
+            border-color: #0f2744;
+            color: #fff;
+        }
+        .scope-pill.locked {
+            background: #f8fafc;
+            border-style: dashed;
+            color: #94a3b8;
+            cursor: not-allowed;
         }
 
         /* Landscape sheet: never shrink; scroll the whole canvas if the screen is narrower. */
@@ -203,7 +251,7 @@
         }
         .official-header-center { text-align: center; padding: 0 6px; }
         .official-school-name {
-            font-family: Algerian, 'Times New Roman', Times, serif;
+            font-family: "FLPA Display", Algerian, 'Times New Roman', Times, serif;
             font-size: 20px;
             font-weight: 700;
             color: var(--flpa-red);
@@ -402,7 +450,7 @@
                 background: #fff !important;
             }
             body { padding: 0 !important; color: #111; }
-            .top-bar, .status-banner, .action-bar { display: none !important; }
+            .top-bar, .status-banner, .action-bar, .sheet-scope-rail { display: none !important; }
             .sheet-scroll { overflow: visible !important; max-width: none !important; }
             .grade-sheet-card {
                 box-shadow: none !important;
@@ -427,6 +475,7 @@
     {% from 'partials/official_score_mark.html' import score_td %}
     {% set brand = data.school or school_print_brand %}
     {% set division_sheet_title = data.division_sheet_title or 'Grade Sheet' %}
+    {% if data.scope_label %}{% set division_sheet_title = data.scope_label ~ ' — ' ~ division_sheet_title %}{% endif %}
     {% set promotion_statement = data.promotion.label if data.promotion and data.promotion.label else 'Pending promotion decision' %}
     {% set rank_label = data.class_rank.label if data.class_rank and data.class_rank.label else '—' %}
     {% set legend_rows = data.legend_rows or [
@@ -468,6 +517,12 @@
         {% for period_num, period_name in data.grading_periods if period_num in approved_periods %}{{ period_name }}{% if not loop.last %}, {% endif %}{% endfor %}.</span>
     </div>
     {% endif %}
+    {% if not report_card_unlocked and report_card_blocker_note %}
+    <div class="status-banner awaiting">
+        <i class="fas fa-lock"></i>
+        <span>{{ report_card_blocker_note }}</span>
+    </div>
+    {% endif %}
     {% else %}
     <div class="status-banner empty">
         <i class="fas fa-hourglass-half"></i>
@@ -475,16 +530,43 @@
     </div>
     {% endif %}
 
+    {% if approved_periods or released_semesters %}
+    <div class="sheet-scope-rail">
+        <span class="sheet-scope-label">Viewing</span>
+        {% for period_num, period_name in grading_periods if period_num in approved_periods %}
+        <a class="scope-pill {% if data.view_period == period_num %}active{% endif %}"
+           href="{{ url_for('student_grade_sheet', academic_year_id=display_year.id if display_year else none, period=period_num) }}">{{ period_name }}</a>
+        {% endfor %}
+        {% for semester_num in released_semesters %}
+        <a class="scope-pill {% if data.semester == semester_num %}active{% endif %}"
+           href="{{ url_for('student_grade_sheet', academic_year_id=display_year.id if display_year else none, semester=semester_num) }}">Semester {{ semester_num }}</a>
+        {% endfor %}
+        {% if report_card_unlocked %}
+        <a class="scope-pill {% if data.scope == 'year' %}active{% endif %}"
+           href="{{ url_for('student_grade_sheet', academic_year_id=display_year.id if display_year else none) }}">Full Year</a>
+        {% endif %}
+        {% for period_num, period_name in grading_periods if period_num in pending_periods %}
+        <span class="scope-pill locked" title="Awaiting VPA approval">{{ period_name }} · pending</span>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     <div class="action-bar">
         <a class="btn-action outline" href="{{ url_for('student_dashboard', tab='activities', academic_year_id=display_year.id if display_year else none) }}">
             <i class="fas fa-list"></i> Activities Record
         </a>
-        <a class="btn-action outline" href="{{ url_for('student_grade_sheet_pdf', academic_year_id=display_year.id if display_year else none) }}">
+        <a class="btn-action outline" href="{{ url_for('student_grade_sheet_pdf', academic_year_id=display_year.id if display_year else none, period=data.view_period, semester=data.semester) }}">
             <i class="fas fa-download"></i> Download PDF
         </a>
+        {% if report_card_unlocked %}
         <a class="btn-action outline" href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}">
             <i class="fas fa-file-invoice"></i> Report Card
         </a>
+        {% else %}
+        <span class="btn-action outline locked" title="{{ report_card_blocker_note }}">
+            <i class="fas fa-lock"></i> Report Card — issued at year end
+        </span>
+        {% endif %}
         <button class="btn-action" type="button" onclick="window.print()">
             <i class="fas fa-print"></i> Print
         </button>

@@ -6,8 +6,18 @@
     <title>{% block title %}{{ title|default('Future Leaders School') }}{% endblock %}</title>
     <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
-    <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/LOGO.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="flpa-user-key" content="{{ current_user.id if current_user.is_authenticated else 'guest' }}">
+
+    <!-- Installable school portal (Add to Home Screen / desktop install) -->
+    <link rel="manifest" href="{{ url_for('web_app_manifest') }}">
+    <meta name="theme-color" content="#c82828">
+    <meta name="application-name" content="FLPA Portal">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="FLPA Portal">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net">
@@ -654,8 +664,266 @@
     </style>
     {% block styles %}{% endblock %}
     {% block head %}{% endblock %}
+
+    <!-- Brand intro: shown once per browser session, skipped for reduced-motion and printing -->
+    <style>
+        #flpa-intro { display: none; }
+
+        .flpa-intro-active #flpa-intro {
+            display: flex;
+            position: fixed;
+            inset: 0;
+            z-index: 99999;
+            align-items: center;
+            justify-content: center;
+            background:
+              radial-gradient(circle at 18% 12%, rgba(200, 40, 40, 0.30), transparent 46%),
+              radial-gradient(circle at 82% 88%, rgba(212, 175, 55, 0.24), transparent 46%),
+              linear-gradient(150deg, #0b1119 0%, #101820 55%, #1b2230 100%);
+            opacity: 1;
+            transition: opacity .7s ease, visibility .7s ease;
+        }
+
+        .flpa-intro-active body { overflow: hidden; }
+
+        .flpa-intro-stage {
+            position: relative;
+            width: min(420px, 82vw);
+            height: 320px;
+            text-align: center;
+        }
+
+        .flpa-intro-step {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 100%;
+            margin: 0;
+            opacity: 0;
+            transform: translate(-50%, -50%);
+        }
+
+        .flpa-intro-step-1 {
+            animation: flpaIntroCycle 1.5s ease-in-out .15s forwards;
+        }
+
+        .flpa-intro-eyebrow {
+            display: block;
+            color: rgba(248, 250, 252, .72);
+            font-size: .74rem;
+            font-weight: 600;
+            letter-spacing: .42em;
+            text-transform: uppercase;
+        }
+
+        .flpa-intro-wordmark {
+            display: block;
+            margin-top: .45rem;
+            color: var(--accent-gold, #d4af37);
+            font-family: var(--font-display, Georgia, serif);
+            font-size: clamp(1.7rem, 6vw, 2.3rem);
+            font-weight: 700;
+            letter-spacing: .16em;
+            text-transform: uppercase;
+        }
+
+        .flpa-intro-step-2 { animation: flpaIntroCycle 1.5s ease-in-out 1.5s forwards; }
+
+        .flpa-intro-crest {
+            width: clamp(124px, 34vw, 156px);
+            height: clamp(124px, 34vw, 156px);
+            border-radius: 50%;
+            background: #fff;
+            padding: 9px;
+            border: 3px solid var(--accent-gold, #d4af37);
+            box-shadow: 0 0 42px rgba(212, 175, 55, .32);
+            object-fit: contain;
+        }
+
+        .flpa-intro-school {
+            margin: 1rem 0 0;
+            color: #f8fafc;
+            font-size: .8rem;
+            font-weight: 700;
+            letter-spacing: .2em;
+            text-transform: uppercase;
+        }
+
+        .flpa-intro-step-3 { animation: flpaIntroFinal 1.1s ease-out 2.9s forwards; }
+
+        .flpa-intro-domain {
+            margin: 0;
+            color: #fff;
+            font-size: clamp(1.25rem, 5vw, 1.6rem);
+            font-weight: 600;
+            letter-spacing: .1em;
+        }
+
+        .flpa-intro-motto {
+            margin: .7rem 0 0;
+            color: rgba(212, 175, 55, .85);
+            font-size: .64rem;
+            letter-spacing: .18em;
+            text-transform: uppercase;
+        }
+
+        .flpa-intro-progress {
+            position: absolute;
+            left: 50%;
+            bottom: 12vh;
+            width: min(220px, 60vw);
+            height: 2px;
+            transform: translateX(-50%);
+            background: rgba(248, 250, 252, .16);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .flpa-intro-progress span {
+            display: block;
+            height: 100%;
+            width: 0;
+            background: linear-gradient(90deg, var(--primary-brand, #c82828), var(--accent-gold, #d4af37));
+            animation: flpaIntroProgress 4.1s linear forwards;
+        }
+
+        .flpa-intro-skip {
+            position: absolute;
+            top: calc(1.1rem + env(safe-area-inset-top, 0px));
+            right: 1.1rem;
+            padding: .34rem .95rem;
+            border: 1px solid rgba(248, 250, 252, .28);
+            border-radius: 999px;
+            background: transparent;
+            color: rgba(248, 250, 252, .8);
+            font-size: .7rem;
+            font-weight: 700;
+            letter-spacing: .12em;
+            text-transform: uppercase;
+            cursor: pointer;
+        }
+
+        .flpa-intro-done {
+            opacity: 0 !important;
+            visibility: hidden !important;
+            pointer-events: none;
+        }
+
+        @keyframes flpaIntroCycle {
+            0%   { opacity: 0; transform: translate(-50%, -42%) scale(.96); }
+            26%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            72%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            100% { opacity: 0; transform: translate(-50%, -58%) scale(1.04); }
+        }
+
+        @keyframes flpaIntroFinal {
+            0%   { opacity: 0; transform: translate(-50%, -42%) scale(.96); }
+            100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+
+        @keyframes flpaIntroProgress {
+            from { width: 0; }
+            to   { width: 100%; }
+        }
+
+        @media print {
+            #flpa-intro, .flpa-intro-active #flpa-intro { display: none !important; }
+        }
+
+        /* Connection guard: offline notice and recovered-work bar */
+        .flpa-net-banner {
+            position: fixed;
+            left: 50%;
+            bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+            z-index: 9998;
+            max-width: min(560px, 92vw);
+            padding: .7rem 1.1rem;
+            border-radius: 999px;
+            font-size: .82rem;
+            font-weight: 600;
+            text-align: center;
+            color: #fff;
+            box-shadow: 0 14px 34px rgba(16, 24, 32, .28);
+            opacity: 0;
+            transform: translate(-50%, 140%);
+            transition: opacity .35s ease, transform .35s ease;
+            pointer-events: none;
+        }
+
+        .flpa-net-banner.is-visible {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+
+        .flpa-net-banner.is-offline { background: linear-gradient(135deg, #8a1717, var(--primary-brand, #c82828)); }
+        .flpa-net-banner.is-online { background: linear-gradient(135deg, #12694a, #16a34a); }
+
+        .flpa-draft-bar {
+            display: flex;
+            align-items: center;
+            gap: .65rem;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+            padding: .7rem .95rem;
+            border: 1px solid rgba(212, 175, 55, .55);
+            border-left: 4px solid var(--accent-gold, #d4af37);
+            border-radius: 10px;
+            background: #fffaf0;
+            color: #4a3a12;
+            font-size: .82rem;
+        }
+
+        .flpa-draft-bar button {
+            border: 0;
+            border-radius: 999px;
+            padding: .34rem .95rem;
+            font-size: .76rem;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .flpa-draft-restore { background: var(--primary-brand, #c82828); color: #fff; }
+        .flpa-draft-discard { background: transparent; color: #6f625a; text-decoration: underline; }
+
+        @media print {
+            .flpa-net-banner, .flpa-draft-bar { display: none !important; }
+        }
+    </style>
+    <script>
+      (function () {
+        /* One intro per browser session; never for reduced-motion or print jobs. */
+        try {
+          if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+          if (sessionStorage.getItem('flpaIntroSeen')) return;
+          sessionStorage.setItem('flpaIntroSeen', '1');
+        } catch (err) {
+          return;
+        }
+        document.documentElement.classList.add('flpa-intro-active');
+      })();
+    </script>
   </head>
   <body class="{% if request.endpoint and 'dashboard' in request.endpoint %}dashboard-theme{% endif %}">
+
+    <!-- Sequential brand intro: developer mark, school crest, portal address -->
+    <div id="flpa-intro" role="status" aria-live="polite" aria-label="Future Leaders Preparatory Academy portal is opening">
+      <button type="button" class="flpa-intro-skip" id="flpaIntroSkip">Skip</button>
+      <div class="flpa-intro-stage">
+        <h2 class="flpa-intro-step flpa-intro-step-1">
+          <span class="flpa-intro-eyebrow">Innovative</span>
+          <span class="flpa-intro-wordmark">FrancisTech</span>
+        </h2>
+        <div class="flpa-intro-step flpa-intro-step-2">
+          <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="" class="flpa-intro-crest" onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
+          <p class="flpa-intro-school">Future Leaders Preparatory Academy</p>
+        </div>
+        <div class="flpa-intro-step flpa-intro-step-3">
+          <p class="flpa-intro-domain">flpa2015.com</p>
+          <p class="flpa-intro-motto">Honor &middot; Excellence &middot; Academic Discipline &middot; Success</p>
+        </div>
+      </div>
+      <div class="flpa-intro-progress"><span></span></div>
+    </div>
 
     <!-- Primary Custom Navigation Header -->
     <nav class="navbar navbar-expand-lg fixed-top navbar-custom">
@@ -750,6 +1018,11 @@
               {% endif %}
               {% if can_issue_id_cards %}
                 <li class="nav-item"><a class="nav-link" href="{{ url_for('id_cards_folder_hub') }}"><i class="fas fa-id-card fa-sm me-1"></i> ID Cards</a></li>
+              {% elif can_issue_staff_id_cards %}
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('staff_id_cards_folder') }}"><i class="fas fa-id-badge fa-sm me-1"></i> Staff ID Cards</a></li>
+              {% endif %}
+              {% if can_open_staff_folders %}
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('staff_folders') }}"><i class="fas fa-folder-open fa-sm me-1"></i> Staff Folders</a></li>
               {% endif %}
               
               <li class="nav-item"><a class="nav-link" href="{{ url_for('events_list') }}"><i class="fas fa-calendar-alt fa-sm me-1"></i> Events</a></li>
@@ -809,6 +1082,9 @@
       {% include '_site_footer.html' %}
     {% endblock %}
 
+    <!-- Keeps typed work safe when classroom Wi-Fi drops -->
+    <script src="{{ url_for('static', filename='js/flpa-offline.js') }}" defer></script>
+
     <!-- Bootstrap 5 JavaScript Bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://unpkg.com/aos@2.3.4/dist/aos.js"></script>
@@ -831,6 +1107,34 @@
           return originalFetch.call(this, input, init);
         };
       })();
+      (function () {
+        var intro = document.getElementById('flpa-intro');
+        if (!intro || !document.documentElement.classList.contains('flpa-intro-active')) return;
+        var closed = false;
+        function closeIntro() {
+          if (closed) return;
+          closed = true;
+          intro.classList.add('flpa-intro-done');
+          document.documentElement.classList.remove('flpa-intro-active');
+          setTimeout(function () { intro.remove(); }, 800);
+        }
+        var timer = setTimeout(closeIntro, 4100);
+        function skip() { clearTimeout(timer); closeIntro(); }
+        document.getElementById('flpaIntroSkip').addEventListener('click', skip);
+        intro.addEventListener('click', skip);
+        document.addEventListener('keydown', function (event) {
+          if (event.key === 'Escape' || event.key === 'Enter' || event.key === ' ') skip();
+        });
+      })();
+
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function (err) {
+            console.warn('FLPA offline support unavailable:', err);
+          });
+        });
+      }
+
       AOS.init({ duration: 800, once: true });
       setTimeout(function () {
         document.querySelectorAll('#flashStack .alert').forEach(function (el) {

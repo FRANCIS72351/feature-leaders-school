@@ -178,14 +178,14 @@ database setting to deploy an update.
 
 ### 3.5 HTTPS with Application Load Balancer
 
-1. Request an **ACM certificate** for `school.example.com`.
+1. Request an **ACM certificate** for `flpa2015.com`.
 2. Create an **ALB** (internet-facing) with HTTPS listener → target group.
 3. Target group: EC2 instance port **8000**, health check path **`/health`**, success codes **200**.
 4. Point Route 53 A/alias record to the ALB.
 5. Ensure `.env` has:
 
    ```bash
-   SITE_URL=https://school.example.com
+   SITE_URL=https://flpa2015.com
    SESSION_COOKIE_SECURE=true
    PROXY_FIX_HOPS=1
    ```
@@ -256,7 +256,7 @@ To add **S3 + CloudFront** later:
 | Item | Production setting |
 |------|-------------------|
 | `SECRET_KEY` | Unique 64-char hex; store in SSM/Secrets Manager |
-| `SITE_URL` | `https://your-domain.com` |
+| `SITE_URL` | `https://flpa2015.com` |
 | `SESSION_COOKIE_SECURE` | `true` |
 | `PROXY_FIX_HOPS` | `1` behind one ALB/Nginx hop |
 | `FRESH_DATABASE` | `0` — never use `1` on an existing production database |

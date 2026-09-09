@@ -291,6 +291,23 @@ def liberia_seal_static_url():
             return _static_url(name)
     return None
 
+
+# Algerian is a licensed Monotype face bundled with Windows/Office, so it cannot
+# be vendored here. Browsers use a locally installed copy when the machine has
+# one; drop a copy under static/fonts/ to serve it to everyone else.
+DISPLAY_FONT_FILENAMES = (
+    "fonts/algerian.woff2",
+    "fonts/algerian.ttf",
+)
+
+
+def display_font_static_url():
+    """Self-hosted Algerian URL when a copy is present under static/fonts/."""
+    for name in DISPLAY_FONT_FILENAMES:
+        if _static_file_on_disk(name):
+            return _static_url(name)
+    return None
+
 # =====================================================================
 # 1. AUTHENTICATION & CORE USER MODEL
 # =====================================================================
@@ -323,6 +340,19 @@ class User(db.Model, UserMixin):
     id_card_signature_path = db.Column(db.String(200), nullable=True)
     id_expiration_date = db.Column(db.Date, nullable=True)
     staff_id_card_ready = db.Column(db.Boolean, default=False, server_default='0', nullable=False)
+
+    # Employment record shown in the staff folder (VPA / Principal office).
+    job_title = db.Column(db.String(120), nullable=True)
+    department = db.Column(db.String(120), nullable=True)
+    employment_type = db.Column(db.String(40), nullable=True)  # Full-time, Part-time, Contract, Volunteer
+    hire_date = db.Column(db.Date, nullable=True)
+    date_of_birth = db.Column(db.Date, nullable=True)
+    gender = db.Column(db.String(20), nullable=True)
+    national_id_number = db.Column(db.String(60), nullable=True)
+    highest_qualification = db.Column(db.String(160), nullable=True)
+    emergency_contact_name = db.Column(db.String(120), nullable=True)
+    emergency_contact_phone = db.Column(db.String(40), nullable=True)
+    staff_notes = db.Column(db.Text, nullable=True)
 
     def is_account_active(self):
         """Return True when the account may authenticate."""
@@ -900,6 +930,66 @@ class StudentRegistryDocument(db.Model):
 
     def __repr__(self):
         return f"<StudentRegistryDocument {self.id} student={self.student_id}>"
+
+
+class StaffDocument(db.Model):
+    """Papers filed in an employee's staff folder (VPA / Principal office)."""
+    __tablename__ = "staff_documents"
+
+    id = db.Column(db.Integer, primary_key=True)
+    staff_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    uploaded_by_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    title = db.Column(db.String(200), nullable=False)
+    doc_type = db.Column(db.String(40), nullable=False, default="other")
+    original_filename = db.Column(db.String(255), nullable=True)
+    file_path = db.Column(db.String(500), nullable=False)
+    mime_type = db.Column(db.String(120), nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    staff = db.relationship(
+        "User",
+        foreign_keys=[staff_id],
+        backref=db.backref(
+            "staff_documents",
+            lazy="select",
+            cascade="all, delete-orphan",
+            order_by="StaffDocument.created_at.desc()",
+        ),
+    )
+    uploaded_by = db.relationship("User", foreign_keys=[uploaded_by_id])
+
+    DOC_TYPE_LABELS = {
+        "appointment_letter": "Appointment letter",
+        "contract": "Employment contract",
+        "cv": "CV / résumé",
+        "certificate": "Academic certificate",
+        "national_id": "National ID / passport",
+        "police_clearance": "Police clearance",
+        "medical": "Medical record",
+        "reference": "Reference letter",
+        "appraisal": "Performance appraisal",
+        "warning": "Warning / disciplinary letter",
+        "other": "Other document",
+    }
+
+    @property
+    def type_label(self):
+        return self.DOC_TYPE_LABELS.get(self.doc_type, "Document")
+
+    @property
+    def is_image(self):
+        name = (self.original_filename or self.file_path or "").lower()
+        mime = (self.mime_type or "").lower()
+        return mime.startswith("image/") or name.endswith((".jpg", ".jpeg", ".png", ".gif", ".webp"))
+
+    @property
+    def is_pdf(self):
+        name = (self.original_filename or self.file_path or "").lower()
+        mime = (self.mime_type or "").lower()
+        return mime == "application/pdf" or name.endswith(".pdf")
+
+    def __repr__(self):
+        return f"<StaffDocument {self.id} staff={self.staff_id}>"
 
 
 class Suspension(db.Model):

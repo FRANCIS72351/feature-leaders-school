@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#c82828">
+    <title>Offline — Future Leaders Preparatory Academy</title>
+    <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
+    <style>
+      :root {
+        --brand: #c82828;
+        --gold: #d4af37;
+        --ink: #101820;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+        font-family: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        color: #f8fafc;
+        background:
+          radial-gradient(circle at 15% 10%, rgba(200, 40, 40, 0.28), transparent 45%),
+          radial-gradient(circle at 85% 90%, rgba(212, 175, 55, 0.22), transparent 45%),
+          linear-gradient(150deg, #0b1119 0%, var(--ink) 55%, #1b2230 100%);
+      }
+      .offline-card {
+        width: 100%;
+        max-width: 460px;
+        text-align: center;
+        background: rgba(15, 23, 33, 0.72);
+        border: 1px solid rgba(212, 175, 55, 0.32);
+        border-radius: 20px;
+        padding: 2.4rem 1.8rem;
+        box-shadow: 0 26px 60px rgba(0, 0, 0, 0.45);
+      }
+      .offline-crest {
+        width: 104px;
+        height: 104px;
+        border-radius: 50%;
+        background: #fff;
+        padding: 8px;
+        border: 3px solid var(--gold);
+        box-shadow: 0 0 34px rgba(212, 175, 55, 0.28);
+      }
+      h1 {
+        margin: 1.2rem 0 0.35rem;
+        font-size: 1.35rem;
+        letter-spacing: 0.04em;
+      }
+      .school {
+        margin: 0 0 1.1rem;
+        color: var(--gold);
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+      }
+      p.message {
+        margin: 0 0 1.6rem;
+        color: #cbd5e1;
+        font-size: 0.95rem;
+        line-height: 1.6;
+      }
+      .retry {
+        display: inline-block;
+        padding: 0.72rem 1.6rem;
+        border: 0;
+        border-radius: 999px;
+        background: var(--brand);
+        color: #fff;
+        font-size: 0.92rem;
+        font-weight: 700;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .motto {
+        margin: 1.7rem 0 0;
+        color: rgba(203, 213, 225, 0.7);
+        font-size: 0.68rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="offline-card">
+      <img class="offline-crest" src="/static/icons/icon-192.png" alt="Future Leaders Preparatory Academy crest">
+      <h1>You are offline</h1>
+      <p class="school">Future Leaders Preparatory Academy</p>
+      <p class="message">
+        School records stay on the school server, so this page needs a connection.
+        Reconnect to Wi-Fi or mobile data, then try again.
+      </p>
+      <button class="retry" onclick="location.reload()">Try again</button>
+      <p class="motto">Honor &middot; Excellence &middot; Academic Discipline &middot; Success</p>
+    </main>
+  </body>
+</html>

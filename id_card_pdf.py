@@ -65,15 +65,26 @@ def _hex_color(value, default=CARDINAL_DEFAULT):
 
 
 def _register_signature_font():
+    """Best available handwriting/italic face for written signatures.
+
+    Drop a licensed script font at static/fonts/signature.ttf to override the
+    system faces — Linux servers rarely ship a true handwriting font.
+    """
     global _SIG_FONT
     if _SIG_FONT:
         return _SIG_FONT
     windir = os.environ.get('WINDIR') or r'C:\Windows'
+    here = os.path.dirname(os.path.abspath(__file__))
     candidates = (
+        os.path.join(here, 'static', 'fonts', 'signature.ttf'),
         os.path.join(windir, 'Fonts', 'segoesc.ttf'),
         os.path.join(windir, 'Fonts', 'segoepr.ttf'),
         '/usr/share/fonts/truetype/liberation/LiberationSerif-Italic.ttf',
+        '/usr/share/fonts/truetype/liberation2/LiberationSerif-Italic.ttf',
         '/usr/share/fonts/truetype/dejavu/DejaVuSerif-Italic.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf',
+        '/usr/share/fonts/TTF/DejaVuSerif-Italic.ttf',
+        '/Library/Fonts/Times New Roman Italic.ttf',
     )
     for path in candidates:
         if not os.path.isfile(path):
@@ -86,6 +97,43 @@ def _register_signature_font():
             continue
     _SIG_FONT = 'Times-Italic'
     return _SIG_FONT
+
+
+def _fit_signature_size(c, text, font, max_width, base_size=13.0, min_size=7.5):
+    """Shrink a written signature until it fits — a clipped name looks forged."""
+    size = base_size
+    while size > min_size and c.stringWidth(text, font, size) > max_width:
+        size -= 0.25
+    return size
+
+
+def _signature_variants(text):
+    """Ways to sign the same name, longest first: full, initialled, surname only."""
+    yield text
+    parts = text.split()
+    if len(parts) > 2:
+        yield ' '.join([f'{part[0].upper()}.' for part in parts[:-1]] + [parts[-1]])
+    if len(parts) > 1:
+        yield f'{parts[0][0].upper()}. {parts[-1]}'
+        yield parts[-1]
+
+
+def _signature_text_and_size(c, mark, font, max_width, base_size=13.0, min_size=7.5):
+    """Pick the fullest form of a signature that fits the ruled line, and its size.
+
+    A surname is never cut mid-word; long names drop to initials instead.
+    """
+    text = (mark or '').strip()
+    if not text:
+        return '', base_size
+    best = (text, min_size)
+    for index, candidate in enumerate(_signature_variants(text)):
+        size = _fit_signature_size(c, candidate, font, max_width, base_size, min_size)
+        if index == 0:
+            best = (candidate, size)
+        if c.stringWidth(candidate, font, size) <= max_width:
+            return candidate, size
+    return best
 
 
 def _fit_text(c, text, font, size, max_width):
@@ -316,9 +364,226 @@ def resolve_id_card_parent_name(student, card=None):
     return None
 
 
-def _draw_front(c, x, y, card, assets):
+# Staff front geometry, in mm from the top of the card. Kept here so the CSS in
+# templates/id_cards/print_batch.html and this canvas stay on the same grid.
+STAFF_RAIL_W_MM = 8.6
+STAFF_HEADER_MM = 13.0
+STAFF_RAIL_TOP_MM = 13.6
+STAFF_FOOTER_MM = 7.6
+STAFF_PHOTO_TOP_MM = 19.8
+STAFF_PHOTO_MM = 26.0
+
+
+def _tracked_width(c, text, font, size, spacing):
+    """Width of text drawn with extra letter spacing."""
+    return c.stringWidth(text, font, size) + spacing * max(0, len(text) - 1)
+
+
+def _draw_tracked(c, text, font, size, spacing, x, y):
+    """Draw letterspaced text; canvas has no setCharSpace, text objects do."""
+    obj = c.beginText(x, y)
+    obj.setFont(font, size)
+    obj.setCharSpace(spacing)
+    obj.textOut(text)
+    c.drawText(obj)
+
+
+def _fit_font_size(c, text, font, max_width, base_size, min_size):
+    """Largest size at or below base_size that keeps text on one line."""
+    size = base_size
+    while size > min_size and c.stringWidth(text, font, size) > max_width:
+        size -= 0.25
+    return size
+
+
+def _draw_staff_front(c, x, y, card, assets):
+    """Staff front: navy STAFF rail, gold-ringed portrait, name-led detail block."""
     student = card['student']
-    is_staff = card.get('card_kind') == 'staff'
+    brand = assets['brand']
+    cardinal = assets['cardinal']
+    logo = assets['logo']
+    photo = assets.get('photo')
+    watermark = assets.get('watermark')
+    signature = assets.get('signature')
+    sig_font = assets['sig_font']
+
+    rail_w = STAFF_RAIL_W_MM * mm
+    body_left = x + rail_w + 2.6 * mm
+    body_right = x + CARD_W - 3.4 * mm
+    body_w = body_right - body_left
+
+    c.saveState()
+    _clip_round_card(c, x, y)
+    c.setFillColor(white)
+    c.rect(x, y, CARD_W, CARD_H, stroke=0, fill=1)
+
+    # Header
+    header_y = _from_top(y, 0, STAFF_HEADER_MM)
+    header_h = STAFF_HEADER_MM * mm
+    c.setFillColor(NAVY)
+    c.rect(x, header_y, CARD_W, header_h, stroke=0, fill=1)
+    logo_size = 8.0 * mm
+    _draw_header_logo(c, x + 2.6 * mm, header_y + (header_h - logo_size) / 2.0, logo_size, logo)
+    name_x = x + 2.6 * mm + logo_size + 2.0 * mm
+    name_w = CARD_W - (name_x - x) - 2.4 * mm
+    lines = _wrap_text(c, (brand.get('name') or '').upper(), 'Helvetica-Bold', 6.0, name_w, 2)
+    c.setFillColor(white)
+    c.setFont('Helvetica-Bold', 6.0)
+    text_y = header_y + header_h / 2.0 + (5.0 if len(lines) > 1 else 1.8)
+    for line in lines:
+        c.drawString(name_x, text_y, line)
+        text_y -= 7.0
+    c.setFillColor(GOLD)
+    c.setFont('Helvetica-Bold', 4.6)
+    c.drawString(name_x, text_y + 0.6, '(F.L.P.A)')
+
+    c.setFillColor(GOLD)
+    c.rect(x, _from_top(y, STAFF_HEADER_MM, 0.6), CARD_W, 0.6 * mm, stroke=0, fill=1)
+
+    # Full-height navy rail with the STAFF wordmark reversed out of it.
+    rail_top = STAFF_RAIL_TOP_MM
+    rail_bottom = CARD_H / mm - STAFF_FOOTER_MM - 0.6
+    rail_h = rail_bottom - rail_top
+    c.setFillColor(NAVY)
+    c.rect(x, _from_top(y, rail_bottom), rail_w, rail_h * mm, stroke=0, fill=1)
+    c.setFillColor(GOLD)
+    c.rect(x + rail_w - 0.6 * mm, _from_top(y, rail_bottom), 0.6 * mm, rail_h * mm, stroke=0, fill=1)
+
+    banner_len = _tracked_width(c, 'STAFF', 'Helvetica-Bold', 12.5, 2.2)
+    c.saveState()
+    c.setFillColor(white)
+    c.translate(x + rail_w / 2.0 + 4.4, _from_top(y, (rail_top + rail_bottom) / 2.0) - banner_len / 2.0)
+    c.rotate(90)
+    _draw_tracked(c, 'STAFF', 'Helvetica-Bold', 12.5, 2.2, 0, 0)
+    c.restoreState()
+
+    # Address, muted small caps across the body column only.
+    addr_lines = _wrap_text(
+        c, (brand.get('full_address') or '').upper(), 'Helvetica-Bold', 4.5, body_w, 2
+    )
+    addr_y = _from_top(y, 16.4)
+    c.setFillColor(MUTED)
+    c.setFont('Helvetica-Bold', 4.5)
+    for line in addr_lines:
+        c.drawCentredString(body_left + body_w / 2.0, addr_y, line)
+        addr_y -= 2.1 * mm
+
+    if watermark:
+        _draw_contained_image(
+            c, watermark, body_left, y + 26 * mm, body_w, 24 * mm,
+        )
+
+    # Portrait: thin navy hairline, gold ring, white well, rounded corners.
+    photo_size = STAFF_PHOTO_MM * mm
+    photo_x = body_left + (body_w - photo_size) / 2.0
+    photo_y = _from_top(y, STAFF_PHOTO_TOP_MM, STAFF_PHOTO_MM)
+    for inset, radius, colour in (
+        (0.95 * mm, 2.6 * mm, NAVY),
+        (0.55 * mm, 2.3 * mm, GOLD),
+        (0.15 * mm, 2.0 * mm, white),
+    ):
+        c.setFillColor(colour)
+        c.roundRect(
+            photo_x - inset, photo_y - inset,
+            photo_size + 2 * inset, photo_size + 2 * inset,
+            radius, stroke=0, fill=1,
+        )
+    c.saveState()
+    clip = c.beginPath()
+    clip.roundRect(photo_x, photo_y, photo_size, photo_size, 1.9 * mm)
+    c.clipPath(clip, stroke=0, fill=0)
+    _draw_id_portrait(c, photo, photo_x, photo_y, photo_size, photo_size)
+    c.restoreState()
+
+    # Name leads, position underneath, then a gold rule and the ID chip.
+    full_name = getattr(student, 'full_name', None) or '—'
+    name_size = _fit_font_size(c, full_name, 'Helvetica-Bold', body_w, 9.5, 6.4)
+    c.setFillColor(NAVY)
+    c.setFont('Helvetica-Bold', name_size)
+    c.drawString(body_left, _from_top(y, 50.6), full_name)
+
+    position = (card.get('position') or 'Staff').upper()
+    pos_size = _fit_font_size(c, position, 'Helvetica-Bold', body_w - 6, 5.6, 4.0)
+    c.setFillColor(cardinal)
+    _draw_tracked(c, position, 'Helvetica-Bold', pos_size, 0.5, body_left, _from_top(y, 54.6))
+
+    c.setFillColor(GOLD)
+    c.rect(body_left, _from_top(y, 57.2, 0.35), body_w, 0.35 * mm, stroke=0, fill=1)
+
+    staff_id = str(card.get('staff_id') or '—')
+    chip_font = 6.4
+    chip_w = min(body_w, c.stringWidth(staff_id, 'Helvetica-Bold', chip_font) + 6.5 * mm)
+    chip_h = 4.6 * mm
+    chip_y = _from_top(y, 63.0, 4.6)
+    c.setFillColor(NAVY)
+    c.roundRect(body_left, chip_y, chip_w, chip_h, chip_h / 2.0, stroke=0, fill=1)
+    c.setFillColor(white)
+    c.setFont('Helvetica-Bold', chip_font)
+    c.drawCentredString(body_left + chip_w / 2.0, chip_y + 1.5 * mm, staff_id)
+
+    # Signature over a hairline, right aligned under the detail block.
+    sig_w = min(26 * mm, body_w)
+    sig_right = body_right
+    if signature:
+        _draw_contained_image(c, signature, sig_right - sig_w, _from_top(y, 72.8), sig_w, 5.0 * mm)
+    else:
+        mark = card.get('signature_mark') or full_name or 'Authorized Staff'
+        sig_text, sig_size = _signature_text_and_size(c, mark, sig_font, sig_w, base_size=10.5)
+        c.setFillColor(NAVY)
+        c.setFont(sig_font, sig_size)
+        c.drawRightString(sig_right, _from_top(y, 72.0), sig_text)
+    c.setStrokeColor(HexColor('#9aa3b2'))
+    c.setLineWidth(0.3 * mm)
+    c.line(sig_right - sig_w, _from_top(y, 73.0), sig_right, _from_top(y, 73.0))
+    caption = "HOLDER'S SIGNATURE"
+    c.setFillColor(MUTED)
+    _draw_tracked(
+        c, caption, 'Helvetica-Bold', 4.2, 0.3,
+        sig_right - _tracked_width(c, caption, 'Helvetica-Bold', 4.2, 0.3),
+        _from_top(y, 75.5),
+    )
+
+    # Footer: gold hairline, cardinal band, motto, diagonal stripe flourish.
+    footer_h = STAFF_FOOTER_MM * mm
+    c.setFillColor(GOLD)
+    c.rect(x, y + footer_h, CARD_W, 0.8 * mm, stroke=0, fill=1)
+    c.setFillColor(cardinal)
+    c.rect(x, y, CARD_W, footer_h, stroke=0, fill=1)
+    c.saveState()
+    stripe_clip = c.beginPath()
+    stripe_clip.rect(x + CARD_W - 12 * mm, y, 12 * mm, footer_h)
+    c.clipPath(stripe_clip, stroke=0, fill=0)
+    c.setFillColor(GOLD)
+    for step in range(4):
+        base = x + CARD_W - 11 * mm + step * 3.0 * mm
+        path = c.beginPath()
+        path.moveTo(base, y)
+        path.lineTo(base + 1.1 * mm, y)
+        path.lineTo(base + 1.1 * mm + footer_h * 0.5, y + footer_h)
+        path.lineTo(base + footer_h * 0.5, y + footer_h)
+        path.close()
+        c.drawPath(path, stroke=0, fill=1)
+    c.restoreState()
+    motto = (brand.get('motto') or '').upper()
+    motto_lines = _wrap_text(c, motto, 'Helvetica-Bold', 4.2, CARD_W - 16 * mm, 2)
+    c.setFillColor(white)
+    c.setFont('Helvetica-Bold', 4.2)
+    motto_y = y + footer_h / 2.0 + (2.4 if len(motto_lines) > 1 else -1.2)
+    for line in motto_lines:
+        c.drawCentredString(x + (CARD_W - 10 * mm) / 2.0 + 1 * mm, motto_y, line)
+        motto_y -= 5.2
+
+    c.restoreState()
+    c.setStrokeColor(NAVY)
+    c.setLineWidth(0.3 * mm)
+    c.roundRect(x, y, CARD_W, CARD_H, CARD_RADIUS, stroke=1, fill=0)
+
+
+def _draw_front(c, x, y, card, assets):
+    if card.get('card_kind') == 'staff':
+        _draw_staff_front(c, x, y, card, assets)
+        return
+    student = card['student']
     brand = assets['brand']
     cardinal = assets['cardinal']
     logo = assets['logo']
@@ -398,23 +663,15 @@ def _draw_front(c, x, y, card, assets):
     _draw_id_portrait(c, photo, img_x, img_y, img_w, img_h)
     c.restoreState()
 
-    if is_staff:
-        rows = [
-            ('Staff Name:', getattr(student, 'full_name', None) or '—'),
-            ('Position:', card.get('position') or 'Staff'),
-            ('Staff ID:', card.get('staff_id') or f'FLPA-{getattr(student, "id", "")}' or '—'),
-            ('Phone:', getattr(student, 'telephone_number', None) or brand.get('phones')),
-        ]
-    else:
-        parent_name = resolve_id_card_parent_name(student, card)
-        phone = getattr(student, 'parent_phone', None) or brand.get('phones')
-        rows = [
-            ('Student Name:', getattr(student, 'full_name', None) or '—'),
-            ('Parent / Guardian:', parent_name or '—'),
-            ('Student ID:', getattr(student, 'student_id', None) or '—'),
-            ('Class:', card.get('class_label') or assets.get('class_label') or '—'),
-            ('Phone:', phone or '—'),
-        ]
+    parent_name = resolve_id_card_parent_name(student, card)
+    phone = getattr(student, 'parent_phone', None) or brand.get('phones')
+    rows = [
+        ('Student Name:', getattr(student, 'full_name', None) or '—'),
+        ('Parent / Guardian:', parent_name or '—'),
+        ('Student ID:', getattr(student, 'student_id', None) or '—'),
+        ('Class:', card.get('class_label') or assets.get('class_label') or '—'),
+        ('Phone:', phone or '—'),
+    ]
     if year_label:
         rows.append(('Session:', year_label))
 
@@ -541,8 +798,9 @@ def _draw_back(c, x, y, card, assets):
         _draw_contained_image(c, signature, sig_x, sig_y, sig_w, 7 * mm)
     elif mark:
         c.setFillColor(NAVY)
-        c.setFont(sig_font, 13)
-        c.drawCentredString(x + CARD_W / 2.0, sig_y + 1.5 * mm, _fit_text(c, mark, sig_font, 13, sig_w))
+        sig_text, sig_size = _signature_text_and_size(c, mark, sig_font, sig_w)
+        c.setFont(sig_font, sig_size)
+        c.drawCentredString(x + CARD_W / 2.0, sig_y + 1.5 * mm, _fit_text(c, sig_text, sig_font, sig_size, sig_w))
     c.setStrokeColor(HexColor('#9ca3af'))
     c.setLineWidth(0.35 * mm)
     c.line(sig_x, sig_y, sig_x + sig_w, sig_y)

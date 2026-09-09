@@ -255,6 +255,180 @@
             line-clamp: 2;
         }
 
+        /* ---- Staff front: navy STAFF rail, gold-ringed portrait, ID chip ----
+           Mirrors _draw_staff_front() in id_card_pdf.py; keep the two in step. */
+        .id-card.front.staff-front { display: flex; flex-direction: column; }
+        .staff-front .front-header {
+            background: var(--navy);
+            border-bottom: 0.6mm solid var(--gold);
+        }
+        .staff-front .front-header .header-name { color: #fff; }
+        .staff-front .header-sub {
+            font-size: 4.6pt;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            color: var(--gold);
+            margin-top: 0.3mm;
+        }
+        .staff-rail {
+            position: absolute;
+            left: 0;
+            top: 13.6mm;
+            bottom: 8.2mm;
+            width: 8.6mm;
+            background: var(--navy);
+            border-right: 0.6mm solid var(--gold);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 3;
+        }
+        .staff-rail span {
+            writing-mode: vertical-rl;
+            transform: rotate(180deg);
+            font-size: 12.5pt;
+            font-weight: 800;
+            letter-spacing: 0.18em;
+            line-height: 1;
+            color: #fff;
+            text-indent: 0.18em;
+        }
+        .staff-body {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-height: 0;
+            margin-left: 11.2mm;
+            margin-right: 3.4mm;
+            position: relative;
+            z-index: 2;
+        }
+        .staff-address {
+            padding-top: 1.6mm;
+            text-align: center;
+            font-size: 4.5pt;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            line-height: 1.3;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+        .staff-photo {
+            margin: 1.4mm auto 0;
+            width: 26mm;
+            padding: 0.55mm;
+            border-radius: 2.3mm;
+            background: var(--gold);
+            box-shadow: 0 0 0 0.4mm var(--navy);
+        }
+        .staff-photo img {
+            display: block;
+            width: 100%;
+            height: auto !important;
+            aspect-ratio: 1 / 1;
+            object-fit: contain;
+            object-position: center center;
+            background: #fff;
+            border: 0.15mm solid #fff;
+            border-radius: 1.9mm;
+        }
+        .staff-name {
+            margin-top: 2.4mm;
+            font-size: 9.5pt;
+            font-weight: 800;
+            line-height: 1.05;
+            color: var(--navy);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .staff-position {
+            margin-top: 0.8mm;
+            font-size: 5.6pt;
+            font-weight: 800;
+            letter-spacing: 0.09em;
+            text-transform: uppercase;
+            color: var(--cardinal);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .staff-hr {
+            margin-top: 1.4mm;
+            height: 0.35mm;
+            background: var(--gold);
+        }
+        .staff-chip {
+            display: inline-block;
+            margin-top: 1.6mm;
+            padding: 0.9mm 3.2mm;
+            border-radius: 999px;
+            background: var(--navy);
+            color: #fff;
+            font-size: 6.4pt;
+            font-weight: 800;
+            letter-spacing: 0.03em;
+            align-self: flex-start;
+            max-width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+        .staff-sign {
+            margin-top: auto;
+            padding-bottom: 10.6mm; /* clears the 7.6mm footer and its gold rule */
+            text-align: right;
+        }
+        .staff-sign .mark {
+            font-family: "Great Vibes", cursive;
+            font-size: 8.5pt;
+            line-height: 1.1;
+            color: var(--navy);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .staff-sign img {
+            display: block;
+            margin-left: auto;
+            height: 5mm;
+            width: auto;
+        }
+        .staff-sign .rule {
+            margin: 0.5mm 0 0 auto;
+            width: 26mm;
+            max-width: 100%;
+            height: 0.3mm;
+            background: #9aa3b2;
+        }
+        .staff-sign .cap {
+            margin-top: 0.7mm;
+            font-size: 4.2pt;
+            font-weight: 800;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+        .staff-front .front-footer { height: 7.6mm; overflow: hidden; }
+        .staff-front .front-footer::before { top: -0.8mm; height: 0.8mm; }
+        .staff-front .front-footer::after {
+            content: "";
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 11mm;
+            background: repeating-linear-gradient(
+                72deg,
+                var(--gold) 0 1.1mm,
+                transparent 1.1mm 3mm
+            );
+        }
+        .staff-front .front-motto {
+            padding-right: 9mm;
+            position: relative;
+            z-index: 1;
+        }
+
         .front-footer {
             position: absolute;
             left: 0;
@@ -472,6 +646,7 @@
         <p>
             {{ cards|length }} ID card{{ 's' if cards|length != 1 else '' }}
             {% if klass %} · {{ klass.name }}{% endif %}
+            {% if scope_label %} · {{ scope_label }}{% endif %}
             {% if display_year %} · {{ display_year.name }}{% endif %}
         </p>
         <div>
@@ -481,14 +656,14 @@
                 <button class="btn-refresh-ids" type="submit">Refresh ID photos</button>
             </form>
             {% endif %}
-            <a class="btn-back" href="{{ url_for('id_cards_folder_hub') }}">Back</a>
+            <a class="btn-back" href="{{ back_url or url_for('id_cards_folder_hub') }}">Back</a>
             {% if download_url %}
             <a class="btn-download" href="{{ download_url }}" download="{{ download_filename or 'FLPA_ID_Cards.pdf' }}">
                 Download / Save PDF
             </a>
             {% endif %}
             <button class="no-print-btn" type="button" id="print-batch-btn">
-                Print Batch{% if klass %} ({{ klass.name }}){% endif %}
+                Print {{ 'Card' if cards|length == 1 else 'Batch' }}{% if klass %} ({{ klass.name }}){% endif %}
             </button>
         </div>
     </div>
@@ -507,8 +682,8 @@
     {% if qr_localhost_warning %}
     <div class="qr-host-warn" role="alert">
         Phones cannot open this QR: it encodes <code>localhost</code>.
-        Set <code>SITE_URL</code> to the public tunnel you use in the browser
-        (for example <code>https://wb9jv14t-3000.uks1.devtunnels.ms</code>), restart the app, and reprint.
+        Set <code>SITE_URL</code> to the school's public address
+        (<code>https://flpa2015.com</code>), restart the app, and reprint.
         If this page is already open through that tunnel, the codes below are rewritten to this tab’s address before you print.
     </div>
     {% endif %}
@@ -516,9 +691,44 @@
     <div class="id-grid">
         {% for card in cards %}
         {% set student = card.student %}
+        {% set is_staff = card.card_kind == 'staff' %}
         {% set parent_name = card.parent_name or student.parent_guardian_name or student.guardian_name or (student.parent_user.full_name if student.parent_user else none) %}
-        {% set phone = student.parent_phone or brand.phones %}
+        {% set phone = (student.telephone_number if is_staff else student.parent_phone) or brand.phones %}
         <div class="card-pair">
+            {% if is_staff %}
+            <article class="id-card front staff-front" aria-label="Staff ID front">
+                <header class="front-header">
+                    <img class="header-logo" src="{{ school_logo_url }}" alt="" decoding="async"{% if loop.index > 2 %} loading="lazy"{% endif %}>
+                    <div>
+                        <div class="header-name">{{ brand.name }}</div>
+                        <div class="header-sub">(F.L.P.A)</div>
+                    </div>
+                </header>
+                <div class="staff-rail" aria-hidden="true"><span>STAFF</span></div>
+                <div class="staff-body">
+                    <div class="staff-address">{{ brand.full_address }}</div>
+                    <div class="staff-photo">
+                        <img src="{{ card.photo_url or student.photo_url }}" alt="{{ student.full_name }}" decoding="async"{% if loop.index > 2 %} loading="lazy"{% endif %}>
+                    </div>
+                    <div class="staff-name">{{ student.full_name }}</div>
+                    <div class="staff-position">{{ card.position or 'Staff' }}</div>
+                    <div class="staff-hr" aria-hidden="true"></div>
+                    <div class="staff-chip">{{ card.staff_id or '—' }}</div>
+                    <div class="staff-sign">
+                        {% if card.signature_url %}
+                        <img src="{{ card.signature_url }}" alt="Signature" decoding="async" loading="lazy">
+                        {% else %}
+                        <div class="mark">{{ card.signature_mark or student.full_name }}</div>
+                        {% endif %}
+                        <div class="rule" aria-hidden="true"></div>
+                        <div class="cap">Holder's Signature</div>
+                    </div>
+                </div>
+                <div class="front-footer">
+                    <div class="front-motto">{{ brand.motto }}</div>
+                </div>
+            </article>
+            {% else %}
             <article class="id-card front" aria-label="Student ID front">
                 <header class="front-header">
                     <img class="header-logo" src="{{ school_logo_url }}" alt="" decoding="async"{% if loop.index > 2 %} loading="lazy"{% endif %}>
@@ -545,8 +755,9 @@
                     <div class="front-motto">{{ brand.motto }}</div>
                 </div>
             </article>
+            {% endif %}
 
-            <article class="id-card back" aria-label="Student ID back">
+            <article class="id-card back" aria-label="{{ 'Staff' if is_staff else 'Student' }} ID back">
                 <header class="back-header">
                     <img class="header-logo" src="{{ school_logo_url }}" alt="" decoding="async"{% if loop.index > 2 %} loading="lazy"{% endif %}>
                     <div class="header-name">{{ brand.name }}</div>
@@ -564,17 +775,25 @@
                     <p>If found, please return it to the location below.</p>
                     <p class="back-address">{{ brand.full_address }}</p>
                 </div>
+                {% set expires = card.expiration_date or student.id_expiration_date %}
                 <div class="expire">
-                    Expire Date:
-                    {% if student.id_expiration_date %}
-                        {{ student.id_expiration_date.strftime('%m/%d/%Y') }}
+                    {% if expires %}
+                        Expire Date: {{ expires.strftime('%m/%d/%Y') }}
+                    {% elif is_staff %}
+                        Authorized Staff ID
                     {% else %}
-                        —
+                        Expire Date: —
                     {% endif %}
                 </div>
                 <div class="principal-block">
                     <div class="principal-sig">
-                        {% if student.signature_url %}
+                        {% if is_staff %}
+                            {% if card.signature_url %}
+                            <img src="{{ card.signature_url }}" alt="Signature" decoding="async" loading="lazy">
+                            {% else %}
+                            {{ card.signature_mark or 'Authorized Staff' }}
+                            {% endif %}
+                        {% elif student.signature_url %}
                         <img src="{{ student.signature_url }}" alt="Signature" decoding="async" loading="lazy">
                         {% else %}
                         {{ student.official_signature_mark }}

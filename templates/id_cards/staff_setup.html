@@ -14,14 +14,19 @@
     .staff-actions { display:flex; justify-content:space-between; gap:.75rem; flex-wrap:wrap; margin-top:1.5rem; }
     .btn-staff-save { background:#c82828; color:#fff; border:none; border-radius:8px; padding:.65rem 1.1rem; font-weight:700; }
     .btn-staff-back { background:#fff; color:#334155; border:1px solid #cbd5e1; border-radius:8px; padding:.65rem 1.1rem; text-decoration:none; font-weight:700; }
-    .signature-mark { font-family:Georgia, 'Times New Roman', serif; font-size:1.4rem; color:#002d62; }
+    .signature-mark { font-family:'Segoe Script','Brush Script MT',Georgia,'Times New Roman',cursive,serif; font-style:italic; font-size:1.5rem; color:#002d62; padding:0 .4rem; border-bottom:1px solid #cbd5e1; }
+    .staff-optional { color:#94a3b8; font-weight:600; font-size:.78rem; }
+    .btn-camera { display:inline-flex; align-items:center; margin-top:.5rem; padding:.45rem .8rem; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:#002d62; font-weight:700; font-size:.82rem; cursor:pointer; }
+    .staff-upload-note { margin:.6rem 0 0; color:#64748b; font-size:.76rem; }
+    .btn-staff-refresh { background:#fff; border:1px solid #c82828; color:#c82828; border-radius:8px; padding:.55rem 1rem; font-weight:700; font-size:.85rem; }
 </style>
 <div class="staff-setup-page">
     <div class="staff-setup-card">
         <h1 class="staff-setup-title"><i class="fas fa-id-card me-2"></i>Staff ID Card Setup</h1>
         <p class="staff-setup-subtitle">
             Upload the same ID files used for student cards: a portrait photo and an optional handwritten signature.
-            The system will prepare this staff account for print and download once both sides are ready.
+            The background is removed automatically and the photo is cropped head-and-shoulders on a white studio
+            backdrop, exactly like the student ID photos, before it is placed on the card.
         </p>
         <p><strong>Staff:</strong> {{ user.full_name }} · <strong>Position:</strong> {{ user.role|title }} · <strong>Staff ID:</strong> FLPA-{{ '%04d'|format(user.id) }}</p>
         <form method="POST" enctype="multipart/form-data">
@@ -30,16 +35,20 @@
                 <div class="staff-upload-box">
                     <label for="photo">Staff Photo</label>
                     <input type="file" id="photo" name="photo" class="form-control" accept="image/*">
+                    <input type="file" id="photo-camera" name="photo" class="d-none" accept="image/*" capture="user">
+                    <label for="photo-camera" class="btn-camera"><i class="fas fa-camera me-1"></i> Take photo with camera</label>
                     <div class="staff-preview">
                         {% if photo_url %}
-                            <img src="{{ photo_url }}" alt="{{ user.full_name }}">
+                            <img id="photo-preview" src="{{ photo_url }}" alt="{{ user.full_name }}">
                         {% else %}
-                            <span class="text-muted">No staff photo uploaded yet.</span>
+                            <img id="photo-preview" src="" alt="{{ user.full_name }}" hidden>
+                            <span id="photo-empty" class="text-muted">No staff photo uploaded yet.</span>
                         {% endif %}
                     </div>
+                    <p class="staff-upload-note">The backdrop is removed on save. Face the camera with the whole head and shoulders in frame.</p>
                 </div>
                 <div class="staff-upload-box">
-                    <label for="signature">Staff Signature</label>
+                    <label for="signature">Staff Signature <span class="staff-optional">(optional)</span></label>
                     <input type="file" id="signature" name="signature" class="form-control" accept="image/*">
                     <div class="staff-preview">
                         {% if signature_url %}
@@ -48,6 +57,16 @@
                             <span class="signature-mark">{{ signature_mark }}</span>
                         {% endif %}
                     </div>
+                    <p class="staff-upload-note">
+                        {% if signature_url %}
+                            The uploaded handwritten signature prints on the card. Remove it and the system
+                            signs as <strong>{{ signature_mark }}</strong>.
+                        {% else %}
+                            No handwritten signature needed — the card is signed
+                            <strong>{{ signature_mark }}</strong>, written from this staff name.
+                            Upload one only to replace it.
+                        {% endif %}
+                    </p>
                 </div>
             </div>
             <div class="staff-actions">
@@ -55,6 +74,35 @@
                 <button type="submit" class="btn-staff-save"><i class="fas fa-save me-1"></i> Save Staff ID Files</button>
             </div>
         </form>
+        {% if can_use_account_photo and not has_id_photo %}
+        <form method="POST" action="{{ url_for('use_staff_account_photo', user_id=user.id) }}" class="mt-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn-staff-refresh"><i class="fas fa-user-check me-1"></i> Use the account photo for this ID</button>
+        </form>
+        {% endif %}
+        {% if has_id_photo %}
+        <form method="POST" action="{{ url_for('refresh_staff_id_photo', user_id=user.id) }}" class="mt-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn-staff-refresh"><i class="fas fa-wand-magic-sparkles me-1"></i> Re-run background removal on this photo</button>
+        </form>
+        {% endif %}
     </div>
 </div>
+<script>
+    (function () {
+        var preview = document.getElementById('photo-preview');
+        var empty = document.getElementById('photo-empty');
+        function showPicked(input) {
+            var file = input.files && input.files[0];
+            if (!file || !preview) return;
+            preview.src = URL.createObjectURL(file);
+            preview.hidden = false;
+            if (empty) empty.hidden = true;
+        }
+        ['photo', 'photo-camera'].forEach(function (id) {
+            var input = document.getElementById(id);
+            if (input) input.addEventListener('change', function () { showPicked(input); });
+        });
+    })();
+</script>
 {% endblock %}

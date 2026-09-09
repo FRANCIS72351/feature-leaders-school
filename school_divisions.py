@@ -43,7 +43,7 @@ SCHOOL_PRINT_NAME = 'Future Leaders Preparatory Academy'
 SCHOOL_PRINT_ADDRESS_LINE = 'Center Street, South Beach'
 SCHOOL_PRINT_CITY_LINE = 'Monrovia, Liberia'
 SCHOOL_PRINT_FULL_ADDRESS = 'Center Street, South Beach, Monrovia, Liberia'
-SCHOOL_PRINT_PHONES = '0777-287-456 / 0770-203-098 / 0881-164-147'
+SCHOOL_PRINT_PHONES = '0886-612-070 / 0775-313-359 / 0881-164-147'
 SCHOOL_PRINT_PHONE = f'Telephone: {SCHOOL_PRINT_PHONES}'
 SCHOOL_PRINT_EMAIL_ADDRESS = 'flpacardinals@gmail.com'
 SCHOOL_PRINT_EMAIL = f'Email: {SCHOOL_PRINT_EMAIL_ADDRESS}'
@@ -181,11 +181,14 @@ def mean_available_scores(values):
     return round(sum(scores) / len(scores), 1)
 
 
-def official_subject_score_row(name, scores_by_period, division_key=None):
+def official_subject_score_row(name, scores_by_period, division_key=None, *, aggregates=True):
     """One official report-card / grade-sheet subject row from period scores.
 
     Period keys: 1–6 = P1–P6, 7 = semester 1 exam, 8 = semester 2 exam.
     SEM.AVE is the mean of whichever of that semester's period/exam scores exist.
+
+    aggregates=False is the single-period sheet: SEM.AVE and YEARLY stay blank
+    because they cannot be computed honestly from one marking period.
     """
     scores_by_period = scores_by_period or {}
 
@@ -195,12 +198,19 @@ def official_subject_score_row(name, scores_by_period, division_key=None):
     p1, p2, p3 = cell(1), cell(2), cell(3)
     p4, p5, p6 = cell(4), cell(5), cell(6)
     exam1, exam2 = cell(7), cell(8)
-    sem1 = display_report_score(mean_available_scores([p1, p2, p3, exam1]))
-    sem2 = display_report_score(mean_available_scores([p4, p5, p6, exam2]))
-    yearly = display_report_score(
-        mean_available_scores([p1, p2, p3, exam1, p4, p5, p6, exam2])
-    )
-    remark_source = yearly if yearly != '' else (sem2 if sem2 != '' else sem1)
+    if aggregates:
+        sem1 = display_report_score(mean_available_scores([p1, p2, p3, exam1]))
+        sem2 = display_report_score(mean_available_scores([p4, p5, p6, exam2]))
+        yearly = display_report_score(
+            mean_available_scores([p1, p2, p3, exam1, p4, p5, p6, exam2])
+        )
+        remark_source = yearly if yearly != '' else (sem2 if sem2 != '' else sem1)
+    else:
+        sem1 = sem2 = yearly = ''
+        shown = [c for c in (p1, p2, p3, exam1, p4, p5, p6, exam2) if c != '']
+        remark_source = shown[0] if len(shown) == 1 else display_report_score(
+            mean_available_scores(shown)
+        )
     remark = division_score_remark(remark_source, division_key)
     return {
         'name': name,
@@ -302,7 +312,7 @@ def official_average_row(subjects, division_key=None):
     }
 
 
-def official_conduct_row(scores_by_period=None, division_key=None):
+def official_conduct_row(scores_by_period=None, division_key=None, *, aggregates=True):
     """Footer CONDUCT row. Period cells stay blank when no conduct grades exist."""
     scores_by_period = scores_by_period or {}
     has_scores = any(
@@ -312,7 +322,7 @@ def official_conduct_row(scores_by_period=None, division_key=None):
     if not has_scores:
         return _blank_score_row(CONDUCT_ROW_NAME)
     row = official_subject_score_row(
-        CONDUCT_ROW_NAME, scores_by_period, division_key,
+        CONDUCT_ROW_NAME, scores_by_period, division_key, aggregates=aggregates,
     )
     row['is_summary'] = True
     row['blank_empty'] = True
@@ -325,11 +335,13 @@ def report_card_footer_rows(
     academic_subjects,
     conduct_scores_by_period=None,
     division_key=None,
+    *,
+    aggregates=True,
 ):
     """AVERAGE then CONDUCT — always the last two rows of the grades table."""
     return [
         official_average_row(academic_subjects, division_key),
-        official_conduct_row(conduct_scores_by_period, division_key),
+        official_conduct_row(conduct_scores_by_period, division_key, aggregates=aggregates),
     ]
 
 _DIVISION_SUBJECT_ALIASES = {
@@ -1076,9 +1088,11 @@ def next_canonical_grade(*parts):
     return sequence[idx + 1]
 
 
-# Official Transcript letterhead (paper form — do not change report-card phones).
+# Official Transcript letterhead (paper form). The transcript used to carry its
+# own phone list; it now tracks the school line so retired numbers cannot linger
+# on one document after being changed on the others.
 TRANSCRIPT_PRINT_ADDRESS = 'CENTER STREET-SOUTH BEACH, MONROVIA, LIBERIA'
-TRANSCRIPT_PRINT_PHONES = '0777-287-456 / 0775-313-359 / 0770-203-098'
+TRANSCRIPT_PRINT_PHONES = SCHOOL_PRINT_PHONES
 TRANSCRIPT_PRINT_EMAIL = 'flpacardinals@gmail.com'
 
 _GRADE_NUMBER_WORDS = {

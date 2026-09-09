@@ -1,0 +1,291 @@
+{% extends 'base.html' %}
+{% set user = record.user %}
+{% block title %}{{ user.full_name }} — Staff Folder{% endblock %}
+{% block content %}
+<style>
+    .staff-file-page { max-width:1180px; margin:0 auto; padding:1.5rem 1rem 3rem; }
+    .staff-file-back { color:#1e40af; text-decoration:none; font-weight:700; font-size:.86rem; }
+    .staff-file-head { display:flex; flex-wrap:wrap; gap:1.25rem; align-items:center; background:#fff; border:1px solid #e2e8f0; border-top:4px solid #c82828; border-radius:12px; padding:1.25rem; margin:.75rem 0 1.25rem; box-shadow:0 8px 24px rgba(15,23,42,.07); }
+    .staff-file-photo { width:92px; height:92px; border-radius:12px; object-fit:cover; border:2px solid #dbe7f3; background:#f1f5f9; }
+    .staff-file-name { color:#002d62; font-weight:800; margin:0; font-size:1.4rem; }
+    .staff-file-role { color:#c82828; font-weight:700; text-transform:uppercase; letter-spacing:.06em; font-size:.8rem; margin:.15rem 0 .4rem; }
+    .staff-file-line { color:#64748b; font-size:.88rem; margin:0; }
+    .staff-badge { display:inline-block; font-size:.72rem; font-weight:700; padding:.2rem .6rem; border-radius:999px; margin-right:.35rem; }
+    .staff-badge.on { background:#dcfce7; color:#166534; }
+    .staff-badge.off { background:#fee2e2; color:#991b1b; }
+    .staff-badge.neutral { background:#f1f5f9; color:#475569; }
+    .staff-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:1.15rem 1.25rem; margin-bottom:1.15rem; box-shadow:0 6px 18px rgba(15,23,42,.05); }
+    .staff-card-title { color:#002d62; font-weight:800; font-size:1rem; margin:0 0 .15rem; }
+    .staff-card-hint { color:#94a3b8; font-size:.78rem; margin:0 0 .9rem; }
+    .staff-field-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:.85rem 1.1rem; }
+    .staff-field-label { font-size:.7rem; text-transform:uppercase; letter-spacing:.06em; color:#94a3b8; font-weight:700; margin:0 0 .1rem; }
+    .staff-field-value { color:#0f172a; font-weight:600; font-size:.9rem; margin:0; word-break:break-word; }
+    .staff-field-value.empty { color:#cbd5e1; font-weight:500; font-style:italic; }
+    .staff-duty-chip { display:inline-block; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:999px; padding:.22rem .65rem; font-size:.78rem; font-weight:700; margin:0 .35rem .35rem 0; }
+    .staff-doc-list { list-style:none; padding:0; margin:.9rem 0 0; }
+    .staff-doc-item { display:flex; align-items:center; gap:.8rem; padding:.6rem 0; border-top:1px solid #f1f5f9; }
+    .staff-doc-thumb { width:44px; height:44px; border-radius:8px; object-fit:cover; border:1px solid #e2e8f0; background:#f8fafc; flex:0 0 auto; }
+    .staff-doc-icon { width:44px; height:44px; border-radius:8px; display:flex; align-items:center; justify-content:center; background:#fef2f2; color:#c82828; flex:0 0 auto; }
+    .staff-doc-title { font-weight:700; color:#0f172a; font-size:.88rem; margin:0; }
+    .staff-doc-meta { color:#94a3b8; font-size:.75rem; margin:0; }
+    .staff-upload-row { display:flex; flex-wrap:wrap; gap:.6rem; align-items:flex-end; }
+    .btn-file-label { display:inline-flex; align-items:center; gap:.4rem; padding:.5rem .9rem; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:#002d62; font-weight:700; font-size:.82rem; cursor:pointer; margin:0; }
+    .btn-file-label:hover { border-color:#002d62; }
+    .staff-empty-note { color:#94a3b8; font-size:.85rem; font-style:italic; margin:.9rem 0 0; }
+    .staff-payroll-table { width:100%; font-size:.85rem; }
+    .staff-payroll-table th { color:#64748b; font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; }
+</style>
+
+{% macro field(label, value) %}
+<div>
+    <p class="staff-field-label">{{ label }}</p>
+    <p class="staff-field-value {% if not value %}empty{% endif %}">{{ value or 'Not recorded' }}</p>
+</div>
+{% endmacro %}
+
+<div class="staff-file-page">
+    <a class="staff-file-back" href="{{ url_for('staff_folders') }}"><i class="fas fa-arrow-left me-1"></i> All staff folders</a>
+
+    <div class="staff-file-head">
+        <img class="staff-file-photo" src="{{ user.photo_url }}" alt="" onerror="this.onerror=null;this.style.visibility='hidden';">
+        <div class="flex-grow-1">
+            <h1 class="staff-file-name">{{ user.full_name }}</h1>
+            <p class="staff-file-role">{{ record.role_label }}{% if user.job_title %} · {{ user.job_title }}{% endif %}</p>
+            <p class="staff-file-line">{{ record.staff_code }} · {{ user.email }}</p>
+            <div class="mt-2">
+                {% if user.is_active %}
+                <span class="staff-badge on">Active</span>
+                {% else %}
+                <span class="staff-badge off">Inactive</span>
+                {% endif %}
+                {% if user.employment_type %}<span class="staff-badge neutral">{{ user.employment_type }}</span>{% endif %}
+                {% if user.staff_id_card_ready %}<span class="staff-badge neutral">ID card ready</span>{% endif %}
+                <span class="staff-badge neutral">{{ record.document_count }} document{{ 's' if record.document_count != 1 else '' }}</span>
+            </div>
+        </div>
+        <div class="d-flex flex-column gap-2">
+            <a class="btn btn-outline-secondary btn-sm fw-bold" href="{{ url_for('setup_staff_id_card', user_id=user.id) }}">
+                <i class="fas fa-id-badge me-1"></i> ID Card
+            </a>
+        </div>
+    </div>
+
+    <div class="row g-0 gx-lg-3">
+        <div class="col-lg-7">
+            <div class="staff-card">
+                <p class="staff-card-title">Employment Record</p>
+                <p class="staff-card-hint">Held by the academic office. Changes are saved to this employee's account.</p>
+                <form method="POST" action="{{ url_for('update_staff_employment', user_id=user.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted" for="job_title">Job title</label>
+                            <input class="form-control form-control-sm" id="job_title" name="job_title" value="{{ user.job_title or '' }}" maxlength="120">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted" for="department">Department</label>
+                            <input class="form-control form-control-sm" id="department" name="department" value="{{ user.department or '' }}" maxlength="120">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted" for="employment_type">Employment type</label>
+                            <select class="form-select form-select-sm" id="employment_type" name="employment_type">
+                                <option value="">Not set</option>
+                                {% for option in employment_types %}
+                                <option value="{{ option }}" {% if user.employment_type == option %}selected{% endif %}>{{ option }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted" for="hire_date">Date hired</label>
+                            <input type="date" class="form-control form-control-sm" id="hire_date" name="hire_date" value="{{ user.hire_date.isoformat() if user.hire_date else '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted" for="date_of_birth">Date of birth</label>
+                            <input type="date" class="form-control form-control-sm" id="date_of_birth" name="date_of_birth" value="{{ user.date_of_birth.isoformat() if user.date_of_birth else '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted" for="gender">Gender</label>
+                            <select class="form-select form-select-sm" id="gender" name="gender">
+                                <option value="">Not set</option>
+                                {% for option in ['Male', 'Female'] %}
+                                <option value="{{ option }}" {% if user.gender == option %}selected{% endif %}>{{ option }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted" for="national_id_number">National ID / passport</label>
+                            <input class="form-control form-control-sm" id="national_id_number" name="national_id_number" value="{{ user.national_id_number or '' }}" maxlength="60">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted" for="highest_qualification">Highest qualification</label>
+                            <input class="form-control form-control-sm" id="highest_qualification" name="highest_qualification" value="{{ user.highest_qualification or '' }}" maxlength="160" placeholder="e.g. BSc Mathematics">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted" for="telephone_number">Telephone</label>
+                            <input class="form-control form-control-sm" id="telephone_number" name="telephone_number" value="{{ user.telephone_number or '' }}" maxlength="20">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted" for="home_address">Home address</label>
+                            <input class="form-control form-control-sm" id="home_address" name="home_address" value="{{ user.home_address or '' }}" maxlength="255">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted" for="emergency_contact_name">Emergency contact</label>
+                            <input class="form-control form-control-sm" id="emergency_contact_name" name="emergency_contact_name" value="{{ user.emergency_contact_name or '' }}" maxlength="120">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted" for="emergency_contact_phone">Emergency phone</label>
+                            <input class="form-control form-control-sm" id="emergency_contact_phone" name="emergency_contact_phone" value="{{ user.emergency_contact_phone or '' }}" maxlength="40">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small fw-bold text-muted" for="staff_notes">Office notes</label>
+                            <textarea class="form-control form-control-sm" id="staff_notes" name="staff_notes" rows="3" placeholder="Internal notes held by the academic office">{{ user.staff_notes or '' }}</textarea>
+                        </div>
+                    </div>
+                    <div class="text-end mt-3">
+                        <button type="submit" class="btn btn-primary btn-sm fw-bold"><i class="fas fa-save me-1"></i> Save employment record</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="staff-card">
+                <p class="staff-card-title">Document Folder</p>
+                <p class="staff-card-hint">Contracts, certificates, clearances, and appraisals. Photos or PDF, up to 12 MB each.</p>
+                <form method="POST" action="{{ url_for('upload_staff_document', user_id=user.id) }}" enctype="multipart/form-data">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="staff-upload-row">
+                        <div class="flex-grow-1" style="min-width:170px;">
+                            <label class="form-label small fw-bold text-muted" for="doc_type">Document type</label>
+                            <select class="form-select form-select-sm" id="doc_type" name="doc_type">
+                                {% for key, label in doc_type_labels.items() %}
+                                <option value="{{ key }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="flex-grow-1" style="min-width:170px;">
+                            <label class="form-label small fw-bold text-muted" for="title">Title <span class="text-muted fw-normal">(optional)</span></label>
+                            <input class="form-control form-control-sm" id="title" name="title" maxlength="200" placeholder="Defaults to the document type">
+                        </div>
+                        <input type="file" id="staff_scan_file" name="scan_file" class="d-none" accept="image/*" capture="environment" onchange="this.form.submit()">
+                        <label for="staff_scan_file" class="btn-file-label"><i class="fas fa-camera"></i> Scan</label>
+                        <input type="file" id="staff_upload_file" name="upload_file" class="d-none" accept="image/*,application/pdf" onchange="this.form.submit()">
+                        <label for="staff_upload_file" class="btn-file-label"><i class="fas fa-upload"></i> Upload</label>
+                    </div>
+                </form>
+
+                {% if record.documents %}
+                <ul class="staff-doc-list">
+                    {% for document in record.documents %}
+                    <li class="staff-doc-item">
+                        {% if document.is_image %}
+                        <img class="staff-doc-thumb" src="{{ url_for('view_staff_document', user_id=user.id, document_id=document.id) }}" alt="">
+                        {% else %}
+                        <span class="staff-doc-icon"><i class="fas fa-file-pdf"></i></span>
+                        {% endif %}
+                        <div class="flex-grow-1 min-width-0">
+                            <p class="staff-doc-title">{{ document.title }}</p>
+                            <p class="staff-doc-meta">
+                                {{ document.type_label }} · {{ document.created_at.strftime('%d %b %Y') }}
+                                {% if document.uploaded_by %} · filed by {{ document.uploaded_by.full_name }}{% endif %}
+                            </p>
+                        </div>
+                        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('view_staff_document', user_id=user.id, document_id=document.id) }}" target="_blank" rel="noopener">Open</a>
+                        <form method="POST" action="{{ url_for('delete_staff_document', user_id=user.id, document_id=document.id) }}" onsubmit="return confirm('Remove this document from the folder?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-outline-danger btn-sm" title="Remove"><i class="fas fa-trash"></i></button>
+                        </form>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="staff-empty-note">No documents filed yet.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="staff-card">
+                <p class="staff-card-title">Account</p>
+                <div class="staff-field-grid">
+                    {{ field('Email', user.email) }}
+                    {{ field('Username', user.username) }}
+                    {{ field('Portal role', record.role_label) }}
+                    {{ field('Account status', user.status) }}
+                    {{ field('Telephone', user.telephone_number) }}
+                    {{ field('Home address', user.home_address) }}
+                </div>
+                {% if not user.is_active and user.deactivation_reason %}
+                <p class="staff-empty-note">Deactivated: {{ user.deactivation_reason }}</p>
+                {% endif %}
+            </div>
+
+            <div class="staff-card">
+                <p class="staff-card-title">School Duties</p>
+                <p class="staff-card-hint">Assignments held in {{ record.display_year.name if record.display_year else 'the current year' }}.</p>
+                {% if record.teacher %}
+                <div class="staff-field-grid mb-3">
+                    {{ field('Primary subject', record.teacher.subject) }}
+                    {{ field('Teacher status', record.teacher.status) }}
+                </div>
+                {% endif %}
+
+                <p class="staff-field-label">Subjects taught</p>
+                {% if record.subjects %}
+                <div class="mb-3">
+                    {% for subject in record.subjects %}<span class="staff-duty-chip">{{ subject }}</span>{% endfor %}
+                </div>
+                {% else %}
+                <p class="staff-field-value empty mb-3">None allocated</p>
+                {% endif %}
+
+                <p class="staff-field-label">Homeroom</p>
+                {% if record.homerooms %}
+                <div class="mb-3">
+                    {% for klass in record.homerooms %}<span class="staff-duty-chip">{{ klass.name }}</span>{% endfor %}
+                </div>
+                {% else %}
+                <p class="staff-field-value empty mb-3">None assigned</p>
+                {% endif %}
+
+                <p class="staff-field-label">Class sponsorship</p>
+                {% if record.sponsored_classes %}
+                <div>
+                    {% for klass in record.sponsored_classes %}<span class="staff-duty-chip">{{ klass.name }}</span>{% endfor %}
+                </div>
+                {% else %}
+                <p class="staff-field-value empty mb-0">None assigned</p>
+                {% endif %}
+            </div>
+
+            <div class="staff-card">
+                <p class="staff-card-title">Payroll History</p>
+                <p class="staff-card-hint">Read-only. The VPI finance office records and pays salaries.</p>
+                {% if record.payroll_records %}
+                <table class="staff-payroll-table">
+                    <thead>
+                        <tr><th>Month</th><th>Occupation</th><th class="text-end">Amount</th><th class="text-end">Status</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for entry in record.payroll_records %}
+                        <tr>
+                            <td>{{ entry.month }}</td>
+                            <td class="text-muted">{{ entry.occupation }}</td>
+                            <td class="text-end fw-bold">{{ '%.2f'|format(entry.salary_amount) }}</td>
+                            <td class="text-end">
+                                {% if entry.paid %}
+                                <span class="staff-badge on">Paid</span>
+                                {% else %}
+                                <span class="staff-badge off">Unpaid</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="staff-empty-note">No payroll entries recorded.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

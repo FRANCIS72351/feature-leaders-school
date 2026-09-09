@@ -3,7 +3,7 @@ from flask import Flask, render_template, redirect, url_for, flash, request, Res
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
-from models import db, User, Student, Teacher, Class, Announcement, Grade, GradeRelease, TranscriptRelease, AcademicYear, ClassSubjectTeacher, Room, Suspension, Discipline, StudentPayment, StudentRegistryDocument, default_static_photo_url, school_logo_static_url, liberia_seal_static_url, resolve_parent_guardian_name
+from models import db, User, Student, Teacher, Class, Announcement, Grade, GradeRelease, TranscriptRelease, AcademicYear, ClassSubjectTeacher, Room, Suspension, Discipline, StudentPayment, StudentRegistryDocument, StaffDocument, default_static_photo_url, school_logo_static_url, liberia_seal_static_url, display_font_static_url, resolve_parent_guardian_name
 from itsdangerous import URLSafeTimedSerializer
 import pyotp
 from reportlab.pdfgen import canvas
@@ -202,6 +202,19 @@ STUDENT_TRANSCRIPT_HOLD_MESSAGE = 'Official Transcript is not released yet.'
 STUDENT_GRADE_AWAITING_VPA_NOTE = (
     'Official scores are shown for periods already approved by the Vice Principal '
     'for Academics. Later marking periods will appear here after VPA approval.'
+)
+# Official document release ladder. A VPA approval releases exactly ONE marking
+# period; the semester sheet and the year-end report card are stricter gates.
+SEMESTER_PERIOD_MAP = {1: (1, 2, 3, 7), 2: (4, 5, 6, 8)}
+YEAR_TERMINAL_PERIODS = (8, 6)  # Exam (Sem 2); Period 6 for divisions without exams
+STUDENT_REPORT_CARD_HOLD_MESSAGE = (
+    'Your Report Card is issued at the end of the academic year, once the Vice '
+    'Principal for Academics approves the final marking period. Results for the '
+    'periods already approved are available now on your Grade Sheet.'
+)
+STUDENT_PERIOD_HOLD_MESSAGE = (
+    'This marking period is still under review by the Vice Principal for '
+    'Academics. It will appear here once approved.'
 )
 CLASS_STRUCTURE_ROLES = frozenset({'admin', 'principal', 'registrar', 'vpa', 'vpi', 'lead developer'})
 FACILITY_ROLES = frozenset({'admin', 'principal', 'registrar', 'vpi', 'lead developer'})
@@ -3495,6 +3508,12 @@ def _requested_marking_period():
     return None
 
 
+def _requested_semester():
+    """Optional semester view from ?semester=1|2."""
+    semester = request.args.get('semester', type=int)
+    return semester if semester in (1, 2) else None
+
+
 def _sort_marking_periods(periods):
     order = {num: index for index, (num, _label) in enumerate(GRADING_PERIODS)}
     return sorted(
@@ -3609,6 +3628,116 @@ def is_grade_package_approved(academic_year_id, class_id, period):
     return bool(release and release.status == GradeRelease.STATUS_APPROVED)
 
 
+def class_submitted_periods(academic_year_id, class_id):
+    """Marking periods this class actually ran (has teacher-submitted grades)."""
+    if not academic_year_id or not class_id:
+        return frozenset()
+    cache = None
+    if has_request_context():
+        cache = getattr(g, '_class_submitted_periods', None)
+        if cache is None:
+            cache = g._class_submitted_periods = {}
+        cached = cache.get((academic_year_id, class_id))
+        if cached is not None:
+            return cached
+    periods = set()
+    for grade in Grade.query.filter_by(
+        class_id=class_id,
+        academic_year_id=academic_year_id,
+        submitted=True,
+    ).all():
+        period = _grade_release_period(grade)
+        if period in range(1, 9):
+            periods.add(period)
+    result = frozenset(periods)
+    if cache is not None:
+        cache[(academic_year_id, class_id)] = result
+    return result
+
+
+def year_terminal_period(academic_year_id, class_id):
+    """The closing package of the year: Exam (Sem 2), else Period 6.
+
+    Returns None while the class has not reached its closing period yet — a class
+    that has only submitted Period 1 is mid-year, not finished, so the report card
+    must stay sealed.
+    """
+    ran = class_submitted_periods(academic_year_id, class_id)
+    for candidate in YEAR_TERMINAL_PERIODS:
+        if candidate in ran:
+            return candidate
+    return None
+
+
+def academic_year_is_closed(academic_year_id):
+    """An archived year — no longer the active one, so its records are final."""
+    year = db.session.get(AcademicYear, academic_year_id) if academic_year_id else None
+    return bool(year and not year.is_active)
+
+
+def semester_is_released(academic_year_id, class_id, semester):
+    """A semester sheet needs every period and exam that semester actually ran."""
+    ran = class_submitted_periods(academic_year_id, class_id)
+    expected = [period for period in SEMESTER_PERIOD_MAP.get(semester, ()) if period in ran]
+    if not expected:
+        return False
+    return all(
+        is_grade_package_approved(academic_year_id, class_id, period)
+        for period in expected
+    )
+
+
+def report_card_is_released(academic_year_id, class_id):
+    """Year-end gate for the cumulative report card.
+
+    Needs the closing package (Exam Sem 2, else Period 6) approved with no
+    unapproved periods behind it. A year that has already been closed out
+    releases on its approved periods alone, so historical report cards from
+    archived years stay available.
+    """
+    ran = class_submitted_periods(academic_year_id, class_id)
+    if not ran:
+        return False
+    if not all(
+        is_grade_package_approved(academic_year_id, class_id, period)
+        for period in ran
+    ):
+        return False
+    terminal = year_terminal_period(academic_year_id, class_id)
+    if terminal is not None:
+        return is_grade_package_approved(academic_year_id, class_id, terminal)
+    return academic_year_is_closed(academic_year_id)
+
+
+def _report_card_blocker_note(year_id, class_id, terminal_period):
+    """Plain-language reason the Report Card is not yet issued."""
+    ran = class_submitted_periods(year_id, class_id)
+    outstanding = _sort_marking_periods([
+        period for period in ran
+        if not is_grade_package_approved(year_id, class_id, period)
+    ])
+    if not outstanding:
+        if terminal_period is None:
+            closing = grading_period_label(YEAR_TERMINAL_PERIODS[0])
+            return (
+                'The Report Card is issued once the academic year is complete. '
+                f'{closing} has not been submitted yet.'
+            )
+        return (
+            f'The Report Card is issued after {grading_period_label(terminal_period)} '
+            'is submitted and approved.'
+        )
+    labels = [grading_period_label(period) for period in outstanding]
+    listed = labels[0] if len(labels) == 1 else (
+        ', '.join(labels[:-1]) + f', and {labels[-1]}'
+    )
+    verb = 'is' if len(labels) == 1 else 'are'
+    return (
+        'The Report Card is issued at the end of the academic year. '
+        f'{listed} {verb} still awaiting approval by the Vice Principal for Academics.'
+    )
+
+
 def grade_period_is_student_visible(grade):
     if not grade or not grade.submitted:
         return False
@@ -3623,9 +3752,9 @@ def grade_period_is_student_visible(grade):
 def student_official_documents_state(student, year_id, period=None):
     """Whether official report card / grade sheet may be shown to a student or parent.
 
-    Approval is per marking period. A full-year sheet unlocks when any period is
-    approved; later pending periods stay off the document and are named in a note.
-    A single-period view gates only that period.
+    Approval releases one marking period at a time. `unlocked` covers the period
+    grade sheets; the semester sheet and the year-end report card sit behind the
+    stricter `released_semesters` and `report_card_unlocked` gates.
     """
     empty = {
         'unlocked': False,
@@ -3639,6 +3768,11 @@ def student_official_documents_state(student, year_id, period=None):
         'pending_periods': [],
         'awaiting_note': None,
         'view_period': period,
+        'report_card_unlocked': False,
+        'released_semesters': [],
+        'terminal_period': None,
+        'latest_approved_period': None,
+        'report_card_blocker_note': None,
     }
     if not student or not year_id:
         return empty
@@ -3693,6 +3827,18 @@ def student_official_documents_state(student, year_id, period=None):
         unlocked = approved_count > 0
         hold = approved_count == 0 and pending_count > 0
     awaiting_note = awaiting_vpa_periods_note(pending_periods) if unlocked and pending_count else None
+
+    package_class_id = class_id
+    sample_any = next((rec for rec in submitted if rec.class_id), None)
+    if sample_any and sample_any.class_id:
+        package_class_id = sample_any.class_id
+    terminal_period = year_terminal_period(year_id, package_class_id)
+    report_card_unlocked = report_card_is_released(year_id, package_class_id)
+    released_semesters = [
+        semester for semester in (1, 2)
+        if semester_is_released(year_id, package_class_id, semester)
+    ]
+
     return {
         'unlocked': unlocked,
         'hold': hold,
@@ -3711,7 +3857,33 @@ def student_official_documents_state(student, year_id, period=None):
         'pending_periods': pending_periods,
         'awaiting_note': awaiting_note,
         'view_period': period,
+        'report_card_unlocked': report_card_unlocked,
+        'released_semesters': released_semesters,
+        'terminal_period': terminal_period,
+        'latest_approved_period': approved_periods[-1] if approved_periods else None,
+        'report_card_blocker_note': (
+            None if report_card_unlocked
+            else _report_card_blocker_note(year_id, package_class_id, terminal_period)
+        ),
     }
+
+
+def _resolve_sheet_scope(doc_state, view_period=None):
+    """Pick what the student's grade sheet shows: one period, a semester, or the year.
+
+    Until the year-end report card is released the sheet stays period-scoped, so
+    an approval never exposes more than the period it covers. Defaults to the
+    most recently approved period when the request does not name one.
+    """
+    approved_periods = doc_state.get('approved_periods') or []
+    if view_period in approved_periods:
+        return view_period, None
+    semester = _requested_semester()
+    if semester in (doc_state.get('released_semesters') or []):
+        return None, semester
+    if doc_state.get('report_card_unlocked'):
+        return None, None
+    return doc_state.get('latest_approved_period'), None
 
 
 def viewer_can_see_unreleased_official_grades():
@@ -3721,12 +3893,17 @@ def viewer_can_see_unreleased_official_grades():
     return normalize_role(current_user) in STAFF_INTERNAL_GRADE_ROLES
 
 
-def render_official_grade_hold(student, display_year, *, parent_qr_view=False, parent_report_token=None):
+def render_official_grade_hold(
+    student, display_year, *, parent_qr_view=False, parent_report_token=None,
+    hold_message=None, hold_title=None, hold_meta=None,
+):
     return render_template(
         'student/report_hold.html',
         student=student,
         display_year=display_year,
-        hold_message=STUDENT_GRADE_HOLD_MESSAGE,
+        hold_message=hold_message or STUDENT_GRADE_HOLD_MESSAGE,
+        hold_title=hold_title,
+        hold_meta=hold_meta,
         parent_qr_view=parent_qr_view,
         parent_report_token=parent_report_token,
         school_print_brand=school_print_brand(),
@@ -4036,11 +4213,18 @@ def evaluate_class_rank(
     }
 
 
-def build_report_card_structured_data(student, year_id=None, *, approved_only=False):
+def build_report_card_structured_data(
+    student, year_id=None, *, approved_only=False, view_period=None, semester=None,
+):
     """MoE report-card matrix from published grades for one academic year.
 
     When approved_only is True, only VPA-approved marking periods appear. Later
     pending periods stay blank and are named in awaiting_vpa_note.
+
+    view_period renders a single approved marking period — no semester or yearly
+    averages and no promotion statement, since neither can be computed from one
+    period. semester renders one released semester. Neither set is the year-end
+    report card.
     """
     empty = {
         'student_name': '',
@@ -4052,6 +4236,13 @@ def build_report_card_structured_data(student, year_id=None, *, approved_only=Fa
         'legend_rows': division_legend_rows(None),
         'subject_heading': 'SUBJECTS',
         'class_rank': None,
+        'scope': 'year',
+        'scope_label': None,
+        'view_period': None,
+        'semester': None,
+        'report_card_unlocked': False,
+        'report_card_blocker_note': None,
+        'grading_periods': GRADING_PERIODS,
     }
     if not student:
         return empty
@@ -4077,9 +4268,23 @@ def build_report_card_structured_data(student, year_id=None, *, approved_only=Fa
     release_state = (
         student_official_documents_state(student, year_id) if student and year_id else None
     )
-    visible_periods = None
-    if approved_only and release_state:
-        visible_periods = set(release_state.get('approved_periods') or [])
+    approved = set((release_state or {}).get('approved_periods') or [])
+    if view_period in range(1, 9):
+        scope = 'period'
+        cumulative = False
+        visible_periods = ({view_period} & approved) if approved_only else {view_period}
+        scope_label = grading_period_label(view_period)
+    elif semester in (1, 2):
+        scope = 'semester'
+        cumulative = True
+        wanted = set(SEMESTER_PERIOD_MAP[semester])
+        visible_periods = (wanted & approved) if approved_only else wanted
+        scope_label = f'Semester {semester}'
+    else:
+        scope = 'year'
+        cumulative = True
+        visible_periods = approved if approved_only else None
+        scope_label = None
     grouped = {}
     first_names = {}
     conduct_grades = []
@@ -4116,6 +4321,7 @@ def build_report_card_structured_data(student, year_id=None, *, approved_only=Fa
                 official_name,
                 _collect_official_period_scores(sub_grades, visible_periods),
                 division_key,
+                aggregates=cumulative,
             )
         )
 
@@ -4137,6 +4343,7 @@ def build_report_card_structured_data(student, year_id=None, *, approved_only=Fa
             structured_subjects,
             _collect_official_period_scores(conduct_grades, visible_periods),
             division_key,
+            aggregates=cumulative,
         )
     )
 
@@ -4159,7 +4366,7 @@ def build_report_card_structured_data(student, year_id=None, *, approved_only=Fa
         'school': doc_ctx.get('school'),
         'promotion': evaluate_year_promotion_from_subject_rows(
             structured_subjects, student, academic_year_id=year_id,
-        ),
+        ) if scope == 'year' else None,
         'class_rank': evaluate_class_rank(
             student,
             year_id,
@@ -4173,6 +4380,13 @@ def build_report_card_structured_data(student, year_id=None, *, approved_only=Fa
         ),
         'approved_periods': list((release_state or {}).get('approved_periods') or []),
         'pending_periods': list((release_state or {}).get('pending_periods') or []),
+        'scope': scope,
+        'scope_label': scope_label,
+        'view_period': view_period if scope == 'period' else None,
+        'semester': semester if scope == 'semester' else None,
+        'report_card_unlocked': bool((release_state or {}).get('report_card_unlocked')),
+        'report_card_blocker_note': (release_state or {}).get('report_card_blocker_note'),
+        'grading_periods': GRADING_PERIODS,
     }
 
 
@@ -4880,7 +5094,10 @@ def compile_student_dashboard_context(student, display_year, request_args=None, 
 
     official_documents = (
         student_official_documents_state(student, year_id)
-        if student and display_year else {'unlocked': False, 'hold': False, 'empty': True}
+        if student and display_year else {
+            'unlocked': False, 'hold': False, 'empty': True,
+            'report_card_unlocked': False, 'report_card_blocker_note': None,
+        }
     )
 
     return {
@@ -5354,6 +5571,17 @@ def ensure_legacy_sqlite_schema():
             "id_card_signature_path": "VARCHAR(200)",
             "id_expiration_date": "DATE",
             "staff_id_card_ready": "BOOLEAN DEFAULT 0",
+            "job_title": "VARCHAR(120)",
+            "department": "VARCHAR(120)",
+            "employment_type": "VARCHAR(40)",
+            "hire_date": "DATE",
+            "date_of_birth": "DATE",
+            "gender": "VARCHAR(20)",
+            "national_id_number": "VARCHAR(60)",
+            "highest_qualification": "VARCHAR(160)",
+            "emergency_contact_name": "VARCHAR(120)",
+            "emergency_contact_phone": "VARCHAR(40)",
+            "staff_notes": "TEXT",
         },
         "announcements": {
             "content": "TEXT DEFAULT ''",
@@ -5770,14 +5998,23 @@ def inject_nav_flags():
         "school_print_brand": school_print_brand(),
         "school_logo_url": school_logo_static_url(),
         "liberia_seal_url": liberia_seal_static_url(),
+        "display_font_url": display_font_static_url(),
         "default_avatar_url": default_static_photo_url(),
         "can_issue_id_cards": (
             getattr(current_user, "is_authenticated", False)
             and canonical_role(current_user) in {"admin", "principal", "registrar"}
         ),
+        "can_issue_staff_id_cards": (
+            getattr(current_user, "is_authenticated", False)
+            and canonical_role(current_user) in {"admin", "principal", "registrar", "vpi", "vpa"}
+        ),
         "can_print_official_transcript": (
             getattr(current_user, "is_authenticated", False)
             and canonical_role(current_user) in OFFICIAL_TRANSCRIPT_STAFF_ROLES
+        ),
+        "can_open_staff_folders": (
+            getattr(current_user, "is_authenticated", False)
+            and normalize_role(current_user) in ACADEMIC_COMMAND_ROLES
         ),
     }
 
@@ -5791,6 +6028,33 @@ def load_user(user_id):
 # -------------------------------------------------------------------
 # Routes
 # -------------------------------------------------------------------
+
+@app.route('/sw.js')
+def service_worker():
+    """Serve the worker from the root so it can control every page, not just /static/."""
+    response = send_from_directory(
+        app.static_folder, 'sw.js', mimetype='application/javascript'
+    )
+    response.headers['Service-Worker-Allowed'] = '/'
+    response.headers['Cache-Control'] = 'no-cache'
+    return response
+
+
+@app.route('/manifest.webmanifest')
+def web_app_manifest():
+    """Install manifest for the FLPA portal (Add to Home Screen / desktop install)."""
+    response = send_from_directory(
+        app.static_folder, 'manifest.webmanifest', mimetype='application/manifest+json'
+    )
+    response.headers['Cache-Control'] = 'public, max-age=86400'
+    return response
+
+
+@app.route('/offline')
+def offline_page():
+    """Branded offline notice shown by the service worker when the network is down."""
+    return send_from_directory(app.static_folder, 'offline.html')
+
 
 @app.route('/health')
 def health():
@@ -7711,11 +7975,15 @@ def report_card(student_id):
     student_facing = (
         user_role in ('student', 'parent') or not viewer_can_see_unreleased_official_grades()
     )
-    view_period = _requested_marking_period()
     if student_facing:
-        doc_state = student_official_documents_state(student, year_id, period=view_period)
-        if doc_state.get('hold'):
-            return render_official_grade_hold(student, display_year)
+        doc_state = student_official_documents_state(student, year_id)
+        if not doc_state.get('report_card_unlocked'):
+            return render_official_grade_hold(
+                student, display_year,
+                hold_title='Report Card not yet issued',
+                hold_message=STUDENT_REPORT_CARD_HOLD_MESSAGE,
+                hold_meta=doc_state.get('report_card_blocker_note'),
+            )
     data = build_report_card_structured_data(
         student, year_id, approved_only=student_facing,
     )
@@ -7756,12 +8024,16 @@ def download_report_card(student_id):
             pass
 
     is_staff_preview = viewer_can_see_unreleased_official_grades() and not parent_qr_access
-    view_period = _requested_marking_period()
     if not is_staff_preview:
-        doc_state = student_official_documents_state(student, year_id, period=view_period)
-        if doc_state.get('hold'):
+        doc_state = student_official_documents_state(student, year_id)
+        if not doc_state.get('report_card_unlocked'):
             display_year = db.session.get(AcademicYear, year_id) if year_id else None
-            return render_official_grade_hold(student, display_year)
+            return render_official_grade_hold(
+                student, display_year,
+                hold_title='Report Card not yet issued',
+                hold_message=STUDENT_REPORT_CARD_HOLD_MESSAGE,
+                hold_meta=doc_state.get('report_card_blocker_note'),
+            )
 
     return build_official_grade_sheet_pdf(
         student, year_id, kind='report', approved_only=not is_staff_preview,
@@ -8243,11 +8515,13 @@ def parent_report_view(token):
         ))
 
     display_year = db.session.get(AcademicYear, year_id) if year_id else None
-    view_period = _requested_marking_period()
-    doc_state = student_official_documents_state(student, year_id, period=view_period)
-    if doc_state.get('hold'):
+    doc_state = student_official_documents_state(student, year_id)
+    if not doc_state.get('report_card_unlocked'):
         return render_official_grade_hold(
             student, display_year, parent_qr_view=True, parent_report_token=token,
+            hold_title='Report Card not yet issued',
+            hold_message=STUDENT_REPORT_CARD_HOLD_MESSAGE,
+            hold_meta=doc_state.get('report_card_blocker_note'),
         )
     data = build_report_card_structured_data(student, year_id, approved_only=True)
 
@@ -8288,8 +8562,14 @@ def student_grade_sheet():
     view_period = _requested_marking_period()
     doc_state = student_official_documents_state(student, year_id, period=view_period)
     if doc_state.get('hold'):
-        return render_official_grade_hold(student, display_year)
-    data = build_report_card_structured_data(student, year_id, approved_only=True)
+        return render_official_grade_hold(
+            student, display_year,
+            hold_message=STUDENT_PERIOD_HOLD_MESSAGE if view_period else None,
+        )
+    view_period, semester = _resolve_sheet_scope(doc_state, view_period)
+    data = build_report_card_structured_data(
+        student, year_id, approved_only=True, view_period=view_period, semester=semester,
+    )
     published_grades = official_grade_records(student.id, year_id, approved_only=True) if year_id else []
     has_published = bool(published_grades)
     approved_periods = doc_state.get('approved_periods') or []
@@ -8306,6 +8586,9 @@ def student_grade_sheet():
         approved_periods=approved_periods,
         pending_periods=pending_periods,
         grading_periods=GRADING_PERIODS,
+        released_semesters=doc_state.get('released_semesters') or [],
+        report_card_unlocked=doc_state.get('report_card_unlocked'),
+        report_card_blocker_note=doc_state.get('report_card_blocker_note'),
         school_print_brand=school_print_brand(),
     )
 
@@ -8342,7 +8625,47 @@ def _official_sheet_pick(subject, *keys):
     return None
 
 
-def build_official_grade_sheet_pdf(student, year_id, kind='sheet', *, approved_only=False):
+_DISPLAY_FONT = None
+
+
+def register_display_font():
+    """Register Algerian for the school name on official PDFs.
+
+    Algerian ships with Windows/Office and is not redistributable, so a Linux
+    server needs a copy at static/fonts/algerian.ttf. Falls back to Times-Bold,
+    which is what these documents used before, so a missing font never breaks
+    a report card.
+    """
+    global _DISPLAY_FONT
+    if _DISPLAY_FONT:
+        return _DISPLAY_FONT
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    windir = os.environ.get('WINDIR') or r'C:\Windows'
+    local_appdata = os.environ.get('LOCALAPPDATA') or ''
+    candidates = [
+        os.path.join(app.root_path, 'static', 'fonts', 'algerian.ttf'),
+        os.path.join(windir, 'Fonts', 'ALGER.TTF'),
+    ]
+    if local_appdata:
+        candidates.append(os.path.join(local_appdata, 'Microsoft', 'Windows', 'Fonts', 'ALGER.TTF'))
+    for path in candidates:
+        if not os.path.isfile(path):
+            continue
+        try:
+            pdfmetrics.registerFont(TTFont('FLPADisplay', path))
+            _DISPLAY_FONT = 'FLPADisplay'
+            return _DISPLAY_FONT
+        except Exception:
+            logger.warning('Could not register Algerian from %s', path, exc_info=True)
+    _DISPLAY_FONT = 'Times-Bold'
+    return _DISPLAY_FONT
+
+
+def build_official_grade_sheet_pdf(
+    student, year_id, kind='sheet', *, approved_only=False, view_period=None, semester=None,
+):
     """Landscape official FLPA grade sheet / report card (P1–P6 MoE matrix)."""
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
@@ -8352,7 +8675,10 @@ def build_official_grade_sheet_pdf(student, year_id, kind='sheet', *, approved_o
     from reportlab.lib.units import mm
     from io import BytesIO
 
-    data = build_report_card_structured_data(student, year_id, approved_only=approved_only)
+    data = build_report_card_structured_data(
+        student, year_id, approved_only=approved_only,
+        view_period=view_period, semester=semester,
+    )
     brand = data.get('school') or school_print_brand()
     display_year = db.session.get(AcademicYear, year_id) if year_id else None
     year_label = data.get('academic_year') or (display_year.name if display_year else '')
@@ -8362,12 +8688,16 @@ def build_official_grade_sheet_pdf(student, year_id, kind='sheet', *, approved_o
     else:
         sheet_title = (data.get('division_sheet_title') or 'Grade Sheet').upper()
         file_prefix = 'grade_sheet'
+    if data.get('scope_label'):
+        sheet_title = f"{data['scope_label'].upper()} — {sheet_title}"
+        slug = re.sub(r'[^a-z0-9]+', '_', data['scope_label'].lower()).strip('_')
+        file_prefix = f'{file_prefix}_{slug}' if slug else file_prefix
     promotion_statement = (
         data['promotion']['label']
         if data.get('promotion') and data['promotion'].get('label')
         else 'Pending promotion decision'
     )
-    if data.get('promotion', {}).get('code') == 'PROMOTED' and data['promotion'].get('promoted_to'):
+    if (data.get('promotion') or {}).get('code') == 'PROMOTED' and data['promotion'].get('promoted_to'):
         promotion_statement = f"Promoted to {data['promotion']['promoted_to']}"
     if data.get('promotion') and data['promotion'].get('reason'):
         promotion_statement = f"{promotion_statement} — {data['promotion']['reason']}"
@@ -8401,7 +8731,7 @@ def build_official_grade_sheet_pdf(student, year_id, kind='sheet', *, approved_o
     school_style = ParagraphStyle(
         'SheetSchool',
         parent=styles['Normal'],
-        fontName='Times-Bold',
+        fontName=register_display_font(),
         fontSize=16,
         leading=19,
         alignment=TA_CENTER,
@@ -8741,8 +9071,15 @@ def student_grade_sheet_pdf():
     view_period = _requested_marking_period()
     doc_state = student_official_documents_state(student, year_id, period=view_period)
     if doc_state.get('hold'):
-        return render_official_grade_hold(student, display_year)
-    return build_official_grade_sheet_pdf(student, year_id, kind='sheet', approved_only=True)
+        return render_official_grade_hold(
+            student, display_year,
+            hold_message=STUDENT_PERIOD_HOLD_MESSAGE if view_period else None,
+        )
+    view_period, semester = _resolve_sheet_scope(doc_state, view_period)
+    return build_official_grade_sheet_pdf(
+        student, year_id, kind='sheet', approved_only=True,
+        view_period=view_period, semester=semester,
+    )
 
 
 @app.route('/update-tuition/<int:student_id>', methods=['POST'])
@@ -16549,6 +16886,21 @@ def _registrar_office_guard():
     return _registrar_office_denied_redirect()
 
 
+def _require_staff_id_office():
+    """Staff/teacher ID cards: registrar office plus VPI and VPA, who manage staff records."""
+    if canonical_role(current_user) not in {"admin", "principal", "registrar", "vpi", "vpa"}:
+        flash("Unauthorized access.", "danger")
+        return False
+    return True
+
+
+def _staff_id_office_guard():
+    """None when authorized for staff ID cards; otherwise a redirect response."""
+    if _require_staff_id_office():
+        return None
+    return _registrar_office_denied_redirect()
+
+
 def _registrar_student_folder_redirect(student_id):
     return redirect(
         url_for('dashboard', **registrar_dashboard_redirect_kwargs(open_student_id=student_id))
@@ -19128,14 +19480,216 @@ def _staff_id_disk_path(stored_path):
     return _resolve_static_abs_path(stored_path)
 
 
+_SIGNATURE_HONORIFICS = frozenset({
+    'mr', 'mrs', 'ms', 'miss', 'dr', 'prof', 'professor', 'rev', 'reverend',
+    'hon', 'honorable', 'sir', 'madam', 'madame', 'pastor', 'engr', 'eng', 'atty',
+})
+_SIGNATURE_NUMERALS = frozenset({'ii', 'iii', 'iv', 'v'})
+_SIGNATURE_SUFFIXES = frozenset({'jr', 'sr'}) | _SIGNATURE_NUMERALS
+# Written with the surname ("Grace van Dyke"), never shortened to an initial.
+_SIGNATURE_PARTICLES = frozenset({
+    'van', 'von', 'de', 'del', 'della', 'da', 'das', 'dos', 'di', 'du',
+    'la', 'le', 'der', 'den', 'ter', 'ten', 'bin', 'ibn', 'al',
+})
+
+
+def _signature_case(word):
+    """Title-case a name part without flattening McDonald, O'Brien, or Mensah-Doe."""
+    if not word:
+        return ''
+    if ' ' in word:
+        return ' '.join(_signature_case(part) for part in word.split())
+    if any(char.isupper() for char in word) and any(char.islower() for char in word):
+        return word  # Deliberate spelling such as McDonald or van Dyke.
+    if word.lower() in _SIGNATURE_PARTICLES:
+        return word.lower()
+    pieces = re.split(r"([-'\u2019])", word.lower())
+    return ''.join(piece if len(piece) == 1 and not piece.isalpha() else piece.capitalize()
+                   for piece in pieces)
+
+
+def _staff_signature_name_parts(user):
+    """(first, middle, last, suffix) for the signature, ignoring titles like Rev. or Dr."""
+    profile = getattr(user, 'teacher_profile', None)
+    first = (getattr(profile, 'first_name', '') or '').strip() if profile else ''
+    last = (getattr(profile, 'last_name', '') or '').strip() if profile else ''
+    if first and last:
+        return first, '', last, ''
+
+    tokens = [
+        token
+        for token in (getattr(user, 'full_name', '') or '').replace(',', ' ').split()
+        if token
+    ]
+    tokens = [token for token in tokens if token.strip('.').lower() not in _SIGNATURE_HONORIFICS]
+    suffix = ''
+    if len(tokens) > 1 and tokens[-1].strip('.').lower() in _SIGNATURE_SUFFIXES:
+        suffix = tokens.pop()
+    if not tokens:
+        return '', '', '', ''
+    if len(tokens) == 1:
+        return tokens[0], '', '', suffix
+    surname = [tokens.pop()]
+    while len(tokens) > 1 and tokens[-1].lower() in _SIGNATURE_PARTICLES:
+        surname.insert(0, tokens.pop())
+    return tokens[0], ' '.join(tokens[1:]), ' '.join(surname), suffix
+
+
 def _staff_signature_mark(user):
-    """Professional staff signature mark from the account display name."""
-    parts = [part for part in (getattr(user, 'full_name', '') or '').split() if part]
-    if not parts:
+    """Signature written from the staff name when no handwritten one is uploaded.
+
+    Prints as the person signs a paper card — given name, middle initial, surname
+    (e.g. "Othello B. Gbarjuewaye") — in the card's script font.
+    """
+    first, middle, last, suffix = _staff_signature_name_parts(user)
+    if not first and not last:
         return 'Authorized Staff'
-    if len(parts) == 1:
-        return parts[0].title()
-    return f"{' '.join(parts[1:]).title()} {parts[0][0].upper()}."
+
+    pieces = [_signature_case(first)] if first else []
+    for part in middle.split():
+        initial = part.strip('.')[:1]
+        if initial:
+            pieces.append(f'{initial.upper()}.')
+    if last:
+        pieces.append(_signature_case(last))
+    if suffix:
+        bare = suffix.strip('.')
+        pieces.append(bare.upper() if bare.lower() in _SIGNATURE_NUMERALS else f'{bare.capitalize()}.')
+    return ' '.join(piece for piece in pieces if piece) or 'Authorized Staff'
+
+
+STAFF_ID_PHOTO_SUBDIR = 'staff_id_photos'
+
+
+def _first_uploaded_file(field):
+    """First non-empty upload for a field name (file picker and camera share one name)."""
+    for storage in request.files.getlist(field):
+        if storage and (storage.filename or '').strip():
+            return storage
+    return None
+
+
+def _staff_id_photos_dir():
+    return os.path.join(current_app.root_path, 'static', 'uploads', STAFF_ID_PHOTO_SUBDIR)
+
+
+def _store_staff_id_photo_original(user, payload, ext):
+    """Keep the camera upload as staff_id_photos/original_{id}_{timestamp}.* before cropping."""
+    if not user or not payload:
+        return None
+    ext = (ext or '.jpg').lower()
+    if ext not in ID_CARD_IMAGE_EXT:
+        ext = '.jpg'
+    timestamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')
+    filename = 'original_%s_%s%s' % (int(user.id), timestamp, ext)
+    upload_dir = _staff_id_photos_dir()
+    os.makedirs(upload_dir, exist_ok=True)
+    dest = os.path.join(upload_dir, filename)
+    with open(dest, 'wb') as handle:
+        handle.write(payload)
+    return dest
+
+
+def _staff_id_photo_original_path(user):
+    """Newest stored camera original for this staff account, if one was kept."""
+    if not user:
+        return None
+    pattern = os.path.join(_staff_id_photos_dir(), 'original_%s_*' % int(user.id))
+    matches = [path for path in glob.glob(pattern) if os.path.isfile(path)]
+    if not matches:
+        return None
+    return max(matches, key=os.path.getmtime)
+
+
+def _staff_id_photo_url(user):
+    """Card/preview URL: the processed cutout when uploaded, else the account avatar."""
+    stored = getattr(user, 'id_card_photo_path', None)
+    path = _staff_id_disk_path(stored)
+    if not path:
+        return user.photo_url
+    url = url_for('static', filename=stored)
+    try:
+        return '%s%sv=%s' % (url, '&' if '?' in url else '?', int(os.path.getmtime(path)))
+    except OSError:
+        return url
+
+
+def _write_processed_staff_id_photo(user, img):
+    """Write a new 800×800 JPEG under staff_id_photos and point the staff card at it."""
+    buffer = BytesIO()
+    _save_id_photo_jpeg(img, buffer)
+    timestamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')
+    filename = 'photo_%s_%s.jpg' % (int(user.id), timestamp)
+    upload_dir = _staff_id_photos_dir()
+    os.makedirs(upload_dir, exist_ok=True)
+    with open(os.path.join(upload_dir, filename), 'wb') as handle:
+        handle.write(buffer.getvalue())
+    user.id_card_photo_path = os.path.join(
+        'uploads', STAFF_ID_PHOTO_SUBDIR, filename
+    ).replace('\\', '/')
+    return True
+
+
+def _process_staff_id_photo_from(user, source):
+    """Run the ID pipeline on one source file and store the result as the card photo."""
+    if Image is None or not user or not source:
+        return False
+    try:
+        img = _open_id_photo_for_process(source)
+    except Exception:
+        logger.exception('Staff ID photo could not open %s', source)
+        return False
+    try:
+        if _top_corners_near_white(img) and not _id_photo_is_face_only_square(img):
+            out = _finish_id_portrait(_fit_subject_on_white_square(img, ID_PHOTO_OUTPUT_PX))
+        else:
+            out = _process_id_photo(img)
+    except ValueError:
+        logger.exception('Staff ID photo background removal failed for user %s', user.id)
+        return False
+    except Exception:
+        logger.exception('Staff ID photo pipeline failed for user %s', user.id)
+        return False
+    return _write_processed_staff_id_photo(user, out)
+
+
+def _reprocess_staff_id_photo(user):
+    """Re-run the student background-removal pipeline on the stored staff photo."""
+    if not user:
+        return False
+    source = _staff_id_photo_original_path(user) or _staff_id_disk_path(user.id_card_photo_path)
+    return _process_staff_id_photo_from(user, source)
+
+
+# The stock silhouette is not a portrait, so it must never become a card photo.
+_DEFAULT_AVATAR_BASENAMES = frozenset({
+    'default-avatar.png', 'default_avatar.png', 'default_student.png', 'default_user.png',
+})
+
+
+def _staff_profile_photo_source(user):
+    """Absolute path of this account's own avatar, or None when it is the stock badge."""
+    stored = (getattr(user, 'photo', None) or '').strip()
+    if not stored:
+        return None
+    if os.path.basename(stored.replace('\\', '/')).lower() in _DEFAULT_AVATAR_BASENAMES:
+        return None
+    return _resolve_static_abs_path(stored)
+
+
+def _adopt_profile_photo_as_staff_id(user):
+    """Build the staff card photo from the account avatar, backdrop removed."""
+    source = _staff_profile_photo_source(user)
+    if not source or not _process_staff_id_photo_from(user, source):
+        return False
+    try:
+        with open(source, 'rb') as handle:
+            _store_staff_id_photo_original(
+                user, handle.read(), os.path.splitext(source)[1].lower()
+            )
+    except OSError:
+        logger.exception('Staff ID original copy failed for user %s', user.id)
+    return True
 
 
 def _sync_staff_id_card(user, academic_year=None):
@@ -19180,8 +19734,12 @@ def _staff_id_card_payload(user, display_year=None):
         'staff_id': f'FLPA-{int(user.id):04d}',
         'position': role_labels.get(role, (user.role or 'Staff').title()),
         'photo_path': photo_path,
-        'photo_url': user.photo_url,
+        'photo_url': _staff_id_photo_url(user),
         'signature_path': signature_path,
+        'signature_url': (
+            url_for('static', filename=user.id_card_signature_path)
+            if signature_path else None
+        ),
         'signature_mark': _staff_signature_mark(user),
         'expiration_date': user.id_expiration_date,
         'qr_code_data_uri': None,
@@ -19226,8 +19784,8 @@ def _stream_staff_id_cards_pdf(cards):
 @app.route('/id-cards/staff', methods=['GET'], endpoint='staff_id_cards_folder')
 @login_required
 def staff_id_cards_folder():
-    """Registrar folder for active staff and teachers."""
-    denied = _registrar_office_guard()
+    """Registrar/VPI folder for active staff and teachers."""
+    denied = _staff_id_office_guard()
     if denied:
         return denied
     display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
@@ -19238,6 +19796,11 @@ def staff_id_cards_folder():
     ready_cards = _staff_id_cards(display_year)
     ready_ids = {card['student'].id for card in ready_cards}
     staff_cards = [_staff_id_card_payload(user, display_year) for user in users]
+    buildable = sum(
+        1 for user in users
+        if not _staff_id_disk_path(user.id_card_photo_path)
+        and _staff_profile_photo_source(user)
+    )
     return render_template(
         'id_cards/staff_folder.html',
         staff_users=users,
@@ -19246,16 +19809,112 @@ def staff_id_cards_folder():
         cards=ready_cards,
         staff_count=len(users),
         ready_count=len(ready_cards),
+        buildable_count=buildable,
         printed_at=datetime.now(timezone.utc),
         download_url=url_for('download_staff_id_cards'),
     )
+
+
+# rembg takes a few seconds per portrait, so a click builds a slice of the folder
+# rather than risking a proxy timeout on a school-sized staff list.
+_STAFF_ID_BUILD_BATCH = 6
+
+
+@app.route('/id-cards/staff/build-from-accounts', methods=['POST'], endpoint='build_staff_ids_from_accounts')
+@login_required
+def build_staff_ids_from_accounts():
+    """Fill missing staff card photos from the account avatars, background removed."""
+    denied = _staff_id_office_guard()
+    if denied:
+        return denied
+    display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
+    users = User.query.filter(
+        User.role.in_(list(STAFF_ID_CARD_ROLES)),
+        User.is_active.is_(True),
+    ).order_by(User.full_name.asc()).all()
+
+    built = []
+    failed = []
+    no_photo = []
+    remaining = 0
+    for user in users:
+        if _staff_id_disk_path(user.id_card_photo_path):
+            continue
+        if not _staff_profile_photo_source(user):
+            no_photo.append(user.full_name)
+            continue
+        if len(built) + len(failed) >= _STAFF_ID_BUILD_BATCH:
+            remaining += 1
+            continue
+        if _adopt_profile_photo_as_staff_id(user):
+            _sync_staff_id_card(user, academic_year=display_year)
+            built.append(user.full_name)
+        else:
+            failed.append(user.full_name)
+
+    if built:
+        db.session.commit()
+        flash(
+            'Built %d staff ID card%s from account photos.'
+            % (len(built), '' if len(built) == 1 else 's'),
+            'success',
+        )
+    else:
+        db.session.rollback()
+    if remaining:
+        flash(
+            'run again to build the remaining %d.' % remaining,
+            'info',
+        )
+    if failed:
+        flash(
+            'Background removal could not use the account photo for: %s. '
+            'Upload a clearer head-and-shoulders photo for them.' % ', '.join(failed),
+            'warning',
+        )
+    if no_photo:
+        flash('No account photo on file for: %s.' % ', '.join(no_photo), 'warning')
+    if not built and not failed and not no_photo:
+        flash('Every active staff member already has an ID photo.', 'info')
+    return redirect(url_for('staff_id_cards_folder'))
+
+
+@app.route('/id-cards/staff/<int:user_id>/use-account-photo', methods=['POST'], endpoint='use_staff_account_photo')
+@login_required
+def use_staff_account_photo(user_id):
+    """Build one staff card photo from that account's avatar instead of a new upload."""
+    denied = _staff_id_office_guard()
+    if denied:
+        return denied
+    user = db.session.get(User, user_id)
+    if not user or canonical_role(user) not in STAFF_ID_CARD_ROLES:
+        flash('That staff account was not found.', 'warning')
+        return redirect(url_for('staff_id_cards_folder'))
+    if not _staff_profile_photo_source(user):
+        flash(
+            f'{user.full_name} has no account photo yet. Upload the ID photo here instead.',
+            'warning',
+        )
+        return redirect(url_for('setup_staff_id_card', user_id=user.id))
+    display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
+    if not _adopt_profile_photo_as_staff_id(user):
+        db.session.rollback()
+        flash(ID_PHOTO_REMBG_FAIL_MESSAGE, 'danger')
+        return redirect(url_for('setup_staff_id_card', user_id=user.id))
+    _sync_staff_id_card(user, academic_year=display_year)
+    db.session.commit()
+    if user.staff_id_card_ready:
+        flash(f'Staff ID card is ready for {user.full_name}.', 'success')
+        return redirect(url_for('print_staff_id_card', user_id=user.id))
+    flash('The account photo was prepared, but this account is not active for printing.', 'warning')
+    return redirect(url_for('setup_staff_id_card', user_id=user.id))
 
 
 @app.route('/id-cards/staff/download', methods=['GET'], endpoint='download_staff_id_cards')
 @login_required
 def download_staff_id_cards():
     """Download one PDF containing all ready staff and teacher cards."""
-    denied = _registrar_office_guard()
+    denied = _staff_id_office_guard()
     if denied:
         return denied
     display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
@@ -19270,7 +19929,7 @@ def download_staff_id_cards():
 @login_required
 def print_staff_id_card(user_id):
     """Preview or download one active staff or teacher ID card."""
-    denied = _registrar_office_guard()
+    denied = _staff_id_office_guard()
     if denied:
         return denied
     user = db.session.get(User, user_id)
@@ -19289,17 +19948,22 @@ def print_staff_id_card(user_id):
     card = _staff_id_card_payload(user, display_year)
     if str(request.args.get('download') or '').strip().lower() in {'1', 'true', 'yes', 'pdf'}:
         return _stream_staff_id_cards_pdf([card])
+    # Same CR80 sheet the students use, so what the office sees is what the PDF prints.
     return render_template(
-        'id_cards/staff_folder.html',
-        staff_users=[user],
-        staff_cards=[card],
-        ready_ids={user.id},
+        'id_cards/print_batch.html',
+        klass=None,
+        display_year=display_year,
         cards=[card],
-        staff_count=1,
-        ready_count=1,
+        skipped=[],
+        scope_label=user.full_name,
         printed_at=datetime.now(timezone.utc),
+        printed_by=current_user.full_name or current_user.email,
+        liberia_seal_url=liberia_seal_static_url(),
+        qr_localhost_warning=False,
+        back_url=url_for('staff_id_cards_folder'),
         download_url=url_for('print_staff_id_card', user_id=user.id, download=1),
-        single_staff=True,
+        download_filename=f'FLPA_Staff_ID_{user.id:04d}.pdf',
+        refresh_photos_url=url_for('refresh_staff_id_photo', user_id=user.id),
     )
 
 
@@ -19307,7 +19971,7 @@ def print_staff_id_card(user_id):
 @login_required
 def setup_staff_id_card(user_id):
     """Upload or replace the staff ID-card photo and signature, like the student setup route."""
-    denied = _registrar_office_guard()
+    denied = _staff_id_office_guard()
     if denied:
         return denied
     user = db.session.get(User, user_id)
@@ -19317,12 +19981,17 @@ def setup_staff_id_card(user_id):
 
     if request.method == 'POST':
         try:
-            photo = request.files.get('photo')
-            signature = request.files.get('signature')
+            photo = _first_uploaded_file('photo')
+            signature = _first_uploaded_file('signature')
             saved = False
             if photo and (photo.filename or '').strip():
+                raw = photo.read()
+                photo.seek(0)
                 _filename, rel_path = _save_id_card_image(
-                    photo, 'staff_id_photos', user.id, 'photo'
+                    photo, STAFF_ID_PHOTO_SUBDIR, user.id, 'photo'
+                )
+                _store_staff_id_photo_original(
+                    user, raw, os.path.splitext(photo.filename or '')[1].lower()
                 )
                 user.id_card_photo_path = rel_path
                 saved = True
@@ -19332,8 +20001,12 @@ def setup_staff_id_card(user_id):
                 )
                 user.id_card_signature_path = rel_path
                 saved = True
-            if not saved:
-                flash('Choose a staff photo, signature, or both before saving.', 'warning')
+            if not saved and not _staff_id_disk_path(user.id_card_photo_path):
+                flash(
+                    'Choose a staff photo before saving. A file picked before an error is not '
+                    'kept by the browser, so select it again.',
+                    'warning',
+                )
                 return redirect(url_for('setup_staff_id_card', user_id=user.id))
             display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
             _sync_staff_id_card(user, academic_year=display_year)
@@ -19351,15 +20024,11 @@ def setup_staff_id_card(user_id):
         if user.staff_id_card_ready:
             flash(f'Staff ID card is ready for {user.full_name}.', 'success')
             return redirect(url_for('print_staff_id_card', user_id=user.id))
-        missing = []
+        # The signature is generated from the staff name, so only the photo can be missing.
         if not _staff_id_disk_path(user.id_card_photo_path):
-            missing.append('photo')
-        if not _staff_id_disk_path(user.id_card_signature_path):
-            missing.append('signature')
-        flash(
-            'Staff ID files saved, but still needs: {}.'.format(', '.join(missing) or 'a complete record'),
-            'warning',
-        )
+            flash('Staff ID files saved, but the staff photo is still needed.', 'warning')
+        else:
+            flash('Staff ID files saved, but this account is not active for printing.', 'warning')
         return redirect(url_for('staff_id_cards_folder'))
 
     display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
@@ -19369,10 +20038,9 @@ def setup_staff_id_card(user_id):
         'id_cards/staff_setup.html',
         user=user,
         display_year=display_year,
-        photo_url=(
-            url_for('static', filename=user.id_card_photo_path)
-            if user.id_card_photo_path else user.photo_url
-        ),
+        photo_url=_staff_id_photo_url(user),
+        has_id_photo=bool(_staff_id_disk_path(user.id_card_photo_path)),
+        can_use_account_photo=bool(_staff_profile_photo_source(user)),
         signature_url=(
             url_for('static', filename=user.id_card_signature_path)
             if user.id_card_signature_path else None
@@ -19388,22 +20056,329 @@ def setup_staff_id_card(user_id):
 )
 @login_required
 def refresh_staff_id_photo(user_id):
-    """Re-use the stored staff ID photo path for print; kept parallel to the student refresh action."""
-    denied = _registrar_office_guard()
+    """Re-run background removal on the stored staff photo, like the student refresh action."""
+    denied = _staff_id_office_guard()
     if denied:
         return denied
     user = db.session.get(User, user_id)
     if not user or canonical_role(user) not in STAFF_ID_CARD_ROLES:
         flash('That staff account was not found.', 'warning')
         return redirect(url_for('staff_id_cards_folder'))
+    if not _staff_id_disk_path(user.id_card_photo_path):
+        flash('Upload the staff ID photo before printing.', 'warning')
+        return redirect(url_for('setup_staff_id_card', user_id=user.id))
     display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
+    if _skip_rembg_requested():
+        flash(ID_PHOTO_SKIP_REMBG_WARNING, 'warning')
+    elif _reprocess_staff_id_photo(user):
+        flash(f'ID photo refreshed for {user.full_name}.', 'success')
+    else:
+        flash(ID_PHOTO_PRINT_STILL_PROCESSING, 'warning')
     _sync_staff_id_card(user, academic_year=display_year)
     db.session.commit()
     if user.staff_id_card_ready:
-        flash('Staff ID photo is ready for print.', 'success')
         return redirect(url_for('print_staff_id_card', user_id=user.id))
-    flash('Upload the staff ID photo before printing.', 'warning')
     return redirect(url_for('setup_staff_id_card', user_id=user.id))
+
+
+# ------------------------- STAFF FOLDERS (VPA / PRINCIPAL) -------------------------
+# One folder per employee: employment record, school duties, payroll history, and
+# filed papers. The academic office owns staff records, so the gate is the same
+# ACADEMIC_COMMAND_ROLES used by the other VPA/Principal pages.
+STAFF_FOLDER_ROLES = STAFF_ID_CARD_ROLES
+STAFF_DOC_ALLOWED_EXT = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf'}
+STAFF_DOC_MAX_BYTES = 12 * 1024 * 1024
+STAFF_EMPLOYMENT_TYPES = ('Full-time', 'Part-time', 'Contract', 'Volunteer', 'Probation')
+
+
+def _staff_folder_guard():
+    """None when the viewer is the academic office; otherwise a redirect."""
+    return deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+
+
+def _staff_folder_query(search=None, role=None, include_inactive=False):
+    query = User.query.filter(User.role.in_(list(STAFF_FOLDER_ROLES)))
+    if not include_inactive:
+        query = query.filter(User.is_active.is_(True))
+    if role and role in STAFF_FOLDER_ROLES:
+        query = query.filter(User.role == role)
+    term = (search or '').strip()
+    if term:
+        like = f'%{term}%'
+        query = query.filter(db.or_(
+            User.full_name.ilike(like),
+            User.email.ilike(like),
+            User.job_title.ilike(like),
+            User.department.ilike(like),
+        ))
+    return query.order_by(User.full_name.asc())
+
+
+def _staff_folder_record(user, display_year=None):
+    """Everything the folder shows for one employee, gathered in one place."""
+    teacher = getattr(user, 'teacher_profile', None)
+    subjects = []
+    homerooms = []
+    if teacher:
+        subjects = sorted({
+            alloc.subject_name for alloc in (teacher.allocations or [])
+            if alloc.subject_name
+        }, key=str.lower)
+        homerooms = Class.query.filter_by(teacher_id=teacher.id).order_by(Class.name.asc()).all()
+    sponsored = Class.query.filter_by(sponsor_id=user.id).order_by(Class.name.asc()).all()
+    payroll_records = (
+        Payroll.query.filter_by(staff_id=user.id)
+        .order_by(Payroll.created_on.desc())
+        .limit(12)
+        .all()
+    )
+    documents = (
+        StaffDocument.query.filter_by(staff_id=user.id)
+        .order_by(StaffDocument.created_at.desc())
+        .all()
+    )
+    return {
+        'user': user,
+        'teacher': teacher,
+        'role_label': dashboard_role_label(user),
+        'staff_code': f'FLPA-{int(user.id):04d}',
+        'subjects': subjects,
+        'homerooms': homerooms,
+        'sponsored_classes': sponsored,
+        'payroll_records': payroll_records,
+        'documents': documents,
+        'document_count': len(documents),
+        'display_year': display_year,
+    }
+
+
+def _staff_folder_or_redirect(user_id):
+    """(user, None) when this account is a staff folder; (None, redirect) otherwise."""
+    user = db.session.get(User, user_id)
+    if not user or canonical_role(user) not in STAFF_FOLDER_ROLES:
+        flash('That staff record was not found.', 'warning')
+        return None, redirect(url_for('staff_folders'))
+    return user, None
+
+
+def _parse_staff_date(raw):
+    value = (raw or '').strip()
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, '%Y-%m-%d').date()
+    except ValueError:
+        return None
+
+
+@app.route('/staff/folders', methods=['GET'], endpoint='staff_folders')
+@login_required
+def staff_folders():
+    """Directory of staff folders for the VPA and Principal offices."""
+    blocked = _staff_folder_guard()
+    if blocked:
+        return blocked
+
+    search = (request.args.get('q') or '').strip()
+    role_filter = (request.args.get('role') or '').strip().lower()
+    include_inactive = str(request.args.get('inactive') or '').strip().lower() in {'1', 'true', 'yes'}
+    staff_users = _staff_folder_query(
+        search=search, role=role_filter, include_inactive=include_inactive,
+    ).all()
+
+    doc_counts = dict(
+        db.session.query(StaffDocument.staff_id, db.func.count(StaffDocument.id))
+        .group_by(StaffDocument.staff_id)
+        .all()
+    )
+    rows = [{
+        'user': user,
+        'role_label': dashboard_role_label(user),
+        'staff_code': f'FLPA-{int(user.id):04d}',
+        'document_count': doc_counts.get(user.id, 0),
+        'incomplete': not (user.job_title and user.hire_date and user.telephone_number),
+    } for user in staff_users]
+
+    return render_template(
+        'staff/folders.html',
+        rows=rows,
+        search=search,
+        role_filter=role_filter,
+        include_inactive=include_inactive,
+        staff_roles=sorted(STAFF_FOLDER_ROLES),
+        total_count=len(rows),
+        incomplete_count=sum(1 for row in rows if row['incomplete']),
+    )
+
+
+@app.route('/staff/folders/<int:user_id>', methods=['GET'], endpoint='staff_folder_detail')
+@login_required
+def staff_folder_detail(user_id):
+    """One employee's full folder."""
+    blocked = _staff_folder_guard()
+    if blocked:
+        return blocked
+    user, redirect_response = _staff_folder_or_redirect(user_id)
+    if redirect_response:
+        return redirect_response
+
+    display_year, *_rest = resolve_dashboard_academic_year(session_key=VPA_YEAR_SESSION_KEY)
+    return render_template(
+        'staff/folder_detail.html',
+        record=_staff_folder_record(user, display_year),
+        employment_types=STAFF_EMPLOYMENT_TYPES,
+        doc_type_labels=StaffDocument.DOC_TYPE_LABELS,
+    )
+
+
+@app.route('/staff/folders/<int:user_id>/employment', methods=['POST'], endpoint='update_staff_employment')
+@login_required
+def update_staff_employment(user_id):
+    """Save the employment record on a staff folder."""
+    blocked = _staff_folder_guard()
+    if blocked:
+        return blocked
+    user, redirect_response = _staff_folder_or_redirect(user_id)
+    if redirect_response:
+        return redirect_response
+
+    def field(name, limit):
+        value = (request.form.get(name) or '').strip()
+        return value[:limit] if value else None
+
+    user.job_title = field('job_title', 120)
+    user.department = field('department', 120)
+    employment_type = (request.form.get('employment_type') or '').strip()
+    user.employment_type = employment_type if employment_type in STAFF_EMPLOYMENT_TYPES else None
+    user.hire_date = _parse_staff_date(request.form.get('hire_date'))
+    user.date_of_birth = _parse_staff_date(request.form.get('date_of_birth'))
+    user.gender = field('gender', 20)
+    user.national_id_number = field('national_id_number', 60)
+    user.highest_qualification = field('highest_qualification', 160)
+    user.emergency_contact_name = field('emergency_contact_name', 120)
+    user.emergency_contact_phone = field('emergency_contact_phone', 40)
+    user.telephone_number = field('telephone_number', 20)
+    user.home_address = field('home_address', 255)
+    user.staff_notes = ((request.form.get('staff_notes') or '').strip() or None)
+
+    db.session.commit()
+    flash(f'Employment record saved for {user.full_name}.', 'success')
+    return redirect(url_for('staff_folder_detail', user_id=user.id))
+
+
+@app.route('/staff/folders/<int:user_id>/documents', methods=['POST'], endpoint='upload_staff_document')
+@login_required
+def upload_staff_document(user_id):
+    """File a scan or document into this employee's folder."""
+    blocked = _staff_folder_guard()
+    if blocked:
+        return blocked
+    user, redirect_response = _staff_folder_or_redirect(user_id)
+    if redirect_response:
+        return redirect_response
+
+    folder_url = url_for('staff_folder_detail', user_id=user.id)
+    upload = request.files.get('scan_file') or request.files.get('upload_file') or request.files.get('document')
+    if not upload or not (upload.filename or '').strip():
+        flash("Choose a scan or file to place in this staff folder.", 'warning')
+        return redirect(folder_url)
+
+    original = secure_filename(upload.filename) or 'document'
+    ext = os.path.splitext(original)[1].lower()
+    if ext not in STAFF_DOC_ALLOWED_EXT:
+        flash('Use a photo (JPG, PNG, WEBP) or a PDF.', 'warning')
+        return redirect(folder_url)
+
+    payload = upload.read()
+    if not payload:
+        flash('That scan was empty. Please try again.', 'warning')
+        return redirect(folder_url)
+    if len(payload) > STAFF_DOC_MAX_BYTES:
+        flash('That file is too large. Maximum size is 12 MB.', 'warning')
+        return redirect(folder_url)
+
+    doc_type = (request.form.get('doc_type') or 'other').strip().lower()
+    if doc_type not in StaffDocument.DOC_TYPE_LABELS:
+        doc_type = 'other'
+    title = (request.form.get('title') or '').strip() or StaffDocument.DOC_TYPE_LABELS[doc_type]
+
+    rel_dir = os.path.join('uploads', 'staff_docs', str(user.id))
+    abs_dir = os.path.join(BASE_DIR, 'static', rel_dir)
+    os.makedirs(abs_dir, exist_ok=True)
+    stored_name = f"{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}{ext}"
+    with open(os.path.join(abs_dir, stored_name), 'wb') as handle:
+        handle.write(payload)
+
+    db.session.add(StaffDocument(
+        staff_id=user.id,
+        uploaded_by_id=current_user.id,
+        title=title[:200],
+        doc_type=doc_type,
+        original_filename=original[:255],
+        file_path=os.path.join(rel_dir, stored_name).replace('\\', '/'),
+        mime_type=upload.mimetype or None,
+    ))
+    db.session.commit()
+    flash(f"Document filed in {user.full_name}'s folder.", 'success')
+    return redirect(folder_url)
+
+
+@app.route(
+    '/staff/folders/<int:user_id>/documents/<int:document_id>/file',
+    methods=['GET'],
+    endpoint='view_staff_document',
+)
+@login_required
+def view_staff_document(user_id, document_id):
+    """Open one filed staff document."""
+    blocked = _staff_folder_guard()
+    if blocked:
+        return blocked
+    document = db.session.get(StaffDocument, document_id)
+    if not document or document.staff_id != user_id:
+        abort(404)
+
+    rel = (document.file_path or '').replace('\\', '/').lstrip('/')
+    if rel.startswith('static/'):
+        rel = rel[7:]
+    directory = os.path.dirname(rel)
+    filename = os.path.basename(rel)
+    base_dir = os.path.realpath(os.path.join(BASE_DIR, 'static', directory.replace('/', os.sep)))
+    file_path = os.path.realpath(os.path.join(base_dir, filename))
+    if not filename or not file_path.startswith(base_dir) or not os.path.isfile(file_path):
+        abort(404)
+    return send_from_directory(
+        base_dir, filename, as_attachment=False,
+        download_name=document.original_filename or filename,
+    )
+
+
+@app.route(
+    '/staff/folders/<int:user_id>/documents/<int:document_id>/delete',
+    methods=['POST'],
+    endpoint='delete_staff_document',
+)
+@login_required
+def delete_staff_document(user_id, document_id):
+    """Remove one document from a staff folder."""
+    blocked = _staff_folder_guard()
+    if blocked:
+        return blocked
+    document = db.session.get(StaffDocument, document_id)
+    if not document or document.staff_id != user_id:
+        abort(404)
+
+    rel = (document.file_path or '').replace('\\', '/').lstrip('/')
+    if rel.startswith('static/'):
+        rel = rel[7:]
+    try:
+        os.remove(os.path.join(BASE_DIR, 'static', rel.replace('/', os.sep)))
+    except OSError:
+        pass
+    db.session.delete(document)
+    db.session.commit()
+    flash('Document removed from this staff folder.', 'success')
+    return redirect(url_for('staff_folder_detail', user_id=user_id))
 
 
 @app.route('/id-cards/print/student/<int:student_id>', methods=['GET'], endpoint='print_student_id_card')
@@ -21771,10 +22746,16 @@ def vpa_approve_grade_release(release_id):
     if comment:
         release.review_comment = comment
     db.session.commit()
+    report_card_open = report_card_is_released(release.academic_year_id, release.class_id)
     flash(
         f'{grading_period_label(release.period)} for '
         f'{(release.klass.name if release.klass else "this class")} is approved. '
-        'Students may now view, download, and print official scores for this period.',
+        "Students may now view, download, and print this period's grade sheet. "
+        + (
+            'The full-year Report Card is now released for this class.'
+            if report_card_open
+            else 'The Report Card stays sealed until the final marking period is approved.'
+        ),
         'success',
     )
     return redirect(url_for('vpa_grade_releases'))
@@ -21947,7 +22928,36 @@ def report_card_pdf(student_id):
     student = Student.query.get_or_404(student_id)
     active_year = get_active_academic_year()
     year_id = request.args.get('academic_year_id', type=int) or (active_year.id if active_year else None)
-    return build_official_grade_sheet_pdf(student, year_id, kind='report')
+
+    user_role = (current_user.role or '').lower()
+    if user_role == 'student':
+        linked_student = get_student_for_user(current_user)
+        if not linked_student or linked_student.id != student.id:
+            abort(403)
+    elif user_role == 'parent':
+        if student.parent_email != current_user.email:
+            abort(403)
+    elif user_role not in STAFF_INTERNAL_GRADE_ROLES:
+        abort(403)
+    elif user_role == 'teacher':
+        teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
+        if not teacher_profile or not teacher_can_access_student(teacher_profile, current_user, student):
+            abort(403)
+
+    is_staff_preview = viewer_can_see_unreleased_official_grades()
+    if not is_staff_preview:
+        doc_state = student_official_documents_state(student, year_id)
+        if not doc_state.get('report_card_unlocked'):
+            display_year = db.session.get(AcademicYear, year_id) if year_id else None
+            return render_official_grade_hold(
+                student, display_year,
+                hold_title='Report Card not yet issued',
+                hold_message=STUDENT_REPORT_CARD_HOLD_MESSAGE,
+                hold_meta=doc_state.get('report_card_blocker_note'),
+            )
+    return build_official_grade_sheet_pdf(
+        student, year_id, kind='report', approved_only=not is_staff_preview,
+    )
 
 # ------------------------ ANALYTICS ENDPOINTS ------------------------
 from flask import jsonify
