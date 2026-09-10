@@ -559,7 +559,7 @@
         <div class="sheet-school-row">
           <img src="{{ school_logo_url }}" alt="School logo" class="sheet-school-logo" onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
           <div>
-            <div class="sheet-school-title">Feature Leaders Preparatory Academy</div>
+            <div class="sheet-school-title">{{ school_print_brand.name if school_print_brand else 'Future Leaders Preparatory Academy' }}</div>
             <div class="sheet-school-sub">Class Grade Entry Sheet</div>
           </div>
           <img src="{{ school_logo_url }}" alt="School logo" class="sheet-school-logo" onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
@@ -686,7 +686,7 @@
       <div class="sheet-school-row">
         <img src="{{ school_logo_url }}" alt="School logo" class="sheet-school-logo" onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
         <div>
-          <div class="sheet-school-title">Feature Leaders Preparatory Academy</div>
+          <div class="sheet-school-title">{{ school_print_brand.name if school_print_brand else 'Future Leaders Preparatory Academy' }}</div>
             <div class="sheet-school-sub">Period Activity Grade Sheet</div>
         </div>
         <img src="{{ school_logo_url }}" alt="School logo" class="sheet-school-logo" onerror="this.onerror=null;this.src='{{ school_logo_url }}';">

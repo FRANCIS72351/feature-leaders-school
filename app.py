@@ -56,6 +56,7 @@ from school_divisions import (
     resolve_from_class,
     division_subjects,
     school_print_brand,
+    SCHOOL_PRINT_EMAIL_ADDRESS,
     subject_match_key,
     build_transcript_grade_groups,
     transcript_conduct_cells,
@@ -9265,8 +9266,28 @@ def about():
     return render_template("about.html", categories=categories)
 
 
-@app.route("/contact")
+@app.route("/contact", methods=["GET", "POST"])
 def contact():
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        email = (request.form.get("email") or "").strip()
+        subject = (request.form.get("subject") or "").strip()
+        message = (request.form.get("message") or "").strip()
+        if not (name and email and subject and message):
+            flash("Please complete every field so we can respond.", "warning")
+        else:
+            current_app.logger.info(
+                "Contact inquiry from %s <%s> — %s",
+                name,
+                email,
+                subject,
+            )
+            flash(
+                "Thank you. The academy has your message. You can also reach us at "
+                f"{SCHOOL_PRINT_EMAIL_ADDRESS} or by phone during administration hours.",
+                "success",
+            )
+        return redirect(url_for("contact"))
     return render_template("contact.html")
 
 

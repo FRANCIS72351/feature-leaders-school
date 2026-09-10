@@ -82,11 +82,11 @@
         </div>
       </div>
 
-      <button class="carousel-control-prev" type="button" data-bs-target="#homeImageSlider" data-bs-slide-prev">
+      <button class="carousel-control-prev" type="button" data-bs-target="#homeImageSlider" data-bs-slide="prev">
         <span class="carousel-control-prev-icon" aria-hidden="true"></span>
         <span class="visually-hidden">Previous</span>
       </button>
-      <button class="carousel-control-next" type="button" data-bs-target="#homeImageSlider" data-bs-slide-next">
+      <button class="carousel-control-next" type="button" data-bs-target="#homeImageSlider" data-bs-slide="next">
         <span class="carousel-control-next-icon" aria-hidden="true"></span>
         <span class="visually-hidden">Next</span>
       </button>
@@ -101,7 +101,7 @@
             <i class="fas fa-user-shield"></i>
           </div>
           <h5 class="fw-bold text-dark mb-2">For Administrators</h5>
-          <p class="text-muted small mb-0">Audit classes, coordinate instructor workflows, and audit real-time rosters with multi-tiered role access permissions.</p>
+          <p class="text-muted small mb-0">Manage classes, staff, and student records from one secure dashboard.</p>
         </div>
       </div>
       <div class="col-md-4" data-aos="zoom-in" data-aos-delay="200">
@@ -109,8 +109,8 @@
           <div class="icon-avatar-frame bg-accent-light text-accent mb-3">
             <i class="fas fa-chalkboard-teacher"></i>
           </div>
-          <h5 class="fw-bold text-dark mb-2">For Instructors</h5>
-          <p class="text-muted small mb-0">Upload computational grades, record real-time attendance matrix, and sync communication with guardians instantly.</p>
+          <h5 class="fw-bold text-dark mb-2">For Teachers</h5>
+          <p class="text-muted small mb-0">Enter grades, take daily attendance, and keep families informed.</p>
         </div>
       </div>
       <div class="col-md-4" data-aos="zoom-in" data-aos-delay="300">
@@ -118,8 +118,8 @@
           <div class="icon-avatar-frame bg-navy-light text-navy mb-3">
             <i class="fas fa-wallet"></i>
           </div>
-          <h5 class="fw-bold text-dark mb-2">For Financial Offices</h5>
-          <p class="text-muted small mb-0">Reconcile transaction registries, manage custom fee rules, and automate business ledger audits for key stakeholders.</p>
+          <h5 class="fw-bold text-dark mb-2">For the Business Office</h5>
+          <p class="text-muted small mb-0">Collect tuition, track fees, and keep school accounts clear and organized.</p>
         </div>
       </div>
     </div>
@@ -219,10 +219,10 @@
   <section id="upcoming-schedule" class="container pb-6">
     <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mb-4">
       <div>
-        <h2 class="fw-bold text-dark mb-1">📅 Upcoming Academic Schedule</h2>
-        <p class="text-muted small mb-0">Track upcoming terminal schedules, operational events, and session markers.</p>
+        <h2 class="fw-bold text-dark mb-1">📅 Upcoming School Calendar</h2>
+        <p class="text-muted small mb-0">Stay up to date with exams, holidays, and school events.</p>
       </div>
-      <a href="{{ url_for('events_list') }}" class="btn btn-outline-secondary px-4 btn-sm rounded-3 fw-bold text-dark">View Entire Calendar</a>
+      <a href="{{ url_for('events_list') }}" class="btn btn-outline-secondary px-4 btn-sm rounded-3 fw-bold text-dark">View Full Calendar</a>
     </div>
     
     {% if events %}
@@ -234,7 +234,7 @@
               <div class="mb-3"><span class="badge badge-date font-monospace text-brand"><i class="far fa-clock me-1"></i>{{ event.date.strftime('%b %d, %Y') }}</span></div>
               <h5 class="card-title text-dark fw-bold h6 mb-2">{{ event.title }}</h5>
               <p class="card-text text-muted small mb-4 flex-grow-1">{{ event.description[:140] }}{% if event.description|length > 140 %}…{% endif %}</p>
-              <a href="{{ url_for('events_list') }}" class="stretched-link text-brand small fw-bold text-decoration-none d-inline-flex align-items-center gap-1">See Event Parameters <i class="fas fa-chevron-right style-micro"></i></a>
+              <a href="{{ url_for('events_list') }}" class="stretched-link text-brand small fw-bold text-decoration-none d-inline-flex align-items-center gap-1">View event details <i class="fas fa-chevron-right style-micro"></i></a>
             </div>
           </div>
         </div>
@@ -243,7 +243,7 @@
     {% else %}
       <div class="card border-0 p-5 text-center text-muted shadow-sm bg-white" data-aos="fade-up">
         <i class="fas fa-calendar-alt fa-2x text-light mb-2"></i>
-        <p class="mb-0 small">No active internal calendar parameters populated. Check back shortly.</p>
+        <p class="mb-0 small">No upcoming events are listed yet. Please check back soon.</p>
       </div>
     {% endif %}
   </section>
@@ -253,37 +253,37 @@
       <div class="row align-items-center g-5">
         <div class="col-lg-6" data-aos="fade-right">
           <div class="position-relative overflow-hidden rounded-4 shadow-md bg-white">
-            <img src="{{ url_for('static', filename='images/TIT.png') }}" class="w-100 object-cover d-block" alt="System Dashboard Blueprint Display" style="max-height: 400px;">
+            <img src="{{ url_for('static', filename='images/TIT.png') }}" class="w-100 object-cover d-block" alt="Students on the Future Leaders campus" style="max-height: 400px;">
           </div>
         </div>
         <div class="col-lg-6" data-aos="fade-left">
-          <h2 class="fw-bold text-dark mb-3">Enterprise Capabilities Built For Real-World Scale</h2>
-          <p class="text-muted small mb-4">A single unified code design that aggregates school data vectors securely while lowering local operational friction points.</p>
+          <h2 class="fw-bold text-dark mb-3">A School Portal Built for Everyday Work</h2>
+          <p class="text-muted small mb-4">One place for registration, grades, attendance, and school fees — designed for Future Leaders Preparatory Academy.</p>
           
           <div class="d-flex flex-column gap-3">
             <div class="d-flex gap-3 align-items-start">
               <div class="feature-bullet-index bg-brand text-white shadow-sm">1</div>
               <div>
-                <h6 class="fw-bold text-dark mb-0">Centralized Registration Core</h6>
-                <p class="text-muted small mb-0">Isolate historical academic profiles, demographics, and registration logs safely.</p>
+                <h6 class="fw-bold text-dark mb-0">Student Records</h6>
+                <p class="text-muted small mb-0">Keep student profiles, class placement, and registration history in one place.</p>
               </div>
             </div>
             <div class="d-flex gap-3 align-items-start">
               <div class="feature-bullet-index bg-brand text-white shadow-sm">2</div>
               <div>
-                <h6 class="fw-bold text-dark mb-0">Unified Ledger Accounts Dashboards</h6>
-                <p class="text-muted small mb-0">Track fee status arrays, record balance points, and generate clear status visibility statements.</p>
+                <h6 class="fw-bold text-dark mb-0">School Fees</h6>
+                <p class="text-muted small mb-0">See who has paid, what is outstanding, and print clear receipts.</p>
               </div>
             </div>
             <div class="d-flex gap-3 align-items-start">
               <div class="feature-bullet-index bg-brand text-white shadow-sm">3</div>
               <div>
-                <h6 class="fw-bold text-dark mb-0">Encrypted Role Hierarchy Blueprints</h6>
-                <p class="text-muted small mb-0">Enforce strict data integrity with invisible administrative controls and session token verification logic.</p>
+                <h6 class="fw-bold text-dark mb-0">Secure Role Access</h6>
+                <p class="text-muted small mb-0">Teachers, the registrar, finance, and leadership each see only what they need.</p>
               </div>
             </div>
           </div>
-          <a href="{{ url_for('about') }}" class="btn btn-action-primary mt-4 px-4">Analyze Product Matrix</a>
+          <a href="{{ url_for('about') }}" class="btn btn-action-primary mt-4 px-4">Learn About the Academy</a>
         </div>
       </div>
     </div>

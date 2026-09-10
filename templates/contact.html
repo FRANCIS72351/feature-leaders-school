@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Contact Institutional Support - Future Leaders Preparatory Academy{% endblock %}
+{% block title %}Contact Us - Future Leaders Preparatory Academy{% endblock %}
 
 {% block content %}
 <style>
@@ -109,11 +109,11 @@
                  onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
             <div class="text-start">
                 <h2 class="fw-bold mb-0" style="color: #dc2626 !important;">Future Leaders Preparatory Academy</h2>
-                <span class="badge px-2 py-1 fw-semibold" style="background-color: var(--flpa-red); color: white;">F.L.P.A. Portal Support</span>
+                <span class="badge px-2 py-1 fw-semibold" style="background-color: var(--flpa-red); color: white;">Academy Contact</span>
             </div>
         </div>
         <p class="text-muted mx-auto mb-0" style="max-width: 650px;">
-            Have inquiries regarding student records, portals, or general administration? Submit your ticket directly to our support desk below.
+            Have a question about admissions, student records, or the school portal? Reach the academy using the details below, or send us a message.
         </p>
     </div>
 
@@ -122,9 +122,9 @@
         <!-- Contact Information -->
         <div class="col-lg-6 d-flex flex-column justify-content-between fade-glide-in delay-1">
             <div>
-                <h4 class="fw-bold brand-text-navy mb-3">Institutional Contacts</h4>
+                <h4 class="fw-bold brand-text-navy mb-3">How to Reach Us</h4>
                 <p class="text-muted mb-4">
-                    Reach out to our administrative team via phone, email, or by visiting our campus facilities.
+                    Call, email, or visit the campus during administration hours.
                 </p>
 
                 <!-- Principal Contact -->
@@ -133,8 +133,8 @@
                         <i class="fas fa-phone-alt fa-lg"></i>
                     </div>
                     <div>
-                        <span class="text-muted small fw-bold text-uppercase d-block mb-1">Voice Support Line</span>
-                        <h6 class="fw-bold brand-text-navy mb-0">Mr. Holt <span class="text-muted fw-normal fs-7">(Principal)</span></h6>
+                        <span class="text-muted small fw-bold text-uppercase d-block mb-1">Principal</span>
+                        <h6 class="fw-bold brand-text-navy mb-0">Mr. Holt</h6>
                         <a href="tel:+231777287456" class="fw-semibold brand-text-navy text-decoration-none">+231 777-287-456</a>
                     </div>
                 </div>
@@ -145,8 +145,8 @@
                         <i class="fas fa-user-shield fa-lg"></i>
                     </div>
                     <div>
-                        <span class="text-muted small fw-bold text-uppercase d-block mb-1">Voice Support Line</span>
-                        <h6 class="fw-bold brand-text-navy mb-0">Mr. Agyei <span class="text-muted fw-normal fs-7">(Proprietor)</span></h6>
+                        <span class="text-muted small fw-bold text-uppercase d-block mb-1">Proprietor</span>
+                        <h6 class="fw-bold brand-text-navy mb-0">Mr. Agyei</h6>
                         <a href="tel:+231776476607" class="fw-semibold brand-text-navy text-decoration-none">+231 776-476-607</a>
                     </div>
                 </div>
@@ -157,8 +157,8 @@
                         <i class="fas fa-envelope fa-lg"></i>
                     </div>
                     <div>
-                        <span class="text-muted small fw-bold text-uppercase d-block mb-1">Official Support Email</span>
-                        <a href="mailto:flpacardinals@gmail.com" class="fw-semibold brand-text-navy text-decoration-none">xhangocharm@gmail.com</a>
+                        <span class="text-muted small fw-bold text-uppercase d-block mb-1">Official Email</span>
+                        <a href="mailto:{{ school_print_brand.email_address if school_print_brand else 'flpacardinals@gmail.com' }}" class="fw-semibold brand-text-navy text-decoration-none">{{ school_print_brand.email_address if school_print_brand else 'flpacardinals@gmail.com' }}</a>
                     </div>
                 </div>
 
@@ -177,7 +177,7 @@
             <!-- Operating Hours & Motto -->
             <div class="mt-4">
                 <div class="p-3 mb-3 rounded-3 motto-banner shadow-sm">
-                    <small class="text-uppercase fw-bold text-warning d-block mb-1" style="font-size: 0.7rem; letter-spacing: 1px;">Academy Core Motto</small>
+                    <small class="text-uppercase fw-bold text-warning d-block mb-1" style="font-size: 0.7rem; letter-spacing: 1px;">Academy Motto</small>
                     <p class="mb-0 small fst-italic">"Honor, Excellence, Academics, Discipline, Success"</p>
                 </div>
 
@@ -198,11 +198,11 @@
         <!-- Contact Form -->
         <div class="col-lg-6 d-flex fade-glide-in delay-2">
             <div class="card portal-card p-4 p-md-5 w-100 d-flex flex-column justify-content-center">
-                <h4 class="fw-bold brand-text-navy mb-1">Send Support Ticket</h4>
-                <p class="text-muted small mb-4">Complete this form to submit your inquiry directly to administrative officers.</p>
+                <h4 class="fw-bold brand-text-navy mb-1">Send a Message</h4>
+                <p class="text-muted small mb-4">Share your name, email, and question. We will follow up as soon as we can.</p>
                 
-                <form action="{{ url_for('contact') if 'contact' in self._Template__functions else '#' }}" method="POST">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined }}">
+                <form action="{{ url_for('contact') }}" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     
                     <div class="mb-3">
                         <label for="name" class="form-label small fw-bold text-secondary">Full Name</label>
@@ -225,7 +225,7 @@
                     </div>
 
                     <button type="submit" class="btn btn-flpa-primary w-100 py-2.5 fw-bold shadow-sm rounded-2">
-                        <i class="fas fa-paper-plane me-2"></i>Submit Support Request
+                        <i class="fas fa-paper-plane me-2"></i>Send Message
                     </button>
                 </form>
             </div>
