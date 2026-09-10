@@ -2069,6 +2069,41 @@ def list_classes_grouped():
     return classes, group_classes(classes)
 
 
+def list_assignable_registration_classes():
+    """Class folders a registrar can assign a new student to.
+
+    Class rows are school-wide (not per academic year). Roster search and a
+    missing active year must not yield an empty Target Class picker when
+    classes exist in the database.
+    """
+    return sorted(Class.query.all(), key=class_sort_key_from_klass)
+
+
+def registration_class_select_groups(classes=None):
+    """Grouped Target Class dropdown options as template-safe dicts.
+
+    Uses the key ``options`` (not ``classes``) so Jinja ``group.classes``
+    cannot collide with the registrar dashboard's ``classes`` context
+    variable or resolve to an empty search-filtered list.
+    """
+    rows = list(classes) if classes is not None else list_assignable_registration_classes()
+    groups = []
+    for group in group_classes(rows):
+        groups.append({
+            'key': group['key'],
+            'label': group['label'],
+            'options': [
+                {
+                    'id': klass.id,
+                    'name': klass.name,
+                    'division_label': group['label'],
+                }
+                for klass in (group.get('classes') or [])
+            ],
+        })
+    return groups
+
+
 def ensure_class_official_subjects(klass, *, commit=False):
     """Seed ClassSubject rows from the division catalog when a class has none."""
     if not klass:
@@ -16301,8 +16336,8 @@ def build_registrar_dashboard_context(form=None, search_class=None):
     roster_view = 'alumni' if request.args.get('view') == 'alumni' else 'active'
     history_mode = viewing_archived
 
-    all_class_rows = Class.query.all()
-    all_class_rows = sorted(all_class_rows, key=class_sort_key_from_klass)
+    all_class_rows = list_assignable_registration_classes()
+    registration_class_groups = registration_class_select_groups(all_class_rows)
     # Enrollment class picker must list every class. Search only filters the roster sidebar.
     class_rows = all_class_rows
     if search_class:
@@ -16425,6 +16460,7 @@ def build_registrar_dashboard_context(form=None, search_class=None):
         'suggested_student_id': suggested_student_id,
         'classes': classes,
         'classes_by_division': group_classes(all_class_rows),
+        'registration_class_groups': registration_class_groups,
         'years': years,
         'all_years': years,
         'active_year': active_year,

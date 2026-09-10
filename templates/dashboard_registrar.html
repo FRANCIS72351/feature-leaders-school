@@ -1141,11 +1141,22 @@
                                     <div class="field-locked-wrap" id="wrap_class_id">
                                         <select class="form-select form-cyber" id="class_id" name="klass" data-step-required>
                                             <option value="">Choose Class Folder...</option>
-                                            {% for group in classes_by_division %}
-                                                {% for klass in group.classes %}
+                                            {% set class_groups = registration_class_groups if registration_class_groups is defined and registration_class_groups else classes_by_division %}
+                                            {% for group in class_groups %}
+                                            <optgroup label="{{ group.label }}">
+                                                {% set class_opts = group['options']|default(group['classes'], true) %}
+                                                {% for klass in class_opts %}
                                                 <option value="{{ klass.id }}" data-division="{{ group.label }}">{{ klass.name }} — {{ group.label }}</option>
                                                 {% endfor %}
+                                            </optgroup>
                                             {% endfor %}
+                                            {% if not class_groups %}
+                                                {% for value, label in form.klass.choices %}
+                                                    {% if value %}
+                                                <option value="{{ value }}">{{ label }}</option>
+                                                    {% endif %}
+                                                {% endfor %}
+                                            {% endif %}
                                         </select>
                                         <i class="fas fa-lock lock-indicator" title="Locked to the repeat class"></i>
                                     </div>
