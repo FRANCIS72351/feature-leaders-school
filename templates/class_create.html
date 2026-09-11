@@ -359,7 +359,7 @@
                         <select class="form-select form-cyber" id="teacher_id" name="teacher_id" required>
                             <option value="" disabled selected>Select Teacher...</option>
                             {% for teacher in teachers %}
-                                <option value="{{ teacher.id }}">{{ teacher.full_name }} ({{ teacher.employee_id }})</option>
+                                <option value="{{ teacher.id }}">{{ teacher.full_name }}{% if teacher.user and teacher.user.email %} ({{ teacher.user.email }}){% endif %}</option>
                             {% endfor %}
                         </select>
                     </div>

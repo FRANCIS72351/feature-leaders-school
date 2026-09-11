@@ -1427,7 +1427,7 @@ def teacher_can_access_student(teacher_profile, user, student, academic_year_id=
         return False
 
 
-def get_teacher_class_cards(teacher_profile, user, academic_year_id=None):
+def get_teacher_class_cards(teacher_profile, user, academic_year_id=None, *, viewing_archived=False):
     """Build class folder cards with subjects and student counts for the teacher UI."""
     if not teacher_profile or not user:
         return []
@@ -1445,7 +1445,7 @@ def get_teacher_class_cards(teacher_profile, user, academic_year_id=None):
     else:
         display_year = get_active_academic_year()
     roster_sizes = (
-        _roster_sizes_for_display_year(display_year, viewing_archived=False)
+        _roster_sizes_for_display_year(display_year, viewing_archived=viewing_archived)
         if display_year else {}
     )
 
@@ -1482,7 +1482,12 @@ def build_teacher_dashboard_context(teacher_profile, user, academic_year_id=None
         academic_year_id = active.id if active else None
     class_ids = get_teacher_class_ids(teacher_profile, user)
     teaching_classes = get_teacher_classes(teacher_profile, user)
-    class_cards = get_teacher_class_cards(teacher_profile, user, academic_year_id)
+    class_cards = get_teacher_class_cards(
+        teacher_profile,
+        user,
+        academic_year_id,
+        viewing_archived=viewing_archived,
+    )
     sponsored_classes = (
         Class.query.filter_by(sponsor_id=user.id).order_by(Class.name.asc()).all()
         if user else []
@@ -7342,6 +7347,14 @@ def _parse_student_period_grade_from_form(student, form, klass, period):
     }, None
 
 
+def teacher_is_viewing_archived_year():
+    """True when the teacher dashboard year picker is not the active session."""
+    _display, _active, _years, viewing_archived = resolve_dashboard_academic_year(
+        session_key=TEACHER_YEAR_SESSION_KEY,
+    )
+    return viewing_archived
+
+
 @app.route('/save-grades/<int:class_id>', methods=['POST'])
 @login_required
 def save_grades(class_id):
@@ -7363,6 +7376,18 @@ def save_grades(class_id):
     if not active_year:
         flash('No active academic year found. Please contact the administrator.', 'danger')
         return redirect(url_for('grade_entry_class', class_id=class_id))
+
+    if teacher_is_viewing_archived_year():
+        flash(
+            'Grade entry is read-only for archived academic years. '
+            'Switch to the active year before saving scores.',
+            'warning',
+        )
+        return _redirect_after_save_grades(
+            class_id,
+            (request.form.get('subject') or '').strip(),
+            request.form.get('period', type=int) or 1,
+        )
 
     subject_name = (request.form.get('subject') or '').strip()
     period = request.form.get('period', type=int)
@@ -15820,6 +15845,21 @@ def students_for_academic_year(year_id, *, registered_only=False, **filters):
     return query
 
 
+def list_payment_students_for_year(academic_year):
+    """Students selectable when posting a payment for one academic-year folder."""
+    if not academic_year:
+        return []
+    year_id = academic_year.id if hasattr(academic_year, 'id') else academic_year
+    if not year_id:
+        return []
+    return (
+        students_for_academic_year(year_id, registered_only=True)
+        .filter(~Student.status.in_(list(ALUMNI_STATUSES)))
+        .order_by(Student.last_name.asc(), Student.first_name.asc())
+        .all()
+    )
+
+
 def _students_pending_year_registration(display_year):
     """Promoted students tagged to a year but awaiting registrar re-registration."""
     if not display_year:
@@ -16505,6 +16545,25 @@ def persist_student_guardian_name(student, form=None, raw=None):
     return student.guardian_name
 
 
+def persist_student_portal_contact_fields(student):
+    """Copy registrar HTML phone/address fields onto the student portal user.
+
+    These inputs live on the registrar form but are not WTForms fields, so they
+    were previously dropped on save.
+    """
+    if not student or not has_request_context() or request.form is None:
+        return
+    user = student.user or (db.session.get(User, student.user_id) if student.user_id else None)
+    if not user:
+        return
+    if 'telephone_number' in request.form:
+        phone = (request.form.get('telephone_number') or '').strip()
+        user.telephone_number = phone[:20] if phone else None
+    if 'home_address' in request.form:
+        address = (request.form.get('home_address') or '').strip()
+        user.home_address = address[:255] if address else None
+
+
 def apply_student_form_to_record(student, form, *, registrar_name, registration_type=None):
     """Persist RegisterStudentForm fields onto a Student record."""
     klass_id = form.klass.data or None
@@ -16558,6 +16617,7 @@ def apply_student_form_to_record(student, form, *, registrar_name, registration_
 
     year = db.session.get(AcademicYear, academic_year_id) if academic_year_id else None
     _sync_student_id_card(student, academic_year=year)
+    persist_student_portal_contact_fields(student)
 
     return registration_fee_value, academic_year_id
 
@@ -16737,6 +16797,8 @@ def register_student():
                         "That email may already belong to another student account.",
                         "warning",
                     )
+
+            persist_student_portal_contact_fields(student)
 
             registration_payment = None
             offer_receipt = False
@@ -20569,6 +20631,8 @@ def edit_student(student_id):
         else:
             issued_password = None
 
+        persist_student_portal_contact_fields(student)
+
         registration_payment = None
         offer_receipt = False
         if registration_fee_value > 0 and academic_year_id:
@@ -21092,20 +21156,16 @@ def business_management():
     form = TransactionForm()
     enroll_form = EnrollmentForm()
     payment_form = PaymentForm()
-    
-    # Populate dropdown choices dynamically
-    payment_form.student.choices = [(s.id, f"{s.first_name} {s.last_name} ({s.student_id})") for s in Student.query.order_by(Student.last_name).all()]
+
     all_years = all_academic_years()
     active_year = get_active_academic_year()
     payment_form.academic_year.choices = [(y.id, y.name) for y in all_years]
-    
+
     # Pre-fill data if provided via search query parameters
     prefill_student_id = request.args.get('student_id', type=int)
     prefill_year_id = request.args.get('year_id', type=int)
-    
+
     if request.method == 'GET':
-        if prefill_student_id:
-            payment_form.student.data = prefill_student_id
         if prefill_year_id:
             payment_form.academic_year.data = prefill_year_id
         elif active_year:
@@ -21117,6 +21177,18 @@ def business_management():
     if selected_year_obj is None and active_year:
         selected_year_obj = active_year
         selected_year = active_year.name
+
+    payment_year = None
+    if payment_form.academic_year.data:
+        payment_year = db.session.get(AcademicYear, payment_form.academic_year.data)
+    if payment_year is None:
+        payment_year = selected_year_obj
+    payment_form.student.choices = [
+        (s.id, f"{s.first_name} {s.last_name} ({s.student_id})")
+        for s in list_payment_students_for_year(payment_year)
+    ]
+    if request.method == 'GET' and prefill_student_id:
+        payment_form.student.data = prefill_student_id
     
     # 2. Handle Daily Expense/Income Transaction Posting
     if 'submit_transaction' in request.form:

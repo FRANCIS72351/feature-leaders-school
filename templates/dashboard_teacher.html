@@ -757,6 +757,10 @@
     <p class="scheme-note">Typical weights totaling {{ period_total_listed_max|default(100)|int }}: {{ period_scheme_note if period_scheme_note is defined else 'ATT 10 + PART 10 + QUIZ 15 + ASSG 20 + CW 15 + HW 10 + TEST 20 = 100' }}. Each activity box accepts 0–{{ period_component_field_max|default(100)|int }} (you may enter above the column weight). Direct period grade: 0–{{ period_total_extra_max|default(110)|int }}.</p>
   {% endif %}
 
+  {% if viewing_archived %}
+  <div class="alert alert-warning">This academic year is archived. Grade entry is read-only — switch to the active year to save scores.</div>
+  {% endif %}
+
   {% if grade_class_id and grade_subject %}
   <form method="POST" action="{{ url_for('save_grades', class_id=grade_class_id) }}" id="teacherGradeWorkForm">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
