@@ -16,6 +16,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas as pdf_canvas
 
+from school_divisions import SCHOOL_PRINT_NAME
+
 try:
     from PIL import Image as PILImage
 except ImportError:
@@ -35,14 +37,18 @@ INK = HexColor('#1a2332')
 MUTED = HexColor('#4b5563')
 CARDINAL_DEFAULT = HexColor('#c82828')
 
-# Top banner on student and staff ID cards only — not the school print name
-# used on reports, login, and the rest of the app.
-ID_CARD_HEADER_NAME = 'Republic of Liberia'
+# Front banner is the school print name; the back keeps the national title.
+ID_CARD_FRONT_HEADER_NAME = SCHOOL_PRINT_NAME
+ID_CARD_BACK_HEADER_NAME = 'Republic of Liberia'
+ID_CARD_HEADER_NAME = ID_CARD_BACK_HEADER_NAME
 
 
-def id_card_header_title(*, uppercase=False):
-    """Navy/cardinal banner title shared by student and staff ID cards."""
-    title = (ID_CARD_HEADER_NAME or '').strip() or 'Republic of Liberia'
+def id_card_header_title(*, side='front', uppercase=False):
+    """ID card banner title. Front is the school name; back is Republic of Liberia."""
+    if (side or 'front').strip().lower() == 'back':
+        title = (ID_CARD_BACK_HEADER_NAME or '').strip() or 'Republic of Liberia'
+    else:
+        title = (ID_CARD_FRONT_HEADER_NAME or '').strip() or SCHOOL_PRINT_NAME
     return title.upper() if uppercase else title
 
 
@@ -450,7 +456,7 @@ def _draw_staff_front(c, x, y, card, assets):
     _draw_header_logo(c, x + 2.6 * mm, header_y + (header_h - logo_size) / 2.0, logo_size, logo)
     name_x = x + 2.6 * mm + logo_size + 2.0 * mm
     name_w = CARD_W - (name_x - x) - 2.4 * mm
-    lines = _wrap_text(c, id_card_header_title(uppercase=True), 'Helvetica-Bold', 6.0, name_w, 2)
+    lines = _wrap_text(c, id_card_header_title(side='front', uppercase=True), 'Helvetica-Bold', 6.0, name_w, 2)
     c.setFillColor(white)
     c.setFont('Helvetica-Bold', 6.0)
     text_y = header_y + header_h / 2.0 + (5.0 if len(lines) > 1 else 1.8)
@@ -616,7 +622,7 @@ def _draw_front(c, x, y, card, assets):
     name_w = CARD_W - (name_x - x) - 2.5 * mm
     c.setFillColor(white)
     c.setFont('Helvetica-Bold', 6.2)
-    lines = _wrap_text(c, id_card_header_title(uppercase=True), 'Helvetica-Bold', 6.2, name_w, 2)
+    lines = _wrap_text(c, id_card_header_title(side='front', uppercase=True), 'Helvetica-Bold', 6.2, name_w, 2)
     text_y = header_y + header_h / 2.0 + (3.2 if len(lines) > 1 else 0)
     for line in lines:
         c.drawString(name_x, text_y, line)
@@ -752,7 +758,7 @@ def _draw_back(c, x, y, card, assets):
     name_w = CARD_W - (name_x - x) - 2.5 * mm
     c.setFillColor(GOLD)
     c.setFont('Helvetica-Bold', 6.2)
-    lines = _wrap_text(c, id_card_header_title(uppercase=True), 'Helvetica-Bold', 6.2, name_w, 2)
+    lines = _wrap_text(c, id_card_header_title(side='back', uppercase=True), 'Helvetica-Bold', 6.2, name_w, 2)
     text_y = header_y + header_h / 2.0 + (3.2 if len(lines) > 1 else 0)
     for line in lines:
         c.drawString(name_x, text_y, line)

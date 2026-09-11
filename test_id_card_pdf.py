@@ -83,17 +83,30 @@ class IdCardPdfTestCase(unittest.TestCase):
             'brand_red': '#c82828',
         }
 
-    def _assert_id_banner_title(self, drawn):
+    def _assert_front_and_back_headers(self, drawn):
+        """Front draws the school name; back keeps Republic of Liberia."""
+        self.assertIn(b'FUTURE LEADERS', drawn)
+        self.assertIn(b'PREPARATORY', drawn)
+        self.assertIn(b'ACADEMY', drawn)
         self.assertIn(b'REPUBLIC OF LIBERIA', drawn)
-        self.assertNotIn(b'FUTURE LEADERS PREPARATORY ACADEMY', drawn)
-        self.assertNotIn(b'Future Leaders Preparatory Academy', drawn)
 
     def test_id_card_header_title_helper(self):
-        self.assertEqual(id_card_header_title(), 'Republic of Liberia')
-        self.assertEqual(id_card_header_title(uppercase=True), 'REPUBLIC OF LIBERIA')
-        self.assertNotEqual(id_card_header_title(), 'Future Leaders Preparatory Academy')
+        self.assertEqual(id_card_header_title(), 'Future Leaders Preparatory Academy')
+        self.assertEqual(
+            id_card_header_title(side='front'),
+            'Future Leaders Preparatory Academy',
+        )
+        self.assertEqual(
+            id_card_header_title(side='front', uppercase=True),
+            'FUTURE LEADERS PREPARATORY ACADEMY',
+        )
+        self.assertEqual(id_card_header_title(side='back'), 'Republic of Liberia')
+        self.assertEqual(
+            id_card_header_title(side='back', uppercase=True),
+            'REPUBLIC OF LIBERIA',
+        )
 
-    def test_student_pdf_header_is_republic_of_liberia(self):
+    def test_student_pdf_front_is_school_name_back_is_republic(self):
         student = SimpleNamespace(
             id=1,
             full_name='Test Student',
@@ -111,9 +124,9 @@ class IdCardPdfTestCase(unittest.TestCase):
             brand=self._school_brand(),
         )
         drawn = _pdf_content_text(buf.getvalue())
-        self._assert_id_banner_title(drawn)
+        self._assert_front_and_back_headers(drawn)
 
-    def test_staff_pdf_header_is_republic_of_liberia(self):
+    def test_staff_pdf_front_is_school_name_back_is_republic(self):
         staff = SimpleNamespace(
             id=9,
             full_name='Test Staff',
@@ -139,27 +152,33 @@ class IdCardPdfTestCase(unittest.TestCase):
             brand=self._school_brand(),
         )
         drawn = _pdf_content_text(buf.getvalue())
-        self._assert_id_banner_title(drawn)
+        self._assert_front_and_back_headers(drawn)
         self.assertIn(b'STAFF', drawn)
+        self.assertIn(b'(F.L.P.A)', drawn)
 
-    def test_print_batch_banner_uses_republic_of_liberia(self):
+    def test_print_batch_front_school_name_back_republic(self):
         from pathlib import Path
 
         html = Path(__file__).with_name('templates').joinpath('id_cards', 'print_batch.html').read_text(
             encoding='utf-8'
         )
-        self.assertEqual(html.count('class="header-name">{{ header_name }}'), 3)
+        self.assertEqual(html.count('class="header-name">{{ front_header_name }}'), 2)
+        self.assertEqual(html.count('class="header-name">{{ back_header_name }}'), 1)
         self.assertNotIn('class="header-name">{{ brand.name }}', html)
-        self.assertIn("id_card_header_name or 'Republic of Liberia'", html)
+        self.assertNotIn('class="header-name">{{ header_name }}', html)
+        self.assertIn("id_card_front_header_name or 'Future Leaders Preparatory Academy'", html)
+        self.assertIn("id_card_back_header_name or 'Republic of Liberia'", html)
         with app.test_request_context('/id-cards/print/class/1'):
             from flask import render_template_string
 
             rendered = render_template_string(
-                '{% set header_name = id_card_header_name or "missing" %}'
-                '<div class="header-name">{{ header_name }}</div>'
+                '<div class="front">{{ id_card_front_header_name }}</div>'
+                '<div class="back">{{ id_card_back_header_name }}</div>'
             )
+        self.assertIn('Future Leaders Preparatory Academy', rendered)
         self.assertIn('Republic of Liberia', rendered)
-        self.assertNotIn('Future Leaders Preparatory Academy', rendered)
+        self.assertIn('<div class="front">Future Leaders Preparatory Academy</div>', rendered)
+        self.assertIn('<div class="back">Republic of Liberia</div>', rendered)
 
     def test_id_card_footer_fill_staff_red_student_navy(self):
         self.assertEqual(ID_CARD_STUDENT_FOOTER_HEX.lower(), '#002d62')
