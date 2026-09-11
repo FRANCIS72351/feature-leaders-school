@@ -35,6 +35,7 @@ from id_card_pdf import (
     PHOTO_WELL_MM,
     id_photo_contain_rect,
     build_class_id_cards_pdf,
+    id_card_header_title,
     id_cards_pdf_filename,
     resolve_id_card_parent_name,
 )
@@ -65,6 +66,93 @@ class IdCardPdfTestCase(unittest.TestCase):
             id_cards_pdf_filename(klass, year),
             'FLPA_ID_Cards_12_2040_2041.pdf',
         )
+
+    def _school_brand(self):
+        return {
+            'name': 'Future Leaders Preparatory Academy',
+            'full_address': 'Center Street, South Beach, Monrovia, Liberia',
+            'phones': '0770000000',
+            'motto': 'Honor, Excellence, Academics, Discipline, Success',
+            'brand_red': '#c82828',
+        }
+
+    def _assert_id_banner_title(self, drawn):
+        self.assertIn(b'REPUBLIC OF LIBERIA', drawn)
+        self.assertNotIn(b'FUTURE LEADERS PREPARATORY ACADEMY', drawn)
+        self.assertNotIn(b'Future Leaders Preparatory Academy', drawn)
+
+    def test_id_card_header_title_helper(self):
+        self.assertEqual(id_card_header_title(), 'Republic of Liberia')
+        self.assertEqual(id_card_header_title(uppercase=True), 'REPUBLIC OF LIBERIA')
+        self.assertNotEqual(id_card_header_title(), 'Future Leaders Preparatory Academy')
+
+    def test_student_pdf_header_is_republic_of_liberia(self):
+        student = SimpleNamespace(
+            id=1,
+            full_name='Test Student',
+            student_id='FLPA-1001',
+            parent_user=SimpleNamespace(full_name='Test Parent'),
+            parent_phone='0770000000',
+            id_expiration_date=date(2026, 7, 31),
+            official_signature_mark='Student T.',
+            signature_url=None,
+        )
+        buf = build_class_id_cards_pdf(
+            [{'student': student, 'class_label': 'Grade 6A', 'qr_code_data_uri': None}],
+            klass=SimpleNamespace(name='Grade 6A'),
+            display_year=SimpleNamespace(name='2025-2026'),
+            brand=self._school_brand(),
+        )
+        drawn = _pdf_content_text(buf.getvalue())
+        self._assert_id_banner_title(drawn)
+
+    def test_staff_pdf_header_is_republic_of_liberia(self):
+        staff = SimpleNamespace(
+            id=9,
+            full_name='Test Staff',
+            student_id='FLPA-0009',
+            parent_user=None,
+            parent_phone=None,
+            telephone_number='0770000000',
+            id_expiration_date=date(2027, 7, 31),
+            official_signature_mark='Test S.',
+            signature_url=None,
+        )
+        buf = build_class_id_cards_pdf(
+            [
+                {
+                    'student': staff,
+                    'card_kind': 'staff',
+                    'staff_id': 'FLPA-0009',
+                    'position': 'Teacher',
+                    'qr_code_data_uri': None,
+                    'signature_mark': 'Test S.',
+                }
+            ],
+            brand=self._school_brand(),
+        )
+        drawn = _pdf_content_text(buf.getvalue())
+        self._assert_id_banner_title(drawn)
+        self.assertIn(b'STAFF', drawn)
+
+    def test_print_batch_banner_uses_republic_of_liberia(self):
+        from pathlib import Path
+
+        html = Path(__file__).with_name('templates').joinpath('id_cards', 'print_batch.html').read_text(
+            encoding='utf-8'
+        )
+        self.assertEqual(html.count('class="header-name">{{ header_name }}'), 3)
+        self.assertNotIn('class="header-name">{{ brand.name }}', html)
+        self.assertIn("id_card_header_name or 'Republic of Liberia'", html)
+        with app.test_request_context('/id-cards/print/class/1'):
+            from flask import render_template_string
+
+            rendered = render_template_string(
+                '{% set header_name = id_card_header_name or "missing" %}'
+                '<div class="header-name">{{ header_name }}</div>'
+            )
+        self.assertIn('Republic of Liberia', rendered)
+        self.assertNotIn('Future Leaders Preparatory Academy', rendered)
 
     def test_batch_pdf_has_header_and_pages(self):
         student = SimpleNamespace(

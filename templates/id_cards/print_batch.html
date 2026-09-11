@@ -642,6 +642,7 @@
 </head>
 <body>
     {% set brand = school_print_brand %}
+    {% set header_name = id_card_header_name or 'Republic of Liberia' %}
     <div class="toolbar">
         <p>
             {{ cards|length }} ID card{{ 's' if cards|length != 1 else '' }}
@@ -700,7 +701,7 @@
                 <header class="front-header">
                     <img class="header-logo" src="{{ school_logo_url }}" alt="" decoding="async"{% if loop.index > 2 %} loading="lazy"{% endif %}>
                     <div>
-                        <div class="header-name">{{ brand.name }}</div>
+                        <div class="header-name">{{ header_name }}</div>
                         <div class="header-sub">(F.L.P.A)</div>
                     </div>
                 </header>
@@ -732,7 +733,7 @@
             <article class="id-card front" aria-label="Student ID front">
                 <header class="front-header">
                     <img class="header-logo" src="{{ school_logo_url }}" alt="" decoding="async"{% if loop.index > 2 %} loading="lazy"{% endif %}>
-                    <div class="header-name">{{ brand.name }}</div>
+                    <div class="header-name">{{ header_name }}</div>
                 </header>
                 <div class="sunburst" aria-hidden="true"></div>
                 <div class="photo-wrap">
@@ -760,7 +761,7 @@
             <article class="id-card back" aria-label="{{ 'Staff' if is_staff else 'Student' }} ID back">
                 <header class="back-header">
                     <img class="header-logo" src="{{ school_logo_url }}" alt="" decoding="async"{% if loop.index > 2 %} loading="lazy"{% endif %}>
-                    <div class="header-name">{{ brand.name }}</div>
+                    <div class="header-name">{{ header_name }}</div>
                 </header>
                 <div class="back-rule" aria-hidden="true"></div>
                 {% if liberia_seal_url %}

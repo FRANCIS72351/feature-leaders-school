@@ -123,7 +123,7 @@ from student_scanner import (
     get_site_base_url,
     site_url_is_loopback,
 )
-from id_card_pdf import build_class_id_cards_pdf, id_cards_pdf_filename
+from id_card_pdf import build_class_id_cards_pdf, id_card_header_title, id_cards_pdf_filename
 import secrets
 try:
     from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
@@ -6037,6 +6037,7 @@ def inject_nav_flags():
         "format_video_duration": _format_video_duration,
         "current_year": datetime.now(timezone.utc).year,
         "school_print_brand": school_print_brand(),
+        "id_card_header_name": id_card_header_title(),
         "school_logo_url": school_logo_static_url(),
         "liberia_seal_url": liberia_seal_static_url(),
         "display_font_url": display_font_static_url(),
