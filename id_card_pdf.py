@@ -45,6 +45,20 @@ def id_card_header_title(*, uppercase=False):
     title = (ID_CARD_HEADER_NAME or '').strip() or 'Republic of Liberia'
     return title.upper() if uppercase else title
 
+
+# Solid ID-card footers (download PDF and HTML print). Staff uses brand red;
+# students use the same navy as the card header. No stripe pattern.
+ID_CARD_STUDENT_FOOTER_HEX = '#002d62'
+ID_CARD_STAFF_FOOTER_HEX = '#c82828'
+ID_CARD_BACK_FOOTER_MM = 14.0
+
+
+def id_card_footer_fill(is_staff, cardinal=None):
+    """Solid footer fill: staff brand red, student navy."""
+    if is_staff:
+        return cardinal if cardinal is not None else CARDINAL_DEFAULT
+    return NAVY
+
 logger = logging.getLogger(__name__)
 
 _SIG_FONT = None
@@ -553,34 +567,19 @@ def _draw_staff_front(c, x, y, card, assets):
         _from_top(y, 75.5),
     )
 
-    # Footer: gold hairline, cardinal band, motto, diagonal stripe flourish.
+    # Footer: gold hairline, solid brand-red band, motto.
     footer_h = STAFF_FOOTER_MM * mm
     c.setFillColor(GOLD)
     c.rect(x, y + footer_h, CARD_W, 0.8 * mm, stroke=0, fill=1)
-    c.setFillColor(cardinal)
+    c.setFillColor(id_card_footer_fill(True, cardinal))
     c.rect(x, y, CARD_W, footer_h, stroke=0, fill=1)
-    c.saveState()
-    stripe_clip = c.beginPath()
-    stripe_clip.rect(x + CARD_W - 12 * mm, y, 12 * mm, footer_h)
-    c.clipPath(stripe_clip, stroke=0, fill=0)
-    c.setFillColor(GOLD)
-    for step in range(4):
-        base = x + CARD_W - 11 * mm + step * 3.0 * mm
-        path = c.beginPath()
-        path.moveTo(base, y)
-        path.lineTo(base + 1.1 * mm, y)
-        path.lineTo(base + 1.1 * mm + footer_h * 0.5, y + footer_h)
-        path.lineTo(base + footer_h * 0.5, y + footer_h)
-        path.close()
-        c.drawPath(path, stroke=0, fill=1)
-    c.restoreState()
     motto = (brand.get('motto') or '').upper()
-    motto_lines = _wrap_text(c, motto, 'Helvetica-Bold', 4.2, CARD_W - 16 * mm, 2)
+    motto_lines = _wrap_text(c, motto, 'Helvetica-Bold', 4.2, CARD_W - 5 * mm, 2)
     c.setFillColor(white)
     c.setFont('Helvetica-Bold', 4.2)
     motto_y = y + footer_h / 2.0 + (2.4 if len(motto_lines) > 1 else -1.2)
     for line in motto_lines:
-        c.drawCentredString(x + (CARD_W - 10 * mm) / 2.0 + 1 * mm, motto_y, line)
+        c.drawCentredString(x + CARD_W / 2.0, motto_y, line)
         motto_y -= 5.2
 
     c.restoreState()
@@ -709,7 +708,7 @@ def _draw_front(c, x, y, card, assets):
     footer_h = 7.2 * mm
     c.setFillColor(GOLD)
     c.rect(x, y + footer_h, CARD_W, 1.2 * mm, stroke=0, fill=1)
-    c.setFillColor(cardinal)
+    c.setFillColor(id_card_footer_fill(False, cardinal))
     c.rect(x, y, CARD_W, footer_h, stroke=0, fill=1)
     motto = (brand.get('motto') or '').upper()
     c.setFillColor(white)
@@ -831,33 +830,10 @@ def _draw_back(c, x, y, card, assets):
         c.setFont('Helvetica-Bold', 3.6)
         c.drawCentredString(qr_x + qr_size / 2.0, y + 15.6 * mm, 'SCAN FOR PORTAL')
 
-    # Footer stripes (14mm): navy 3.2 + cardinal 2.4 + diagonal stripes 8.4
-    c.setFillColor(NAVY)
-    c.rect(x, y + 10.8 * mm, CARD_W, 3.2 * mm, stroke=0, fill=1)
-    c.setFillColor(cardinal)
-    c.rect(x, y + 8.4 * mm, CARD_W, 2.4 * mm, stroke=0, fill=1)
-    stripe_h = 8.4 * mm
-    c.saveState()
-    path = c.beginPath()
-    path.rect(x, y, CARD_W, stripe_h)
-    c.clipPath(path, stroke=0, fill=0)
-    step = 6.4 * mm
-    origin = x - stripe_h
-    index = 0
-    while origin + index * step < x + CARD_W + stripe_h:
-        left = origin + index * step
-        color = NAVY if index % 3 == 0 else (cardinal if index % 3 == 1 else GOLD)
-        width = 3.2 * mm if index % 3 == 0 else (2.4 * mm if index % 3 == 1 else 0.8 * mm)
-        c.setFillColor(color)
-        path = c.beginPath()
-        path.moveTo(left, y)
-        path.lineTo(left + width, y)
-        path.lineTo(left + width + stripe_h * 0.55, y + stripe_h)
-        path.lineTo(left + stripe_h * 0.55, y + stripe_h)
-        path.close()
-        c.drawPath(path, stroke=0, fill=1)
-        index += 1
-    c.restoreState()
+    # Solid footer bar (14mm): staff brand red, student navy. No stripes.
+    footer_h = ID_CARD_BACK_FOOTER_MM * mm
+    c.setFillColor(id_card_footer_fill(is_staff, cardinal))
+    c.rect(x, y, CARD_W, footer_h, stroke=0, fill=1)
 
     c.restoreState()
     c.setStrokeColor(NAVY)

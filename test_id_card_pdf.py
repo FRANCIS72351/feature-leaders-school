@@ -8,6 +8,8 @@ from io import BytesIO
 from types import SimpleNamespace
 from unittest import mock
 
+from reportlab.lib.colors import HexColor
+
 
 def _pdf_content_text(payload):
     """Decompress ReportLab page streams so tests can see drawn strings."""
@@ -29,12 +31,17 @@ def _pdf_content_text(payload):
 
 from app import app, persist_student_guardian_name, _id_cards_pdf_attachment_response
 from id_card_pdf import (
+    CARDINAL_DEFAULT,
+    NAVY,
     PHOTO_COVER_SCALE,
     PHOTO_FIT,
     PHOTO_POSITION_Y,
     PHOTO_WELL_MM,
+    ID_CARD_STAFF_FOOTER_HEX,
+    ID_CARD_STUDENT_FOOTER_HEX,
     id_photo_contain_rect,
     build_class_id_cards_pdf,
+    id_card_footer_fill,
     id_card_header_title,
     id_cards_pdf_filename,
     resolve_id_card_parent_name,
@@ -153,6 +160,41 @@ class IdCardPdfTestCase(unittest.TestCase):
             )
         self.assertIn('Republic of Liberia', rendered)
         self.assertNotIn('Future Leaders Preparatory Academy', rendered)
+
+    def test_id_card_footer_fill_staff_red_student_navy(self):
+        self.assertEqual(ID_CARD_STUDENT_FOOTER_HEX.lower(), '#002d62')
+        self.assertEqual(ID_CARD_STAFF_FOOTER_HEX.lower(), '#c82828')
+        self.assertEqual(id_card_footer_fill(False).hexval(), NAVY.hexval())
+        self.assertEqual(id_card_footer_fill(True).hexval(), CARDINAL_DEFAULT.hexval())
+        custom = HexColor('#aa1122')
+        self.assertEqual(id_card_footer_fill(True, custom).hexval(), custom.hexval())
+        self.assertEqual(id_card_footer_fill(False, custom).hexval(), NAVY.hexval())
+
+    def test_print_batch_footer_is_solid_blue_or_red(self):
+        from pathlib import Path
+
+        html = Path(__file__).with_name('templates').joinpath('id_cards', 'print_batch.html').read_text(
+            encoding='utf-8'
+        )
+        self.assertIn('--student-footer: var(--navy)', html)
+        self.assertIn('--staff-footer: var(--cardinal)', html)
+        self.assertIn('.front-footer {', html)
+        self.assertIn('background: var(--student-footer)', html)
+        self.assertIn('.staff-front .front-footer', html)
+        self.assertIn('background: var(--staff-footer)', html)
+        self.assertIn('.staff-pair .back-footer', html)
+        self.assertIn('card-pair{% if is_staff %} staff-pair{% endif %}', html)
+        self.assertIn('class="back-footer" aria-hidden="true"></div>', html)
+        self.assertNotIn('repeating-linear-gradient', html)
+        self.assertNotIn('class="stripes"', html)
+        self.assertNotIn('band-navy', html)
+        self.assertNotIn('band-cardinal', html)
+
+        pdf_src = Path(__file__).with_name('id_card_pdf.py').read_text(encoding='utf-8')
+        self.assertIn('id_card_footer_fill(is_staff, cardinal)', pdf_src)
+        self.assertNotIn('stripe_h', pdf_src)
+        self.assertNotIn('stripe_clip', pdf_src)
+        self.assertNotIn('repeating-linear-gradient', pdf_src)
 
     def test_batch_pdf_has_header_and_pages(self):
         student = SimpleNamespace(
