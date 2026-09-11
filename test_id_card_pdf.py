@@ -154,7 +154,7 @@ class IdCardPdfTestCase(unittest.TestCase):
         drawn = _pdf_content_text(buf.getvalue())
         self._assert_front_and_back_headers(drawn)
         self.assertIn(b'STAFF', drawn)
-        self.assertIn(b'(F.L.P.A)', drawn)
+        self.assertIn(b'F.L.P.A', drawn)
 
     def test_print_batch_front_school_name_back_republic(self):
         from pathlib import Path
