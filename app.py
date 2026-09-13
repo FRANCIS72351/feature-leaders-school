@@ -748,6 +748,7 @@ def get_teacher_class_ids(teacher_profile, user=None):
         pass
 
     try:
+        # Class.sponsor_id is a FK to users.id, never teachers.id.
         if user_id:
             for klass in Class.query.filter_by(sponsor_id=user_id).all():
                 ids.add(klass.id)
@@ -1454,11 +1455,12 @@ def get_teacher_class_cards(teacher_profile, user, academic_year_id=None, *, vie
     for klass in Class.query.filter(Class.id.in_(class_ids)).order_by(
         Class.grade_level.asc(), Class.name.asc()
     ):
+        is_sponsor = klass.sponsor_id == user.id
         role_labels = []
         if klass.teacher_id == teacher_profile.id:
             role_labels.append('Homeroom')
-        if klass.sponsor_id == user.id:
-            role_labels.append('Sponsor')
+        if is_sponsor:
+            role_labels.append('Class Sponsor')
         if not role_labels:
             role_labels.append('Subject Teacher')
 
@@ -1471,6 +1473,67 @@ def get_teacher_class_cards(teacher_profile, user, academic_year_id=None, *, vie
             'subjects': sorted(subject_map.get(klass.id, [])),
             'student_count': student_count,
             'role_labels': role_labels,
+            'is_sponsor': is_sponsor,
+            'sponsor_statement': class_sponsor_statement(klass) if is_sponsor else '',
+            'klass': klass,
+        })
+    return cards
+
+
+def class_sponsor_statement(klass):
+    """Dashboard copy naming the class this teacher sponsors."""
+    name = (getattr(klass, 'name', None) or 'this class').strip() or 'this class'
+    return f'You are the class sponsor for {name}'
+
+
+def get_sponsored_class_cards(user, academic_year_id=None, *, viewing_archived=False, teacher_profile=None):
+    """Classes where this user is the class sponsor.
+
+    Class.sponsor_id points at users.id. Comparing against Teacher.id hides every
+    sponsorship after login, which is why the dashboard used to look empty.
+    Classes themselves are not year-scoped; only roster counts follow the picker.
+    """
+    if not user:
+        return []
+
+    klasses = (
+        Class.query.filter_by(sponsor_id=user.id)
+        .order_by(Class.grade_level.asc(), Class.name.asc())
+        .all()
+    )
+    if not klasses:
+        return []
+
+    if academic_year_id is not None:
+        display_year = db.session.get(AcademicYear, academic_year_id)
+    else:
+        display_year = get_active_academic_year()
+    roster_sizes = (
+        _roster_sizes_for_display_year(display_year, viewing_archived=viewing_archived)
+        if display_year else {}
+    )
+
+    alloc_class_ids = set()
+    if teacher_profile:
+        alloc_class_ids = {
+            alloc.class_id
+            for alloc in ClassSubjectTeacher.query.filter_by(teacher_id=teacher_profile.id).all()
+            if alloc.class_id
+        }
+
+    cards = []
+    for klass in klasses:
+        also_teaches = bool(teacher_profile) and (
+            klass.teacher_id == teacher_profile.id or klass.id in alloc_class_ids
+        )
+        cards.append({
+            'id': klass.id,
+            'name': klass.name,
+            'grade_level': klass.grade_level,
+            'stream': klass.stream,
+            'student_count': roster_sizes.get(klass.id, 0),
+            'statement': class_sponsor_statement(klass),
+            'also_teaches': also_teaches,
             'klass': klass,
         })
     return cards
@@ -1489,10 +1552,13 @@ def build_teacher_dashboard_context(teacher_profile, user, academic_year_id=None
         academic_year_id,
         viewing_archived=viewing_archived,
     )
-    sponsored_classes = (
-        Class.query.filter_by(sponsor_id=user.id).order_by(Class.name.asc()).all()
-        if user else []
+    sponsored_class_cards = get_sponsored_class_cards(
+        user,
+        academic_year_id,
+        viewing_archived=viewing_archived,
+        teacher_profile=teacher_profile,
     )
+    sponsored_classes = [card['klass'] for card in sponsored_class_cards]
     students = (
         get_students_for_class_ids(
             list(class_ids), academic_year_id, viewing_archived=viewing_archived,
@@ -1574,6 +1640,7 @@ def build_teacher_dashboard_context(teacher_profile, user, academic_year_id=None
         'teaching_classes': teaching_classes,
         'class_cards': class_cards,
         'sponsored_classes': sponsored_classes,
+        'sponsored_class_cards': sponsored_class_cards,
         'students': students,
         'activities': activities,
         'recent_submissions': recent_submissions,
@@ -11053,6 +11120,7 @@ def teacher_dashboard():
             teaching_classes=dashboard_ctx['teaching_classes'],
             class_cards=class_cards,
             sponsored_classes=dashboard_ctx['sponsored_classes'],
+            sponsored_class_cards=dashboard_ctx['sponsored_class_cards'],
             grades=dashboard_ctx['grades'],
             assigned_subjects=dashboard_ctx['assigned_subjects'],
             grading_periods=dashboard_ctx['grading_periods'],
@@ -11122,6 +11190,7 @@ def teacher_dashboard():
         teaching_classes=[],
         class_cards=[],
         sponsored_classes=[],
+        sponsored_class_cards=[],
         grades=[],
         assigned_subjects=[],
         grading_periods=GRADING_PERIODS,

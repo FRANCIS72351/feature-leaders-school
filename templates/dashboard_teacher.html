@@ -454,6 +454,35 @@
     padding: 0.22rem 0.55rem;
     border-radius: 999px;
   }
+  .teacher-chip-sponsor {
+    background: #fff7ed;
+    color: #9a3412 !important;
+    border-color: rgba(194, 120, 3, 0.35);
+  }
+  .teacher-sponsor-card {
+    background: #ffffff;
+    border: 1px solid var(--slate-border);
+    border-left: 4px solid #c9a227;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+    color: #0f172a;
+  }
+  .teacher-sponsor-card h6,
+  .teacher-sponsor-card p,
+  .teacher-sponsor-card span,
+  .teacher-sponsor-card div {
+    color: #0f172a;
+  }
+  .teacher-sponsor-statement {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #0B192C !important;
+    margin: 0 0 0.35rem 0;
+  }
+  .teacher-class-tile.teacher-sponsor-tile {
+    background: #fffdf6;
+    border-color: rgba(201, 162, 39, 0.45);
+  }
   .teacher-class-tile {
     display: block;
     text-decoration: none !important;
@@ -525,7 +554,9 @@
 {% set photo_src = identity.photo_url if identity.get('photo_url') else (current_user.photo_url if current_user else default_avatar_url) %}
 {% set assigned_cards = class_cards if class_cards is defined and class_cards else [] %}
 {% set subject_list = assigned_subjects if assigned_subjects is defined and assigned_subjects else [] %}
+{% set sponsored_cards = sponsored_class_cards if sponsored_class_cards is defined and sponsored_class_cards else [] %}
 {% set assigned_class_names = assigned_cards|map(attribute='name')|list %}
+{% set sponsored_class_names = sponsored_cards|map(attribute='name')|list %}
 
 <div class="teacher-hub">
   <div class="teacher-identity-card">
@@ -556,6 +587,12 @@
               {% endif %}
             </dd>
           </div>
+          {% if sponsored_class_names %}
+          <div>
+            <dt>Sponsored classes</dt>
+            <dd>{{ sponsored_class_names|join(', ') }}</dd>
+          </div>
+          {% endif %}
           <div>
             <dt>Academic year</dt>
             <dd>{% if display_year %}{{ display_year.name }}{% else %}Not configured{% endif %}</dd>
@@ -597,6 +634,41 @@
     </div>
   </div>
 
+  {% if sponsored_cards %}
+  <div class="row g-3 mb-3">
+    <div class="col-12">
+      <div class="teacher-sponsor-card p-4 h-100">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+          <div>
+            <h6 class="fw-bold mb-1" style="color:#0B192C;"><i class="fas fa-user-shield me-2" style="color:#c9a227;"></i>Sponsored classes</h6>
+            <p class="teacher-hub-empty mb-0">You are assigned as class sponsor. Open the sponsor hub or class folder for each form.</p>
+          </div>
+        </div>
+        <div class="row g-3">
+          {% for card in sponsored_cards %}
+          <div class="col-md-6">
+            <div class="teacher-class-tile teacher-sponsor-tile">
+              <p class="teacher-sponsor-statement">{{ card.statement }}</p>
+              <div class="tile-meta mb-2">
+                {% if card.grade_level %}Grade {{ card.grade_level }}{% endif %}
+                {% if card.stream %} · {{ card.stream }}{% endif %}
+                · {{ card.student_count }} student{{ 's' if card.student_count != 1 else '' }}
+                {% if card.also_teaches %} · You also teach this class{% endif %}
+              </div>
+              <div class="d-flex flex-wrap gap-2">
+                <a class="teacher-quick-link" href="{{ url_for('sponsor_class_hub', class_id=card.id) }}">Sponsor hub</a>
+                <a class="teacher-quick-link" href="{{ url_for('teacher_class_folder', class_id=card.id) }}">Class folder</a>
+                <a class="teacher-quick-link" href="{{ url_for('teacher_class_attendance', class_id=card.id) }}">Attendance</a>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="row g-3">
     <div class="col-12">
       <div class="teacher-classes-card p-4 h-100">
@@ -628,9 +700,12 @@
               {% if card.role_labels %}
               <div class="d-flex flex-wrap gap-1 mb-2">
                 {% for label in card.role_labels %}
-                <span class="teacher-chip">{{ label }}</span>
+                <span class="teacher-chip{% if label == 'Class Sponsor' %} teacher-chip-sponsor{% endif %}">{{ label }}</span>
                 {% endfor %}
               </div>
+              {% endif %}
+              {% if card.is_sponsor and card.sponsor_statement %}
+              <p class="teacher-sponsor-statement mb-2">{{ card.sponsor_statement }}</p>
               {% endif %}
               {% if card.subjects %}
               <div class="tile-meta mb-2">{{ card.subjects|join(', ') }}</div>
@@ -639,7 +714,7 @@
                 <a class="teacher-quick-link" href="{{ url_for('grade_entry_class', class_id=card.id) }}">Grades</a>
                 <a class="teacher-quick-link" href="{{ url_for('teacher_class_attendance', class_id=card.id) }}">Attendance</a>
                 <a class="teacher-quick-link" href="{{ url_for('teacher_class_folder', class_id=card.id) }}">Roster</a>
-                {% if 'Sponsor' in card.role_labels %}
+                {% if card.is_sponsor or 'Class Sponsor' in card.role_labels %}
                 <a class="teacher-quick-link" href="{{ url_for('sponsor_class_hub', class_id=card.id) }}">Sponsor hub</a>
                 {% endif %}
               </div>
