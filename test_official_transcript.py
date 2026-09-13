@@ -44,6 +44,12 @@ class OfficialTranscriptRouteTestCase(unittest.TestCase):
                 role='vpa',
             )
             vpa.set_password('password')
+            principal = User(
+                email=f'principal-tx-{self.token}@test.com',
+                full_name=f'Transcript Principal {self.token}',
+                role='principal',
+            )
+            principal.set_password('password')
             teacher = User(
                 email=f'teacher-tx-{self.token}@test.com',
                 full_name='Transcript Teacher',
@@ -62,13 +68,14 @@ class OfficialTranscriptRouteTestCase(unittest.TestCase):
                 role='parent',
             )
             parent.set_password('password')
-            db.session.add_all([registrar, vpa, teacher, student_user, parent])
+            db.session.add_all([registrar, vpa, principal, teacher, student_user, parent])
             db.session.flush()
             self.created['users'].extend([
-                registrar.id, vpa.id, teacher.id, student_user.id, parent.id,
+                registrar.id, vpa.id, principal.id, teacher.id, student_user.id, parent.id,
             ])
             self.registrar_id = registrar.id
             self.vpa_id = vpa.id
+            self.principal_id = principal.id
             self.teacher_id = teacher.id
             self.student_user_id = student_user.id
             self.parent_id = parent.id
@@ -170,6 +177,29 @@ class OfficialTranscriptRouteTestCase(unittest.TestCase):
         self.assertNotIn('size: A4 landscape', body)
         self.assertNotIn('PUBLISHED RECORDS', body)
         self.assertNotIn('SELECTED YEAR', body)
+
+    def test_transcript_footer_shows_named_principal_and_academic_officer(self):
+        from app import build_official_transcript_page_data
+
+        with self.app.app_context():
+            student = db.session.get(Student, self.student_id)
+            data = build_official_transcript_page_data(student, self.year_id, approved_only=False)
+            brand = data['letterhead']
+            self.assertTrue(brand.get('principal_name'))
+            self.assertTrue(brand.get('academic_officer_name'))
+            principal_name = brand['principal_name']
+            academic_name = brand['academic_officer_name']
+            academic_title = brand['academic_officer_title']
+
+        self._login(self.registrar_id)
+        response = self.client.get(f'/transcript/{self.student_id}?academic_year_id={self.year_id}')
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn(principal_name, body)
+        self.assertIn('Principal', body)
+        self.assertIn(academic_name, body)
+        self.assertIn(academic_title, body)
+        self.assertNotIn('V.P. INSTRUCTION', body)
 
     def test_vpa_can_open_transcript_and_teacher_cannot(self):
         self._login(self.vpa_id)
@@ -277,18 +307,7 @@ class OfficialTranscriptRouteTestCase(unittest.TestCase):
         self.assertIn('vpa-student-photo', body)
         self.assertIn('Release entire class', body)
 
-        with self.app.app_context():
-            principal = User(
-                email=f'principal-tx-{self.token}@test.com',
-                full_name='Transcript Principal',
-                role='principal',
-            )
-            principal.set_password('password')
-            db.session.add(principal)
-            db.session.commit()
-            principal_id = principal.id
-            self.created['users'].append(principal_id)
-        self._login(principal_id)
+        self._login(self.principal_id)
         principal_queue = self.client.get('/vpa/transcript-releases')
         self.assertEqual(principal_queue.status_code, 200)
         self.assertIn('Official Transcript Cabinet', principal_queue.get_data(as_text=True))

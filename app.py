@@ -56,6 +56,7 @@ from school_divisions import (
     resolve_from_class,
     division_subjects,
     school_print_brand,
+    grade_document_signatories,
     SCHOOL_PRINT_EMAIL_ADDRESS,
     subject_match_key,
     build_transcript_grade_groups,
@@ -4255,6 +4256,70 @@ def evaluate_class_rank(
     }
 
 
+def _office_holder_full_name(role, fallback=''):
+    """Live User.full_name for an office (principal, vpa, vpi), else fallback."""
+    role_key = (role or '').strip().lower()
+    if not role_key:
+        return (fallback or '').strip()
+    holders = (
+        User.query.filter(func.lower(User.role) == role_key)
+        .order_by(User.id.asc())
+        .all()
+    )
+    preferred = [user for user in holders if user.is_account_active()]
+    for user in preferred or holders:
+        name = (getattr(user, 'full_name', None) or '').strip()
+        if name:
+            return name
+    return (fallback or '').strip()
+
+
+def resolve_class_sponsor_display_name(klass):
+    """Class sponsor assigned to this class, else the linked homeroom teacher."""
+    if not klass:
+        return ''
+    sponsor_id = getattr(klass, 'sponsor_id', None)
+    if sponsor_id:
+        user = db.session.get(User, sponsor_id)
+        if user:
+            name = (user.full_name or '').strip()
+            if name:
+                return name
+        teacher = Teacher.query.filter_by(user_id=sponsor_id).first()
+        if teacher:
+            name = (teacher.full_name or '').strip()
+            if name:
+                return name
+    teacher_id = getattr(klass, 'teacher_id', None)
+    if teacher_id:
+        teacher = db.session.get(Teacher, teacher_id)
+        if teacher:
+            linked = getattr(teacher, 'user', None)
+            if linked:
+                name = (linked.full_name or '').strip()
+                if name:
+                    return name
+            name = (teacher.full_name or '').strip()
+            if name:
+                return name
+    return ''
+
+
+def grade_signatory_name_kwargs(klass=None):
+    """Live names for the grade-sheet signature block.
+
+    Sponsor comes from the class assignment. Principal and VPA come from User
+    rows with those roles. VPI is only a fallback when no VPA account exists.
+    """
+    vpi_name = _office_holder_full_name('vpi')
+    return {
+        'sponsor_name': resolve_class_sponsor_display_name(klass),
+        'principal_name': _office_holder_full_name('principal'),
+        'vpa_name': _office_holder_full_name('vpa'),
+        'vpi_name': vpi_name or None,
+    }
+
+
 def build_report_card_structured_data(
     student, year_id=None, *, approved_only=False, view_period=None, semester=None,
 ):
@@ -4287,6 +4352,7 @@ def build_report_card_structured_data(
         'grading_periods': GRADING_PERIODS,
     }
     if not student:
+        empty['school'] = school_print_brand(**grade_signatory_name_kwargs(None))
         return empty
 
     display_year = db.session.get(AcademicYear, year_id) if year_id else None
@@ -4296,7 +4362,7 @@ def build_report_card_structured_data(
         getattr(student, 'level', None),
         getattr(student, 'grade_level', None),
     )
-    doc_ctx = class_document_context(klass)
+    doc_ctx = class_document_context(klass, **grade_signatory_name_kwargs(klass))
     if division_key and division_key != doc_ctx.get('division'):
         doc_ctx = {
             **doc_ctx,
@@ -4441,7 +4507,7 @@ def build_class_period_grade_sheet_data(class_id, period, year_id, *, approved_o
     empty = {
         'klass': None, 'display_year': None, 'division': None, 'subjects': [],
         'rows': [], 'period_label': grading_period_label(period), 'release': None,
-        'school': school_print_brand(),
+        'school': school_print_brand(**grade_signatory_name_kwargs(None)),
     }
     klass = db.session.get(Class, class_id) if class_id else None
     display_year = db.session.get(AcademicYear, year_id) if year_id else None
@@ -4449,7 +4515,7 @@ def build_class_period_grade_sheet_data(class_id, period, year_id, *, approved_o
         return empty
 
     division_key = resolve_from_class(klass)
-    doc_ctx = class_document_context(klass)
+    doc_ctx = class_document_context(klass, **grade_signatory_name_kwargs(klass))
     subject_names = order_subjects_by_catalog(
         list(division_subjects(division_key)), division_key, keep_unknown=False,
     )
@@ -8779,6 +8845,8 @@ def build_official_grade_sheet_pdf(
 
     ink = colors.HexColor('#111111')
     brand_red = colors.HexColor(brand.get('brand_red') or '#c82828')
+    navy = colors.HexColor(brand.get('brand_navy') or '#002d62')
+    gold = colors.HexColor(brand.get('brand_gold') or '#c5a572')
 
     buffer = BytesIO()
     page = landscape(A4)
@@ -8845,14 +8913,32 @@ def build_official_grade_sheet_pdf(
         alignment=TA_CENTER,
         textColor=brand_red,
     )
-    sign_style = ParagraphStyle(
-        'SheetSign',
+    sign_name_style = ParagraphStyle(
+        'SheetSignName',
         parent=styles['Normal'],
         fontName='Times-Bold',
         fontSize=8,
         leading=10,
         alignment=TA_CENTER,
-        textColor=ink,
+        textColor=navy,
+    )
+    sign_title_style = ParagraphStyle(
+        'SheetSignTitle',
+        parent=styles['Normal'],
+        fontName='Times-Bold',
+        fontSize=7,
+        leading=9,
+        alignment=TA_CENTER,
+        textColor=brand_red,
+    )
+    sign_office_style = ParagraphStyle(
+        'SheetSignOffice',
+        parent=styles['Normal'],
+        fontName='Times-Italic',
+        fontSize=6.5,
+        leading=8,
+        alignment=TA_CENTER,
+        textColor=gold,
     )
 
     elements = []
@@ -9073,20 +9159,46 @@ def build_official_grade_sheet_pdf(
     elements.append(legend)
     elements.append(Spacer(1, 8 * mm))
 
-    vpi = f"{brand.get('vpi_title') or 'VPI'} {(brand.get('vpi_name') or '').upper()}".strip()
-    signs = Table([[
-        Paragraph(vpi, sign_style),
-        Paragraph((brand.get('sponsor_title') or 'CLASS SPONSOR').upper(), sign_style),
-        Paragraph((brand.get('principal_title') or 'PRINCIPAL').upper(), sign_style),
-    ]], colWidths=[93.6 * mm, 93.6 * mm, 93.8 * mm])
+    signatories = brand.get('signatories') or []
+    if not signatories:
+        signatories = grade_document_signatories(
+            sponsor_name=brand.get('sponsor_name'),
+            principal_name=brand.get('principal_name'),
+            vpa_name=brand.get('vpa_name') or brand.get('academic_officer_name'),
+            vpi_name=brand.get('vpi_name'),
+        )['signatories']
+    sign_cols = max(len(signatories), 1)
+    sign_width = 281 * mm / sign_cols
+    name_cells = []
+    title_cells = []
+    office_cells = []
+    for sig in signatories:
+        name_cells.append(Paragraph(
+            (sig.get('name') or '').upper() or '&nbsp;',
+            sign_name_style,
+        ))
+        title_cells.append(Paragraph((sig.get('title') or '').upper(), sign_title_style))
+        office = (sig.get('office') or '').strip()
+        title = (sig.get('title') or '').strip()
+        office_cells.append(Paragraph(
+            office.upper() if office and office.lower() != title.lower() else '&nbsp;',
+            sign_office_style,
+        ))
+    signs = Table(
+        [name_cells, title_cells, office_cells],
+        colWidths=[sign_width] * sign_cols,
+    )
     signs.setStyle(TableStyle([
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('LINEABOVE', (0, 0), (0, 0), 0.7, ink),
-        ('LINEABOVE', (1, 0), (1, 0), 0.7, ink),
-        ('LINEABOVE', (2, 0), (2, 0), 0.7, ink),
-        ('LEFTPADDING', (0, 0), (-1, -1), 12),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 12),
-        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LINEABOVE', (0, 0), (-1, 0), 1.1, navy),
+        ('LINEBELOW', (0, 0), (-1, 0), 0.45, gold),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 2),
+        ('TOPPADDING', (0, 1), (-1, -1), 1),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 1),
     ]))
     elements.append(signs)
     elements.append(Spacer(1, 4 * mm))
@@ -9280,7 +9392,7 @@ def build_official_transcript_page_data(student, year_id, *, approved_only=False
         'conditioned_in': conditioned_in,
         'retained_in': retained_in,
         'print_date': datetime.now().strftime('%B %d, %Y'),
-        'letterhead': transcript_letterhead(),
+        'letterhead': transcript_letterhead(**grade_signatory_name_kwargs(klass)),
     }
 
 

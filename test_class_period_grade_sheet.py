@@ -21,11 +21,29 @@ class ClassPeriodGradeSheetTestCase(unittest.TestCase):
             self.vpa.set_password('password')
             self.teacher_user = User(email=f'teach-{self.token}@test.com', full_name='Class Teacher', role='teacher')
             self.teacher_user.set_password('password')
-            db.session.add_all([self.vpa, self.teacher_user])
+            self.sponsor = User(
+                email=f'sponsor-{self.token}@test.com',
+                full_name=f'Mama Sponsor {self.token}',
+                role='teacher',
+            )
+            self.sponsor.set_password('password')
+            self.principal = User(
+                email=f'principal-{self.token}@test.com',
+                full_name=f'Head Principal {self.token}',
+                role='principal',
+            )
+            self.principal.set_password('password')
+            db.session.add_all([self.vpa, self.teacher_user, self.sponsor, self.principal])
             db.session.flush()
             self.vpa_id, self.teacher_user_id = self.vpa.id, self.teacher_user.id
+            self.sponsor_id, self.principal_id = self.sponsor.id, self.principal.id
+            self.sponsor_name = self.sponsor.full_name
 
-            klass = Class(name=f'Sheet Class {self.token}', grade_level=10)
+            klass = Class(
+                name=f'Sheet Class {self.token}',
+                grade_level=10,
+                sponsor_id=self.sponsor.id,
+            )
             db.session.add(klass)
             db.session.flush()
             self.class_id = klass.id
@@ -71,7 +89,9 @@ class ClassPeriodGradeSheetTestCase(unittest.TestCase):
             Student.query.filter_by(id=self.student_id).delete(synchronize_session=False)
             AcademicYear.query.filter_by(id=self.year_id).delete(synchronize_session=False)
             Class.query.filter_by(id=self.class_id).delete(synchronize_session=False)
-            User.query.filter(User.id.in_([self.vpa_id, self.teacher_user_id])).delete(synchronize_session=False)
+            User.query.filter(User.id.in_([
+                self.vpa_id, self.teacher_user_id, self.sponsor_id, self.principal_id,
+            ])).delete(synchronize_session=False)
             db.session.commit()
 
     def _login(self, user_id):
@@ -86,6 +106,36 @@ class ClassPeriodGradeSheetTestCase(unittest.TestCase):
         self.assertIn(b'Period Grade Sheet', resp.data)
         self.assertIn(b'Sheet Student', resp.data)
         self.assertIn(b'88', resp.data)
+
+    def test_period_sheet_footer_shows_class_sponsor_and_officers(self):
+        from app import build_class_period_grade_sheet_data
+
+        with self.app.app_context():
+            data = build_class_period_grade_sheet_data(
+                self.class_id, 1, self.year_id, approved_only=False,
+            )
+            school = data['school']
+            self.assertEqual(school['sponsor_name'], self.sponsor_name)
+            self.assertTrue(school['principal_name'])
+            self.assertTrue(school['academic_officer_name'])
+            principal_name = school['principal_name']
+            academic_name = school['academic_officer_name']
+            academic_title = school['academic_officer_title']
+            academic_office = school['academic_officer_office']
+
+        self._login(self.vpa_id)
+        resp = self.client.get(f'/grades/period-sheet/{self.class_id}/1')
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_data(as_text=True)
+        self.assertIn(self.sponsor_name, body)
+        self.assertIn('Class Sponsor', body)
+        self.assertIn(principal_name, body)
+        self.assertIn('Principal', body)
+        self.assertIn(academic_name, body)
+        self.assertIn(academic_title, body)
+        self.assertIn('data-signatory="sponsor"', body)
+        if academic_office and academic_office != academic_title:
+            self.assertIn(academic_office, body)
 
     def test_unrelated_teacher_cannot_view(self):
         self._login(self.teacher_user_id)

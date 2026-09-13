@@ -10,6 +10,8 @@
     <style>
         :root {
             --flpa-red: #c82828;
+            --flpa-navy: #002d62;
+            --flpa-gold: #c5a572;
             --ink: #111111;
             --muted: #334155;
             --paper: #ffffff;
@@ -418,15 +420,42 @@
             padding: 0 10px;
             width: 33.33%;
         }
+        .official-sign .sign-pad { height: 10px; }
         .official-sign .line {
-            border-top: 1.4px solid var(--ink);
+            border-top: 1.4px solid var(--flpa-navy, #002d62);
             margin: 0 8px 4px;
+            position: relative;
         }
-        .official-sign .role {
+        .official-sign .line::after {
+            content: '';
+            display: block;
+            width: 24px;
+            height: 2px;
+            background: var(--flpa-gold, #c5a572);
+            margin: -1.7px auto 0;
+        }
+        .official-sign .who {
             font-size: 10px;
             font-weight: 700;
-            text-transform: uppercase;
+            color: var(--flpa-navy, #002d62);
             letter-spacing: 0.03em;
+            text-transform: uppercase;
+            min-height: 1.1em;
+        }
+        .official-sign .role {
+            font-size: 8.5px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--flpa-red);
+            margin-top: 1px;
+        }
+        .official-sign .office {
+            font-size: 8px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--flpa-gold, #c5a572);
         }
         .official-motto {
             margin: 3mm 0 0;
@@ -687,28 +716,9 @@
                         {% endfor %}
                     </tr>
                 </table>
-                <table class="official-signs">
-                    <tr>
-                        <td>
-                            <div class="official-sign">
-                                <div class="line"></div>
-                                <div class="role">{{ brand.vpi_title }} {{ brand.vpi_name|upper }}</div>
-                            </div>
-                        </td>
-                        <td>
-                            <div class="official-sign">
-                                <div class="line"></div>
-                                <div class="role">{{ brand.sponsor_title }}</div>
-                            </div>
-                        </td>
-                        <td>
-                            <div class="official-sign">
-                                <div class="line"></div>
-                                <div class="role">{{ brand.principal_title }}</div>
-                            </div>
-                        </td>
-                    </tr>
-                </table>
+                {% with sign_as_table=true %}
+                {% include 'partials/grade_signatories.html' %}
+                {% endwith %}
                 <p class="official-motto">{{ brand.motto|upper }}</p>
             </div>
         </div>

@@ -1,0 +1,34 @@
+{% set signs = (brand.signatories if brand and brand.signatories else []) %}
+{% if sign_as_table|default(false) %}
+<table class="official-signs">
+    <tr>
+        {% for sig in signs %}
+        <td>
+            <div class="official-sign" data-signatory="{{ sig.key }}">
+                <div class="sign-pad" aria-hidden="true"></div>
+                <div class="line"></div>
+                <div class="who">{{ sig.name }}</div>
+                <div class="role">{{ sig.title }}</div>
+                {% if sig.office and sig.office|trim|upper != sig.title|trim|upper %}
+                <div class="office">{{ sig.office }}</div>
+                {% endif %}
+            </div>
+        </td>
+        {% endfor %}
+    </tr>
+</table>
+{% else %}
+<div class="official-signs" role="group" aria-label="Authorized signatures">
+    {% for sig in signs %}
+    <div class="official-sign" data-signatory="{{ sig.key }}">
+        <div class="sign-pad" aria-hidden="true"></div>
+        <div class="line"></div>
+        <div class="who">{{ sig.name }}</div>
+        <div class="role">{{ sig.title }}</div>
+        {% if sig.office and sig.office|trim|upper != sig.title|trim|upper %}
+        <div class="office">{{ sig.office }}</div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}

@@ -41,6 +41,13 @@ from school_divisions import (
     transcript_conduct_label,
     transcript_grade_heading,
     transcript_promotion_fields,
+    grade_document_signatories,
+    school_print_brand,
+    SCHOOL_PRINT_VPI_NAME,
+    SCHOOL_PRINT_VPA_TITLE,
+    SCHOOL_PRINT_VPI_TITLE,
+    SCHOOL_PRINT_SPONSOR_TITLE,
+    SCHOOL_PRINT_PRINCIPAL_TITLE,
 )
 
 
@@ -359,6 +366,48 @@ class SchoolDivisionTests(unittest.TestCase):
         self.assertEqual(promoted, 'N/A')
         self.assertEqual(conditioned, '10th')
         self.assertEqual(retained, 'N/A')
+
+    def test_grade_signatories_prefer_named_vpa_over_vpi(self):
+        block = grade_document_signatories(
+            sponsor_name='Ada Mensah',
+            principal_name='Rev. James Kollie',
+            vpa_name='Miatta K. VPA',
+            vpi_name='Othello B. Gbarjuewaye',
+        )
+        self.assertEqual(len(block['signatories']), 3)
+        sponsor, academic, principal = block['signatories']
+        self.assertEqual(sponsor['key'], 'sponsor')
+        self.assertEqual(sponsor['name'], 'Ada Mensah')
+        self.assertEqual(sponsor['title'], SCHOOL_PRINT_SPONSOR_TITLE)
+        self.assertEqual(academic['key'], 'vpa')
+        self.assertEqual(academic['name'], 'Miatta K. VPA')
+        self.assertEqual(academic['title'], SCHOOL_PRINT_VPA_TITLE)
+        self.assertEqual(academic['office'], 'Vice Principal for Academics')
+        self.assertEqual(principal['key'], 'principal')
+        self.assertEqual(principal['name'], 'Rev. James Kollie')
+        self.assertEqual(principal['title'], SCHOOL_PRINT_PRINCIPAL_TITLE)
+        self.assertEqual(block['academic_officer_key'], 'vpa')
+
+    def test_grade_signatories_fall_back_to_printed_vpi(self):
+        block = grade_document_signatories(
+            sponsor_name='Form Teacher',
+            principal_name='Head of School',
+        )
+        academic = block['signatories'][1]
+        self.assertEqual(academic['key'], 'vpi')
+        self.assertEqual(academic['name'], SCHOOL_PRINT_VPI_NAME)
+        self.assertEqual(academic['title'], SCHOOL_PRINT_VPI_TITLE)
+        self.assertEqual(block['sponsor_name'], 'Form Teacher')
+        self.assertEqual(block['principal_name'], 'Head of School')
+
+    def test_school_print_brand_never_omits_signature_structure(self):
+        brand = school_print_brand(sponsor_name='Class Lead', principal_name='Principal Name')
+        self.assertEqual(len(brand['signatories']), 3)
+        self.assertEqual(brand['signatories'][0]['name'], 'Class Lead')
+        self.assertEqual(brand['signatories'][2]['name'], 'Principal Name')
+        self.assertEqual(brand['brand_navy'], '#002d62')
+        self.assertEqual(brand['brand_gold'], '#c5a572')
+        self.assertTrue(brand['academic_officer_name'])
 
 
 if __name__ == '__main__':

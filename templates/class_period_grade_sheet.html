@@ -36,9 +36,15 @@
     table.cpgs-table td.cpgs-name-cell { text-align:left; font-weight:600; white-space:nowrap; }
     table.cpgs-table tbody tr:nth-child(even) { background:#f8fafc; }
     td.cpgs-avg { font-weight:700; color:#002d62; }
-    .cpgs-footer { display:flex; justify-content:space-between; margin-top:26px; font-size:9.5pt; }
-    .cpgs-sig { width:30%; text-align:center; }
-    .cpgs-sig .line { border-top:1px solid #111; margin-top:26px; padding-top:4px; }
+    .cpgs-footer { display:flex; justify-content:space-between; gap:12px; margin-top:18px; padding-top:8px; border-top:2px solid #002d62; font-size:9.5pt; }
+    .cpgs-sig, .official-sign { width:32%; text-align:center; }
+    .official-signs { display:flex; justify-content:space-between; gap:12px; width:100%; }
+    .official-sign .sign-pad { height:14px; }
+    .official-sign .line { border-top:1.5px solid #002d62; margin:0 10px 6px; position:relative; }
+    .official-sign .line::after { content:''; display:block; width:28px; height:2px; background:#c5a572; margin:-1.75px auto 0; }
+    .official-sign .who { font-size:9.5pt; font-weight:700; color:#002d62; text-transform:uppercase; letter-spacing:0.03em; min-height:1.1em; }
+    .official-sign .role { font-size:8pt; font-weight:700; color:#c82828; text-transform:uppercase; letter-spacing:0.1em; margin-top:2px; }
+    .official-sign .office { font-size:7.5pt; font-weight:600; color:#c5a572; text-transform:uppercase; letter-spacing:0.04em; }
     .cpgs-legend { margin-top:10px; font-size:8.5pt; color:#475569; }
     .cpgs-review-form { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
     .cpgs-review-form textarea { font-size:0.82rem; border-radius:6px; border:1px solid #cbd5e1; padding:6px; min-width:220px; }
@@ -137,9 +143,7 @@
             {% endif %}
 
             <div class="cpgs-footer">
-                <div class="cpgs-sig"><div class="line">Class Sponsor / Teacher</div></div>
-                <div class="cpgs-sig"><div class="line">{{ brand.vpi_title }} — Vice Principal Academics</div></div>
-                <div class="cpgs-sig"><div class="line">{{ brand.principal_title }}</div></div>
+                {% include 'partials/grade_signatories.html' %}
             </div>
         </div>
     </div>

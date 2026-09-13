@@ -10,6 +10,8 @@
     <style>
         :root {
             --flpa-red: #c82828;
+            --flpa-navy: #002d62;
+            --flpa-gold: #c5a572;
             --ink: #111111;
             --muted: #334155;
             --paper: #ffffff;
@@ -271,25 +273,54 @@
         .official-signs {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
-            gap: 20px;
-            margin-top: 14px;
+            gap: 16px;
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 2px solid var(--flpa-navy);
             text-align: center;
         }
-        .official-sign .line {
-            border-top: 1.5px solid var(--ink);
-            margin: 0 12px 6px;
+        .official-sign {
+            padding: 0 6px;
         }
-        .official-sign .role {
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
+        .official-sign .sign-pad {
+            height: 12px;
+        }
+        .official-sign .line {
+            border-top: 1.5px solid var(--flpa-navy);
+            margin: 0 10px 6px;
+            position: relative;
+        }
+        .official-sign .line::after {
+            content: '';
+            display: block;
+            width: 28px;
+            height: 2px;
+            background: var(--flpa-gold);
+            margin: -1.75px auto 0;
         }
         .official-sign .who {
-            font-size: 10px;
+            font-size: 11px;
             font-weight: 700;
-            margin-top: 2px;
+            color: var(--flpa-navy);
+            letter-spacing: 0.04em;
             text-transform: uppercase;
+            min-height: 1.15em;
+        }
+        .official-sign .role {
+            font-size: 9.5px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--flpa-red);
+            margin-top: 2px;
+        }
+        .official-sign .office {
+            font-size: 8.5px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--flpa-gold);
+            margin-top: 1px;
         }
         .official-motto {
             margin: 14px 0 2px;
@@ -489,20 +520,7 @@
                         {% endfor %}
                     </tr>
                 </table>
-                <div class="official-signs">
-                    <div class="official-sign">
-                        <div class="line"></div>
-                        <div class="role">{{ brand.vpi_title }} {{ brand.vpi_name|upper }}</div>
-                    </div>
-                    <div class="official-sign">
-                        <div class="line"></div>
-                        <div class="role">{{ brand.sponsor_title }}</div>
-                    </div>
-                    <div class="official-sign">
-                        <div class="line"></div>
-                        <div class="role">{{ brand.principal_title }}</div>
-                    </div>
-                </div>
+                {% include 'partials/grade_signatories.html' %}
                 <p class="official-motto">{{ brand.motto|upper }}</p>
             </div>
         </div>

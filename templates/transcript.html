@@ -216,11 +216,45 @@
         }
         .signs .left, .signs .right { display: table-cell; width: 50%; }
         .signs .right { text-align: right; }
+        .signs .sign-block { display: inline-block; min-width: 58mm; text-align: center; }
+        .signs .right .sign-block { text-align: center; }
         .sign-line {
-            display: inline-block;
-            min-width: 42mm;
-            border-bottom: 1px solid var(--ink);
-            margin: 0 6px 2px;
+            display: block;
+            width: 100%;
+            border-bottom: 1.5px solid #002d62;
+            margin: 18px 0 6px;
+            position: relative;
+        }
+        .sign-line::after {
+            content: '';
+            display: block;
+            width: 28px;
+            height: 2px;
+            background: #c5a572;
+            margin: -1.5px auto 0;
+        }
+        .signs .who {
+            font-size: 12px;
+            font-weight: 700;
+            color: #002d62;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            min-height: 1.15em;
+        }
+        .signs .role {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--flpa-red);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-top: 2px;
+        }
+        .signs .office {
+            font-size: 9px;
+            font-weight: 600;
+            color: #c5a572;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
         }
         .motto {
             margin: 18px 0 0;
@@ -351,8 +385,23 @@
                 </tbody>
             </table>
             <div class="signs">
-                <div class="left">Approved: <span class="sign-line"></span> PRINCIPAL</div>
-                <div class="right">Signed: <span class="sign-line"></span> V.P. INSTRUCTION</div>
+                <div class="left">
+                    <div class="sign-block">
+                        <span class="sign-line"></span>
+                        <div class="who">{{ brand.principal_name }}</div>
+                        <div class="role">{{ brand.principal_title or 'Principal' }}</div>
+                    </div>
+                </div>
+                <div class="right">
+                    <div class="sign-block">
+                        <span class="sign-line"></span>
+                        <div class="who">{{ brand.academic_officer_name or brand.vpa_name or brand.vpi_name }}</div>
+                        <div class="role">{{ brand.academic_officer_title or 'VPA' }}</div>
+                        {% if brand.academic_officer_office and brand.academic_officer_office != brand.academic_officer_title %}
+                        <div class="office">{{ brand.academic_officer_office }}</div>
+                        {% endif %}
+                    </div>
+                </div>
             </div>
             <p class="motto">Motto: “{{ brand.motto }}”</p>
         </div>

@@ -49,8 +49,13 @@ SCHOOL_PRINT_EMAIL_ADDRESS = 'flpacardinals@gmail.com'
 SCHOOL_PRINT_EMAIL = f'Email: {SCHOOL_PRINT_EMAIL_ADDRESS}'
 SCHOOL_PRINT_MOTTO = 'Honor, Excellence, Academics, Discipline, Success'
 SCHOOL_PRINT_BRAND_RED = '#c82828'
+SCHOOL_PRINT_BRAND_NAVY = '#002d62'
+SCHOOL_PRINT_BRAND_GOLD = '#c5a572'
 SCHOOL_PRINT_VPI_TITLE = 'VPI'
 SCHOOL_PRINT_VPI_NAME = 'Othello B. Gbarjuewaye'
+SCHOOL_PRINT_VPI_OFFICE = 'Vice Principal for Instruction'
+SCHOOL_PRINT_VPA_TITLE = 'VPA'
+SCHOOL_PRINT_VPA_OFFICE = 'Vice Principal for Academics'
 SCHOOL_PRINT_SPONSOR_TITLE = 'Class Sponsor'
 SCHOOL_PRINT_PRINCIPAL_TITLE = 'Principal'
 SCHOOL_PRINT_GRADING_METHOD = (
@@ -1034,6 +1039,93 @@ def division_left_signatory(division_key):
     return SCHOOL_PRINT_SPONSOR_TITLE
 
 
+def _print_officer_name(value, fallback=''):
+    text = (value or '').strip()
+    if text:
+        return text
+    return (fallback or '').strip()
+
+
+def grade_document_signatories(
+    *,
+    sponsor_name=None,
+    principal_name=None,
+    vpa_name=None,
+    vpi_name=None,
+):
+    """Named officers who sign a grade sheet / report card.
+
+    Academic documents prefer the VPA (Vice Principal for Academics). When no
+    VPA name is supplied, the printed VPI officer is used so that line is never
+    a blank title. Class Sponsor and Principal always carry a name slot.
+    """
+    sponsor = _print_officer_name(sponsor_name)
+    principal = _print_officer_name(principal_name)
+    vpa = _print_officer_name(vpa_name)
+    vpi = _print_officer_name(vpi_name, SCHOOL_PRINT_VPI_NAME)
+
+    if vpa:
+        academic_name = vpa
+        academic_title = SCHOOL_PRINT_VPA_TITLE
+        academic_office = SCHOOL_PRINT_VPA_OFFICE
+        academic_key = 'vpa'
+    else:
+        academic_name = vpi
+        academic_title = SCHOOL_PRINT_VPI_TITLE
+        academic_office = SCHOOL_PRINT_VPI_OFFICE
+        academic_key = 'vpi'
+
+    signatories = (
+        {
+            'key': 'sponsor',
+            'name': sponsor,
+            'title': SCHOOL_PRINT_SPONSOR_TITLE,
+            'office': SCHOOL_PRINT_SPONSOR_TITLE,
+        },
+        {
+            'key': academic_key,
+            'name': academic_name,
+            'title': academic_title,
+            'office': academic_office,
+        },
+        {
+            'key': 'principal',
+            'name': principal,
+            'title': SCHOOL_PRINT_PRINCIPAL_TITLE,
+            'office': SCHOOL_PRINT_PRINCIPAL_TITLE,
+        },
+    )
+    return {
+        'signatories': list(signatories),
+        'sponsor_name': sponsor,
+        'sponsor_title': SCHOOL_PRINT_SPONSOR_TITLE,
+        'principal_name': principal,
+        'principal_title': SCHOOL_PRINT_PRINCIPAL_TITLE,
+        'vpa_name': vpa,
+        'vpa_title': SCHOOL_PRINT_VPA_TITLE,
+        'vpa_office': SCHOOL_PRINT_VPA_OFFICE,
+        'vpi_name': vpi,
+        'vpi_title': SCHOOL_PRINT_VPI_TITLE,
+        'vpi_office': SCHOOL_PRINT_VPI_OFFICE,
+        'academic_officer_key': academic_key,
+        'academic_officer_name': academic_name,
+        'academic_officer_title': academic_title,
+        'academic_officer_office': academic_office,
+    }
+
+
+def apply_grade_signatories(brand, **names):
+    """Merge named grade-document signatories onto a print-brand dict."""
+    updated = dict(brand or {})
+    updated.update(grade_document_signatories(
+        sponsor_name=names.get('sponsor_name'),
+        principal_name=names.get('principal_name'),
+        vpa_name=names.get('vpa_name'),
+        vpi_name=names.get('vpi_name'),
+    ))
+    return updated
+
+
 def division_score_remark(score, division_key=None):
     """Remark language for a numeric year average. Kindergarten stays gentler."""
     if score in (None, '', '-', '—'):
@@ -1181,9 +1273,9 @@ _TRANSCRIPT_EXTRA_CATEGORY_KEYS = {
 _TRANSCRIPT_STANDALONE_KEYS = {'R O T C', 'P EDUCATION'}
 
 
-def transcript_letterhead():
+def transcript_letterhead(**signatory_names):
     """Paper Official Transcript header (phones/address as on the FLPA form)."""
-    brand = dict(school_print_brand())
+    brand = dict(school_print_brand(**signatory_names))
     brand['transcript_address'] = TRANSCRIPT_PRINT_ADDRESS
     brand['transcript_phones'] = TRANSCRIPT_PRINT_PHONES
     brand['transcript_email'] = TRANSCRIPT_PRINT_EMAIL
@@ -1397,9 +1489,9 @@ def transcript_conduct_cells(conduct_row):
     }
 
 
-def school_print_brand():
+def school_print_brand(**signatory_names):
     """Header block shared by on-screen and PDF report documents."""
-    return {
+    brand = {
         'name': SCHOOL_PRINT_NAME,
         'address': SCHOOL_PRINT_ADDRESS_LINE,
         'city': SCHOOL_PRINT_CITY_LINE,
@@ -1410,18 +1502,24 @@ def school_print_brand():
         'email': SCHOOL_PRINT_EMAIL,
         'motto': SCHOOL_PRINT_MOTTO,
         'brand_red': SCHOOL_PRINT_BRAND_RED,
+        'brand_navy': SCHOOL_PRINT_BRAND_NAVY,
+        'brand_gold': SCHOOL_PRINT_BRAND_GOLD,
         'grading_method': SCHOOL_PRINT_GRADING_METHOD,
         'vpi_title': SCHOOL_PRINT_VPI_TITLE,
         'vpi_name': SCHOOL_PRINT_VPI_NAME,
+        'vpi_office': SCHOOL_PRINT_VPI_OFFICE,
+        'vpa_title': SCHOOL_PRINT_VPA_TITLE,
+        'vpa_office': SCHOOL_PRINT_VPA_OFFICE,
         'sponsor_title': SCHOOL_PRINT_SPONSOR_TITLE,
         'principal_title': SCHOOL_PRINT_PRINCIPAL_TITLE,
     }
+    return apply_grade_signatories(brand, **signatory_names)
 
 
-def class_document_context(klass):
+def class_document_context(klass, **signatory_names):
     """Division titles and print header for a class grade sheet."""
     division_key = resolve_from_class(klass)
-    brand = school_print_brand()
+    brand = school_print_brand(**signatory_names)
     return {
         'school_name': brand['name'],
         'school': brand,

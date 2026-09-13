@@ -54,13 +54,33 @@ class GradeReleaseAccessTestCase(unittest.TestCase):
                 role='student',
             )
             student_user.set_password('password')
-            db.session.add_all([vpa, student_user])
+            sponsor = User(
+                email=f'sponsor-{self.token}@test.com',
+                full_name=f'Ada Sponsor {self.token}',
+                role='teacher',
+            )
+            sponsor.set_password('password')
+            principal = User(
+                email=f'principal-{self.token}@test.com',
+                full_name=f'Kojo Principal {self.token}',
+                role='principal',
+            )
+            principal.set_password('password')
+            db.session.add_all([vpa, student_user, sponsor, principal])
             db.session.flush()
-            self.created['users'].extend([vpa.id, student_user.id])
+            self.created['users'].extend([vpa.id, student_user.id, sponsor.id, principal.id])
             self.vpa_id = vpa.id
             self.student_user_id = student_user.id
+            self.sponsor_id = sponsor.id
+            self.sponsor_name = sponsor.full_name
+            self.principal_id = principal.id
+            self.principal_name = principal.full_name
 
-            klass = Class(name=f'Release Class {self.token}', grade_level=10)
+            klass = Class(
+                name=f'Release Class {self.token}',
+                grade_level=10,
+                sponsor_id=sponsor.id,
+            )
             db.session.add(klass)
             db.session.flush()
             self.created['classes'].append(klass.id)
@@ -221,6 +241,64 @@ class GradeReleaseAccessTestCase(unittest.TestCase):
         )
         self.assertEqual(report.status_code, 200)
         self.assertIn(STUDENT_REPORT_CARD_HOLD_MESSAGE.encode(), report.data)
+
+    def test_grade_documents_print_named_class_signatories(self):
+        """Class sponsor, principal, and VPA appear by name on grade documents."""
+        with self.app.app_context():
+            student = db.session.get(Student, self.student_id)
+            data = build_report_card_structured_data(
+                student, self.year_id, approved_only=False,
+            )
+            school = data['school']
+            self.assertEqual(school['sponsor_name'], self.sponsor_name)
+            self.assertEqual(school['sponsor_title'], 'Class Sponsor')
+            self.assertTrue(school['principal_name'])
+            self.assertEqual(school['principal_title'], 'Principal')
+            self.assertTrue(school['academic_officer_name'])
+            self.assertIn(school['academic_officer_title'], ('VPA', 'VPI'))
+            self.assertEqual(len(school['signatories']), 3)
+            self.assertEqual(school['signatories'][0]['key'], 'sponsor')
+            self.assertEqual(school['signatories'][0]['name'], self.sponsor_name)
+            self.assertIn(school['signatories'][1]['key'], ('vpa', 'vpi'))
+            self.assertTrue(school['signatories'][1]['name'])
+            self.assertEqual(school['signatories'][2]['key'], 'principal')
+            self.assertTrue(school['signatories'][2]['name'])
+            principal_name = school['principal_name']
+            academic_name = school['academic_officer_name']
+            academic_title = school['academic_officer_title']
+
+        self._login(self.vpa_id)
+        report = self.client.get(
+            f'/report-card/{self.student_id}?academic_year_id={self.year_id}'
+        )
+        self.assertEqual(report.status_code, 200)
+        body = report.get_data(as_text=True)
+        self.assertIn(self.sponsor_name, body)
+        self.assertIn('Class Sponsor', body)
+        self.assertIn(principal_name, body)
+        self.assertIn('Principal', body)
+        self.assertIn(academic_name, body)
+        self.assertIn(academic_title, body)
+        self.assertIn('data-signatory="sponsor"', body)
+        self.assertIn('RANK IN CLASS', body)
+        self.assertIn('HONOR, EXCELLENCE, ACADEMICS, DISCIPLINE, SUCCESS', body)
+
+        with self.app.app_context():
+            release = db.session.get(GradeRelease, self.release_id)
+            release.status = GradeRelease.STATUS_APPROVED
+            db.session.commit()
+
+        self._login(self.student_user_id)
+        sheet = self.client.get(f'/student/grade-sheet?academic_year_id={self.year_id}')
+        self.assertEqual(sheet.status_code, 200)
+        sheet_body = sheet.get_data(as_text=True)
+        self.assertIn(self.sponsor_name, sheet_body)
+        self.assertIn('Class Sponsor', sheet_body)
+        self.assertIn(principal_name, sheet_body)
+        self.assertIn('Principal', sheet_body)
+        self.assertIn(academic_name, sheet_body)
+        self.assertIn(academic_title, sheet_body)
+        self.assertIn('data-signatory="sponsor"', sheet_body)
 
     def test_report_card_unlocks_when_final_period_is_approved(self):
         with self.app.app_context():
