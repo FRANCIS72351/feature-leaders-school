@@ -1,0 +1,26 @@
+{# Student identity cell for attendance rolls: photo + full name + ID. #}
+{% set _compact = roll_compact|default(false) %}
+{% set _unmarked = roll_unmarked|default(false) %}
+{% set _photo_px = 32 if _compact else 44 %}
+<div class="att-student{% if _compact %} att-student-compact{% endif %}">
+    <img class="att-student-photo"
+         src="{{ student.photo_url }}"
+         alt="{{ student.full_name }}"
+         width="{{ _photo_px }}"
+         height="{{ _photo_px }}"
+         loading="lazy"
+         decoding="async"
+         onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
+    <div class="att-student-meta">
+        <div class="att-student-name">{{ student.full_name }}</div>
+        <div class="att-student-id-row">
+            <span class="att-student-id">{{ student.student_id or student.id }}</span>
+            {% if _unmarked %}
+            <span class="att-unmarked-badge">Not saved</span>
+            {% endif %}
+            {% if viewing_archived is defined and viewing_archived and student.status in ('ALUMNI', 'GRADUATED') %}
+            <span class="att-status-tag">{{ student.status|title }}</span>
+            {% endif %}
+        </div>
+    </div>
+</div>

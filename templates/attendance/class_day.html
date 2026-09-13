@@ -3,7 +3,8 @@
 
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/grading_hub.css') }}">
-<div class="container-fluid py-4 attendance-day-page">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/attendance_roll.css') }}">
+<div class="container-fluid py-4 attendance-day-page attendance-roll-shell">
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
         <div>
             <a href="{{ back_url }}" class="text-blue small text-decoration-none">
@@ -58,7 +59,7 @@
         </div>
         <div class="att-card-body p-0">
             <div class="table-responsive">
-                <table class="table att-table mb-0">
+                <table class="table att-table mb-0" aria-label="Class attendance roster">
                     <thead>
                         <tr>
                             <th class="ps-4">#</th>
@@ -72,11 +73,10 @@
                         <tr>
                             <td class="ps-4 text-blue">{{ loop.index }}</td>
                             <td>
-                                <div class="fw-semibold text-white">{{ row.student.full_name }}</div>
-                                <small class="text-blue">{{ row.student.student_id or row.student.id }}</small>
-                                {% if viewing_archived and row.student.status in ('ALUMNI', 'GRADUATED') %}
-                                <span class="badge bg-secondary ms-1" style="font-size:0.6rem;">{{ row.student.status|title }}</span>
-                                {% endif %}
+                                {% set student = row.student %}
+                                {% set roll_unmarked = false %}
+                                {% set roll_compact = false %}
+                                {% include 'attendance/_roll_student.html' %}
                             </td>
                             <td>
                                 {% if row.status == 'present' %}
@@ -91,7 +91,7 @@
                                 <span class="badge bg-secondary">Unmarked</span>
                                 {% endif %}
                             </td>
-                            <td class="pe-4 text-blue small">{{ row.notes or '—' }}</td>
+                            <td class="pe-4 att-note-text small">{{ row.notes or '—' }}</td>
                         </tr>
                         {% else %}
                         <tr><td colspan="4" class="text-center text-blue py-5">No students enrolled for this class/year.</td></tr>
@@ -102,56 +102,4 @@
         </div>
     </div>
 </div>
-
-<style>
-    .attendance-day-page { color: #1f2937; }
-    .attendance-day-page .text-blue { color: #0c7db8 !important; }
-    .attendance-day-page .text-cyan { color: #0ea5e9 !important; }
-    .attendance-day-page .text-white,
-    .attendance-day-page h2,
-    .attendance-day-page h6,
-    .attendance-day-page td,
-    .attendance-day-page span,
-    .attendance-day-page p,
-    .attendance-day-page div { color: #1f2937; }
-    .att-card, .att-kpi-card {
-        background: #ffffff;
-        border: 1px solid #dbe7f3;
-        border-radius: 12px;
-        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
-    }
-    .att-card-header {
-        padding: 1rem 1.25rem;
-        border-bottom: 1px solid #e5edf6;
-        background: #f8fbff;
-    }
-    .att-kpi-card { padding: 1rem 1.25rem; }
-    .att-kpi-label { font-size: 0.72rem; text-transform: uppercase; color: #5f7892; }
-    .att-kpi-value { font-size: 1.75rem; font-weight: 700; color: #0f172a; }
-    .att-kpi-present .att-kpi-value { color: #16a34a; }
-    .att-kpi-absent .att-kpi-value { color: #dc2626; }
-    .att-kpi-marked .att-kpi-value { color: #0ea5e9; }
-    .att-table th {
-        color: #0369a1;
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        border-color: #dbe7f3;
-        background: #f3f8fd;
-    }
-    .att-table td {
-        border-color: #e5edf6;
-        vertical-align: middle;
-        background: #ffffff;
-    }
-    .att-badge-present { background: #dcfce7; color: #166534; }
-    .att-badge-late { background: #fef3c7; color: #92400e; }
-    .att-badge-absent { background: #fee2e2; color: #991b1b; }
-    .att-badge-excused { background: #dbeafe; color: #1e3a8a; }
-    .btn-cyber-primary {
-        background: linear-gradient(135deg, #0ea5e9, #0284c7);
-        border: none;
-        color: #ffffff;
-        font-weight: 600;
-    }
-</style>
 {% endblock %}

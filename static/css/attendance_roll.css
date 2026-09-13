@@ -1,0 +1,511 @@
+/* Attendance roll — Future Leaders navy / red / gold school-admin UI */
+
+body:has(.attendance-roll-shell) {
+    background:
+        radial-gradient(circle at top right, rgba(200, 40, 40, 0.18), transparent 30%),
+        radial-gradient(circle at top left, rgba(212, 175, 55, 0.12), transparent 34%),
+        #101820 !important;
+    color: #f4f7fb;
+}
+
+.attendance-roll-shell {
+    color: #f4f7fb;
+}
+
+.attendance-roll-shell .text-blue {
+    color: #dce7f3 !important;
+}
+
+.attendance-roll-shell .text-cyan {
+    color: #d4af37 !important;
+}
+
+.attendance-roll-shell .text-white,
+.attendance-roll-shell h2,
+.attendance-roll-shell h5,
+.attendance-roll-shell h6 {
+    color: #ffffff !important;
+}
+
+.attendance-roll-shell a.text-blue:hover,
+.attendance-roll-shell a.text-cyan:hover {
+    color: #f0d78c !important;
+}
+
+.att-card,
+.att-kpi-card {
+    background: #152033;
+    border: 1px solid rgba(212, 175, 55, 0.28);
+    border-radius: 14px;
+    color: #f4f7fb;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+}
+
+.att-card-header {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid rgba(212, 175, 55, 0.18);
+    background: linear-gradient(180deg, rgba(200, 40, 40, 0.16), transparent);
+}
+
+.att-card-body {
+    padding: 1rem 1.25rem;
+}
+
+.att-kpi-card {
+    padding: 1rem 1.25rem;
+}
+
+.att-kpi-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #d4af37;
+    font-weight: 700;
+}
+
+.att-kpi-value {
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: #ffffff;
+}
+
+.att-kpi-sub {
+    font-size: 0.75rem;
+    color: #c5d0dc;
+}
+
+.att-kpi-present .att-kpi-value {
+    color: #4ade80;
+}
+
+.att-kpi-absent .att-kpi-value {
+    color: #fca5a5;
+}
+
+.att-kpi-marked .att-kpi-value {
+    color: #f0d78c;
+}
+
+.att-table {
+    --bs-table-bg: #152033;
+    --bs-table-color: #f4f7fb;
+    --bs-table-border-color: rgba(212, 175, 55, 0.14);
+    --bs-table-striped-bg: #18263c;
+    --bs-table-hover-bg: #1c2d48;
+    --bs-table-accent-bg: transparent;
+    color: #f4f7fb;
+    background-color: #152033;
+    margin-bottom: 0;
+}
+
+.att-table > :not(caption) > * > * {
+    background-color: #152033;
+    color: #f4f7fb;
+    border-color: rgba(212, 175, 55, 0.14);
+    box-shadow: none;
+    vertical-align: middle;
+}
+
+.att-table thead th {
+    color: #d4af37;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    background: #101820 !important;
+    border-bottom: 1px solid rgba(212, 175, 55, 0.28);
+    white-space: nowrap;
+}
+
+.att-table tbody tr:nth-child(even) > * {
+    background-color: #18263c;
+}
+
+.att-table tbody tr:hover > * {
+    background-color: #1c2d48;
+}
+
+.att-toolbar {
+    background: #121c2e;
+    border-bottom: 1px solid rgba(212, 175, 55, 0.14) !important;
+}
+
+.border-cyber-dim {
+    border-color: rgba(212, 175, 55, 0.18) !important;
+}
+
+.att-date-input,
+.attendance-roll-shell .form-cyber,
+.att-note-input {
+    background: #1c2a40 !important;
+    border: 1px solid rgba(212, 175, 55, 0.35) !important;
+    color: #ffffff !important;
+}
+
+.att-note-input::placeholder,
+.attendance-roll-shell .form-cyber::placeholder {
+    color: #b7c4d4 !important;
+    opacity: 1;
+}
+
+.att-note-input:focus,
+.attendance-roll-shell .form-cyber:focus,
+.att-date-input:focus {
+    border-color: #d4af37 !important;
+    box-shadow: 0 0 0 0.2rem rgba(212, 175, 55, 0.22) !important;
+    color: #ffffff !important;
+}
+
+.att-date-input {
+    max-width: 11rem;
+    color-scheme: dark;
+}
+
+.att-date-form label {
+    white-space: nowrap;
+    color: #f4f7fb !important;
+}
+
+.btn-cyber-primary {
+    background: #c82828;
+    border: 1px solid #a32020;
+    color: #ffffff;
+    font-weight: 700;
+}
+
+.btn-cyber-primary:hover,
+.btn-cyber-primary:focus {
+    background: #a32020;
+    border-color: #8a1b1b;
+    color: #ffffff;
+}
+
+.btn-cyber-sm {
+    background: rgba(212, 175, 55, 0.12);
+    border: 1px solid rgba(212, 175, 55, 0.45);
+    color: #f0d78c;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.btn-cyber-sm:hover {
+    background: rgba(212, 175, 55, 0.22);
+    color: #ffffff;
+    border-color: #d4af37;
+}
+
+.att-session-badge {
+    background: rgba(212, 175, 55, 0.14);
+    border: 1px solid rgba(212, 175, 55, 0.45);
+    color: #f0d78c;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 0.4rem 0.75rem;
+}
+
+.att-student {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+}
+
+.att-student-photo {
+    width: 44px;
+    height: 44px;
+    max-width: 44px;
+    max-height: 44px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: #101820;
+    border: 2px solid #d4af37;
+    box-shadow: 0 0 0 2px rgba(16, 24, 32, 0.9);
+}
+
+.att-student-compact .att-student-photo {
+    width: 32px;
+    height: 32px;
+    max-width: 32px;
+    max-height: 32px;
+}
+
+.att-student-meta {
+    min-width: 0;
+}
+
+.att-student-name {
+    color: #ffffff !important;
+    font-weight: 700;
+    line-height: 1.25;
+    font-size: 0.95rem;
+}
+
+.att-student-compact .att-student-name {
+    font-size: 0.82rem;
+}
+
+.att-student-id-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.12rem;
+}
+
+.att-student-id {
+    color: #f0d78c !important;
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+}
+
+.att-unmarked-badge {
+    display: inline-flex;
+    align-items: center;
+    background: #d4af37;
+    color: #101820 !important;
+    font-size: 0.65rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    border-radius: 999px;
+    padding: 0.12rem 0.45rem;
+    line-height: 1.2;
+}
+
+.att-status-tag {
+    display: inline-flex;
+    background: rgba(148, 163, 184, 0.2);
+    color: #e2e8f0 !important;
+    font-size: 0.62rem;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 0.1rem 0.4rem;
+}
+
+.att-status-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.att-status-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.28rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid rgba(226, 232, 240, 0.28);
+    background: #1c2a40;
+    color: #e8eef6;
+    font-size: 0.74rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+}
+
+.att-status-chip input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.att-status-chip.active.att-chip-present {
+    border-color: #4ade80;
+    color: #bbf7d0;
+    background: rgba(74, 222, 128, 0.16);
+}
+
+.att-status-chip.active.att-chip-late {
+    border-color: #d4af37;
+    color: #f0d78c;
+    background: rgba(212, 175, 55, 0.16);
+}
+
+.att-status-chip.active.att-chip-absent {
+    border-color: #f87171;
+    color: #fecaca;
+    background: rgba(200, 40, 40, 0.22);
+}
+
+.att-status-chip.active.att-chip-excused {
+    border-color: #7dd3fc;
+    color: #e0f2fe;
+    background: rgba(14, 165, 233, 0.16);
+}
+
+.att-quick-btn {
+    border: 1px solid rgba(226, 232, 240, 0.28);
+    background: #1c2a40;
+    color: #f4f7fb;
+    font-weight: 600;
+}
+
+.att-q-present:hover,
+.att-q-present:focus {
+    border-color: #4ade80;
+    color: #bbf7d0;
+}
+
+.att-q-late:hover,
+.att-q-late:focus {
+    border-color: #d4af37;
+    color: #f0d78c;
+}
+
+.att-q-absent:hover,
+.att-q-absent:focus {
+    border-color: #f87171;
+    color: #fecaca;
+}
+
+.att-class-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.att-class-tab {
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
+    border: 1px solid rgba(212, 175, 55, 0.28);
+    color: #dce7f3;
+    text-decoration: none;
+    font-size: 0.85rem;
+}
+
+.att-class-tab.active,
+.att-class-tab:hover {
+    border-color: #d4af37;
+    color: #f0d78c;
+    background: rgba(212, 175, 55, 0.12);
+}
+
+.att-history-list {
+    max-height: 420px;
+    overflow-y: auto;
+}
+
+.att-history-item {
+    display: block;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid rgba(212, 175, 55, 0.1);
+    text-decoration: none;
+}
+
+.att-history-item:hover,
+.att-history-item.active {
+    background: rgba(212, 175, 55, 0.08);
+}
+
+.att-history-bar {
+    display: flex;
+    height: 4px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(148, 163, 184, 0.25);
+}
+
+.att-history-bar .seg-present { background: #4ade80; }
+.att-history-bar .seg-late { background: #d4af37; }
+.att-history-bar .seg-excused { background: #7dd3fc; }
+.att-history-bar .seg-absent { background: #f87171; }
+
+.att-guidelines {
+    color: #dce7f3;
+    font-size: 0.85rem;
+}
+
+.att-guidelines li {
+    margin-bottom: 0.45rem;
+}
+
+.att-badge-present { background: #14532d; color: #bbf7d0; }
+.att-badge-late { background: #5b4a12; color: #f0d78c; }
+.att-badge-absent { background: #7f1d1d; color: #fecaca; }
+.att-badge-excused { background: #1e3a5f; color: #dbeafe; }
+
+.att-rate {
+    color: #f4f7fb !important;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.att-note-cell,
+.att-note-text {
+    color: #dce7f3 !important;
+}
+
+.att-monthly-scroll {
+    max-height: 480px;
+    overflow: auto;
+}
+
+.att-monthly-table .att-day-col {
+    min-width: 1.6rem;
+    font-size: 0.68rem;
+    padding: 0.35rem 0.15rem;
+}
+
+.att-monthly-table .sticky-col {
+    position: sticky;
+    left: 0;
+    background: #152033 !important;
+    z-index: 2;
+    min-width: 11rem;
+}
+
+.att-cell { font-weight: 700; font-size: 0.65rem; }
+.att-cell.p { color: #4ade80; }
+.att-cell.l { color: #f0d78c; }
+.att-cell.a { color: #f87171; }
+.att-cell.e { color: #7dd3fc; }
+.att-cell.u { color: #94a3b8; }
+
+.attendance-roll-shell .bg-cyan {
+    background: #d4af37 !important;
+    color: #101820 !important;
+}
+
+@media (max-width: 767.98px) {
+    .att-student-photo {
+        width: 40px;
+        height: 40px;
+        max-width: 40px;
+        max-height: 40px;
+    }
+
+    .att-table thead th,
+    .att-table td {
+        padding: 0.7rem 0.55rem;
+    }
+
+    .att-student-name {
+        font-size: 0.9rem;
+    }
+
+    .att-status-chip span {
+        font-size: 0.7rem;
+    }
+
+    .att-note-input {
+        min-width: 8rem;
+    }
+}
+
+@media print {
+    body * { visibility: hidden; }
+    #monthlyAttendanceReport,
+    #monthlyAttendanceReport * { visibility: visible; }
+    #monthlyAttendanceReport {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        background: #fff;
+        color: #111;
+    }
+}

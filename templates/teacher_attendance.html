@@ -3,7 +3,8 @@
 
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/grading_hub.css') }}">
-<div class="container-fluid py-4 teacher-attendance-page">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/attendance_roll.css') }}">
+<div class="container-fluid py-4 teacher-attendance-page attendance-roll-shell">
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
         <div>
             <a href="{{ url_for('teacher_dashboard') }}" class="text-blue small text-decoration-none">
@@ -105,7 +106,7 @@
                         </div>
 
                         <div class="table-responsive">
-                            <table class="table att-table mb-0">
+                            <table class="table att-table mb-0" aria-label="Class attendance roll">
                                 <thead>
                                     <tr>
                                         <th class="ps-4">#</th>
@@ -120,11 +121,10 @@
                                     <tr class="att-row" data-student-id="{{ row.student.id }}">
                                         <td class="ps-4 text-blue">{{ loop.index }}</td>
                                         <td>
-                                            <div class="fw-semibold text-white">{{ row.student.full_name }}</div>
-                                            <small class="text-blue">{{ row.student.student_id or row.student.id }}</small>
-                                            {% if not row.is_marked %}
-                                            <span class="badge bg-dark border border-secondary text-secondary ms-1 att-unmarked-badge">Not saved</span>
-                                            {% endif %}
+                                            {% set student = row.student %}
+                                            {% set roll_unmarked = not row.is_marked %}
+                                            {% set roll_compact = false %}
+                                            {% include 'attendance/_roll_student.html' %}
                                         </td>
                                         <td>
                                             <div class="att-status-group" role="group" aria-label="Attendance status for {{ row.student.full_name }}">
@@ -146,15 +146,16 @@
                                                 {% endfor %}
                                             </div>
                                         </td>
-                                        <td class="text-blue">
+                                        <td class="att-rate">
                                             {% if row.attendance_rate is not none %}{{ row.attendance_rate }}%{% else %}—{% endif %}
                                         </td>
-                                        <td class="pe-4">
+                                        <td class="pe-4 att-note-cell">
                                             <input type="text"
                                                    name="notes_{{ row.student.id }}"
                                                    value="{{ row.notes or '' }}"
-                                                   class="form-control form-control-sm form-cyber"
-                                                   placeholder="Optional note">
+                                                   class="form-control form-control-sm att-note-input"
+                                                   placeholder="Optional note"
+                                                   aria-label="Attendance note for {{ row.student.full_name }}">
                                         </td>
                                     </tr>
                                     {% else %}
@@ -253,7 +254,10 @@
                         {% for row in monthly_summary.rows %}
                         <tr>
                             <td class="ps-3 sticky-col">
-                                <div class="fw-semibold text-white small">{{ row.student.full_name }}</div>
+                                {% set student = row.student %}
+                                {% set roll_unmarked = false %}
+                                {% set roll_compact = true %}
+                                {% include 'attendance/_roll_student.html' %}
                             </td>
                             {% for day_key in monthly_summary.days %}
                             {% set status = row.cells[day_key] %}
@@ -277,155 +281,6 @@
     </div>
     {% endif %}
 </div>
-
-<style>
-    body { background: #0b0f19; }
-    .teacher-attendance-page .text-blue { color: #38bdf8 !important; }
-    .teacher-attendance-page .text-cyan { color: #00f2ff !important; }
-    .att-card, .att-kpi-card {
-        background: rgba(13, 13, 33, 0.92);
-        border: 1px solid rgba(0, 242, 255, 0.18);
-        border-radius: 12px;
-        color: #e2e8f0;
-    }
-    .att-card-header {
-        padding: 1rem 1.25rem;
-        border-bottom: 1px solid rgba(0, 242, 255, 0.12);
-    }
-    .att-card-body { padding: 1rem 1.25rem; }
-    .att-kpi-card { padding: 1rem 1.25rem; }
-    .att-kpi-label { font-size: 0.72rem; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.04em; }
-    .att-kpi-value { font-size: 1.75rem; font-weight: 700; color: #fff; }
-    .att-kpi-sub { font-size: 0.72rem; color: #64748b; }
-    .att-kpi-present .att-kpi-value { color: #4ade80; }
-    .att-kpi-absent .att-kpi-value { color: #f87171; }
-    .att-kpi-marked .att-kpi-value { color: #00f2ff; }
-    .att-table th {
-        color: #00f2ff;
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        border-color: rgba(0, 242, 255, 0.1);
-        background: rgba(0, 0, 0, 0.25);
-    }
-    .att-table td { border-color: rgba(0, 242, 255, 0.08); vertical-align: middle; }
-    .form-cyber {
-        background: #070a12 !important;
-        border: 1px solid #374151 !important;
-        color: #fff !important;
-    }
-    .border-cyber-dim { border-color: rgba(0, 242, 255, 0.12) !important; }
-    .btn-cyber-primary {
-        background: linear-gradient(135deg, #00f2ff, #0ea5e9);
-        border: none;
-        color: #0b0f19;
-        font-weight: 600;
-    }
-    .btn-cyber-sm {
-        background: rgba(0, 242, 255, 0.12);
-        border: 1px solid rgba(0, 242, 255, 0.35);
-        color: #00f2ff;
-        font-size: 0.85rem;
-    }
-    .att-date-input { max-width: 11rem; }
-    .att-session-badge {
-        background: rgba(0, 242, 255, 0.12);
-        border: 1px solid rgba(0, 242, 255, 0.35);
-        color: #00f2ff;
-        font-size: 0.78rem;
-        font-weight: 600;
-        letter-spacing: 0.02em;
-        padding: 0.4rem 0.75rem;
-    }
-    .att-date-form label { white-space: nowrap; }
-    .att-status-group {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.35rem;
-    }
-    .att-status-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.25rem;
-        padding: 0.25rem 0.5rem;
-        border-radius: 999px;
-        border: 1px solid rgba(148, 163, 184, 0.35);
-        background: rgba(15, 23, 42, 0.8);
-        color: #94a3b8;
-        font-size: 0.72rem;
-        cursor: pointer;
-        transition: all 0.15s ease;
-        user-select: none;
-    }
-    .att-status-chip input { position: absolute; opacity: 0; pointer-events: none; }
-    .att-status-chip.active.att-chip-present { border-color: #4ade80; color: #4ade80; background: rgba(74, 222, 128, 0.12); }
-    .att-status-chip.active.att-chip-late { border-color: #fbbf24; color: #fbbf24; background: rgba(251, 191, 36, 0.12); }
-    .att-status-chip.active.att-chip-absent { border-color: #f87171; color: #f87171; background: rgba(248, 113, 113, 0.12); }
-    .att-status-chip.active.att-chip-excused { border-color: #38bdf8; color: #38bdf8; background: rgba(56, 189, 248, 0.12); }
-    .att-quick-btn {
-        border: 1px solid rgba(148, 163, 184, 0.35);
-        background: rgba(15, 23, 42, 0.8);
-        color: #cbd5e1;
-    }
-    .att-q-present:hover, .att-q-present:focus { border-color: #4ade80; color: #4ade80; }
-    .att-q-late:hover, .att-q-late:focus { border-color: #fbbf24; color: #fbbf24; }
-    .att-q-absent:hover, .att-q-absent:focus { border-color: #f87171; color: #f87171; }
-    .att-class-tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-    .att-class-tab {
-        padding: 0.35rem 0.85rem;
-        border-radius: 999px;
-        border: 1px solid rgba(0, 242, 255, 0.25);
-        color: #94a3b8;
-        text-decoration: none;
-        font-size: 0.85rem;
-    }
-    .att-class-tab.active, .att-class-tab:hover {
-        border-color: #00f2ff;
-        color: #00f2ff;
-        background: rgba(0, 242, 255, 0.08);
-    }
-    .att-history-list { max-height: 420px; overflow-y: auto; }
-    .att-history-item {
-        display: block;
-        padding: 0.75rem 1.25rem;
-        border-bottom: 1px solid rgba(0, 242, 255, 0.08);
-        text-decoration: none;
-    }
-    .att-history-item:hover, .att-history-item.active { background: rgba(0, 242, 255, 0.06); }
-    .att-history-bar {
-        display: flex;
-        height: 4px;
-        border-radius: 999px;
-        overflow: hidden;
-        background: rgba(148, 163, 184, 0.2);
-    }
-    .att-history-bar .seg-present { background: #4ade80; }
-    .att-history-bar .seg-late { background: #fbbf24; }
-    .att-history-bar .seg-excused { background: #38bdf8; }
-    .att-history-bar .seg-absent { background: #f87171; }
-    .att-guidelines { color: #94a3b8; font-size: 0.85rem; }
-    .att-guidelines li { margin-bottom: 0.45rem; }
-    .att-unmarked-badge { font-size: 0.65rem; }
-    .att-monthly-scroll { max-height: 480px; overflow: auto; }
-    .att-monthly-table .att-day-col { min-width: 1.6rem; font-size: 0.68rem; padding: 0.35rem 0.15rem; }
-    .att-monthly-table .sticky-col {
-        position: sticky;
-        left: 0;
-        background: rgba(13, 13, 33, 0.98);
-        z-index: 2;
-        min-width: 9rem;
-    }
-    .att-cell { font-weight: 700; font-size: 0.65rem; }
-    .att-cell.p { color: #4ade80; }
-    .att-cell.l { color: #fbbf24; }
-    .att-cell.a { color: #f87171; }
-    .att-cell.e { color: #38bdf8; }
-    .att-cell.u { color: #475569; }
-    @media print {
-        body * { visibility: hidden; }
-        #monthlyAttendanceReport, #monthlyAttendanceReport * { visibility: visible; }
-        #monthlyAttendanceReport { position: absolute; left: 0; top: 0; width: 100%; }
-    }
-</style>
 
 <script>
 (function () {
