@@ -427,6 +427,12 @@ body:has(.attendance-roll-shell) {
 .att-badge-late { background: #5b4a12; color: #f0d78c; }
 .att-badge-absent { background: #7f1d1d; color: #fecaca; }
 .att-badge-excused { background: #1e3a5f; color: #dbeafe; }
+.att-badge-unmarked {
+    background: #1c2a40;
+    color: #f4f7fb;
+    border: 1px solid rgba(226, 232, 240, 0.4);
+    font-weight: 700;
+}
 
 .att-rate {
     color: #f4f7fb !important;
@@ -471,6 +477,14 @@ body:has(.attendance-roll-shell) {
 }
 
 @media (max-width: 767.98px) {
+    .att-kpi-card {
+        padding: 0.65rem 0.8rem;
+    }
+
+    .att-kpi-value {
+        font-size: 1.35rem;
+    }
+
     .att-student-photo {
         width: 40px;
         height: 40px;
