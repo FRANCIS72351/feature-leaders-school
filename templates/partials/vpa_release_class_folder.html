@@ -1,0 +1,153 @@
+{% set folder_dom_id = folder.dom_id if folder.dom_id is defined else ('folder-' ~ folder.id) %}
+{% set is_unassigned = folder.is_unassigned|default(false) %}
+{% set students = folder.students|default([]) %}
+{% set period_slots = folder.period_slots|default([]) %}
+{% set pending_releases = folder.pending_releases|default([]) %}
+{% set eligible_transcript_students = folder.eligible_transcript_students|default([]) %}
+
+<details class="vpa-class-folder" id="{{ folder_dom_id }}" {% if open_class_id and folder.id and open_class_id|string == folder.id|string %}open{% endif %}>
+    <summary>
+        <span class="vpa-folder-icon" aria-hidden="true"><i class="fas fa-folder{% if open_class_id and folder.id and open_class_id|string == folder.id|string %}-open{% endif %}"></i></span>
+        <span class="vpa-folder-copy">
+            <span class="folder-name">{{ folder.name }}</span>
+            <span class="folder-meta">{{ folder.division_label }}{% if folder.grade_level %} · {{ folder.grade_level }}{% endif %}</span>
+        </span>
+        <span class="vpa-folder-pills">
+            <span class="vpa-folder-count">{{ folder.student_count }} {{ 'student' if folder.student_count == 1 else 'students' }}</span>
+            {% if cabinet_mode == 'grades' and folder.pending_count %}
+            <span class="vpa-folder-count waiting">{{ folder.pending_count }} waiting</span>
+            {% elif cabinet_mode == 'transcripts' and folder.transcript_pending_count and not year_wide %}
+            <span class="vpa-folder-count waiting">{{ folder.transcript_pending_count }} waiting</span>
+            {% elif cabinet_mode == 'transcripts' and year_wide %}
+            <span class="vpa-folder-count ready">Year released</span>
+            {% endif %}
+            {% if folder.owing_count %}
+            <span class="vpa-folder-count owing">{{ folder.owing_count }} owing</span>
+            {% endif %}
+        </span>
+        <i class="fas fa-chevron-down vpa-folder-chevron" aria-hidden="true"></i>
+    </summary>
+    <div class="vpa-folder-interior">
+        <div class="vpa-folder-toolbar">
+            {% if students %}
+            <input type="search" class="vpa-inclass-search" placeholder="Find a student in {{ folder.name }}…" aria-label="Find student in {{ folder.name }}">
+            {% endif %}
+            {% if cabinet_mode == 'grades' and not is_unassigned and folder.id and pending_releases %}
+            <form method="POST" action="{{ url_for('vpa_approve_class_grade_releases', class_id=folder.id) }}" class="vpa-bulk-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {% if display_year %}<input type="hidden" name="academic_year_id" value="{{ display_year.id }}">{% endif %}
+                <textarea name="review_comment" rows="2" placeholder="Optional comment for this class release"></textarea>
+                <button type="submit" class="btn-vpa-gold">
+                    <i class="fas fa-stamp"></i> Release entire class
+                </button>
+            </form>
+            {% elif cabinet_mode == 'transcripts' and not is_unassigned and folder.id and eligible_transcript_students and not year_wide %}
+            <form method="POST" action="{{ url_for('vpa_approve_class_transcripts', class_id=folder.id) }}" class="vpa-bulk-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {% if display_year %}<input type="hidden" name="academic_year_id" value="{{ display_year.id }}">{% endif %}
+                <button type="submit" class="btn-vpa-gold">
+                    <i class="fas fa-scroll"></i> Release entire class
+                </button>
+            </form>
+            {% endif %}
+        </div>
+
+        {% if cabinet_mode == 'grades' %}
+        <div class="vpa-period-stack">
+            {% for slot in period_slots %}
+            <div class="vpa-period-pack {{ slot.status }}">
+                <div class="vpa-period-head">
+                    <div>
+                        <div class="vpa-period-title">{{ folder.name }} — {{ slot.label }}</div>
+                        <div class="vpa-period-meta">
+                            {% if slot.submitted_count %}{{ slot.submitted_count }} published grade{{ 's' if slot.submitted_count != 1 else '' }}{% else %}No published grades yet{% endif %}
+                            {% if slot.publisher %} · {{ slot.publisher }}{% endif %}
+                        </div>
+                    </div>
+                    <span class="vpa-chip {{ slot.chip }}">{{ slot.status_label }}</span>
+                </div>
+                <div class="vpa-release-actions">
+                    {% if slot.release %}
+                    <a class="btn-vpa-link" href="{{ url_for('class_period_grade_sheet', class_id=folder.id, period=slot.period, academic_year_id=display_year.id if display_year else none) }}" target="_blank" rel="noopener">Class grade sheet</a>
+                    {% endif %}
+                    {% if slot.status == 'pending' and slot.release %}
+                    <form method="POST" action="{{ url_for('vpa_approve_grade_release', release_id=slot.release.id) }}" class="w-100">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <textarea name="review_comment" rows="2" placeholder="Optional comment">{{ slot.release.review_comment or '' }}</textarea>
+                        <div class="vpa-release-actions">
+                            <button type="submit" class="btn-vpa-approve">Approve</button>
+                            <button type="submit" formaction="{{ url_for('vpa_return_grade_release', release_id=slot.release.id) }}" class="btn-vpa-return">Return</button>
+                        </div>
+                    </form>
+                    {% elif slot.status == 'returned' %}
+                    <p class="vpa-period-meta mb-0">Returned{{ ': ' ~ slot.release.review_comment if slot.release and slot.release.review_comment else '.' }}</p>
+                    {% endif %}
+                </div>
+            </div>
+            {% else %}
+            <div class="vpa-empty-class">
+                <i class="fas fa-inbox"></i>
+                No marking periods have been submitted for this class yet. The folder stays open so you can still review the roster.
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if students %}
+            {% for row in students %}
+            {% set student = row.student %}
+            <article class="vpa-student-file{% if row.owing %} owing{% endif %}" data-student-search="{{ student.full_name }} {{ student.student_id or '' }}" data-owing="{{ '1' if row.owing else '0' }}">
+                <div class="vpa-student-file-main">
+                    <div class="vpa-student-photo">
+                        <img src="{{ student.photo_url }}" alt="{{ student.full_name }}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
+                    </div>
+                    <div class="vpa-student-identity">
+                        <h6 class="vpa-student-name">{{ student.full_name }}</h6>
+                        <div class="vpa-student-id">{{ student.student_id or 'No student ID' }}</div>
+                        <div class="vpa-chip-row">
+                            <span class="vpa-chip {{ row.fee_chip }}">{{ row.fee_label }}</span>
+                            {% if cabinet_mode == 'grades' %}
+                            <span class="vpa-chip {{ 'approved' if row.grade_sheet_unlocked else 'pending' }}">
+                                {{ 'Grade sheet open' if row.grade_sheet_unlocked else 'Grade sheet sealed' }}
+                            </span>
+                            <span class="vpa-chip {{ 'approved' if row.report_card_unlocked else 'hold' }}">
+                                {{ 'Report card open' if row.report_card_unlocked else 'Report card sealed' }}
+                            </span>
+                            {% endif %}
+                            <span class="vpa-chip {{ 'approved' if row.transcript_released or year_wide else 'pending' }}">
+                                {{ 'Transcript released' if row.transcript_released or year_wide else 'Transcript sealed' }}
+                            </span>
+                        </div>
+                        {% if row.owing %}
+                        <p class="vpa-owe-note">Owes the school. Keep the student visible here; academic release does not clear a fee hold. Do not issue a printed report until Business/VPI confirms fees are paid.</p>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="vpa-student-actions">
+                    <a class="btn-vpa-link" href="{{ url_for('report_card', student_id=student.id, academic_year_id=display_year.id if display_year else none) }}" target="_blank" rel="noopener">
+                        <i class="fas fa-file-alt"></i> Grade sheet
+                    </a>
+                    <a class="btn-vpa-link" href="{{ url_for('report_card', student_id=student.id, academic_year_id=display_year.id if display_year else none) }}" target="_blank" rel="noopener">
+                        <i class="fas fa-id-badge"></i> Report card
+                    </a>
+                    <a class="btn-vpa-link" href="{{ url_for('transcript', student_id=student.id, academic_year_id=display_year.id if display_year else none) }}" target="_blank" rel="noopener">
+                        <i class="fas fa-scroll"></i> Transcript
+                    </a>
+                    {% if cabinet_mode == 'transcripts' and not year_wide and not row.transcript_released %}
+                    <form method="POST" action="{{ url_for('vpa_approve_student_transcript', student_id=student.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        {% if display_year %}<input type="hidden" name="academic_year_id" value="{{ display_year.id }}">{% endif %}
+                        <button type="submit" class="btn-vpa-approve">Approve</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </article>
+            {% endfor %}
+        {% else %}
+            <div class="vpa-empty-class">
+                <i class="fas fa-folder-open"></i>
+                This class folder is empty — no students assigned for this session.
+            </div>
+        {% endif %}
+    </div>
+</details>

@@ -525,6 +525,117 @@ class GradeReleaseAccessTestCase(unittest.TestCase):
         self.assertIn('Period 2'.encode('utf-8'), queue.data)
         self.assertIn(' — Period 2'.encode('utf-8'), queue.data)
 
+    def test_vpa_page_lists_all_class_folders_with_student_photos(self):
+        with self.app.app_context():
+            empty = Class(name=f'Empty Folder {self.token}', grade_level=9)
+            db.session.add(empty)
+            db.session.flush()
+            self.created['classes'].append(empty.id)
+            empty_id = empty.id
+            klass = db.session.get(Class, self.class_id)
+            klass.yearly_fees = 250
+            db.session.commit()
+
+        self._login(self.vpa_id)
+        page = self.client.get(f'/vpa/grade-releases?academic_year_id={self.year_id}')
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        self.assertIn(f'id="folder-{self.class_id}"', html)
+        self.assertIn(f'id="folder-{empty_id}"', html)
+        self.assertIn('Grade &amp; Report Cabinet', html)
+        self.assertIn('Release entire class', html)
+        self.assertIn('Portal Student', html)
+        self.assertIn('vpa-student-photo', html)
+        self.assertIn('alt="Portal Student"', html)
+        self.assertIn('Owes $', html)
+        self.assertIn('Owes the school', html)
+        self.assertIn('This class folder is empty', html)
+
+    def test_vpa_release_entire_class_without_per_row_clicks(self):
+        with self.app.app_context():
+            other = Class(name=f'Other Folder {self.token}', grade_level=11)
+            db.session.add(other)
+            db.session.flush()
+            self.created['classes'].append(other.id)
+            other_id = other.id
+            classmate = Student(
+                student_id=f'GR{self.token.upper()}B',
+                first_name='Classmate',
+                last_name='Student',
+                dob=date(2008, 2, 2),
+                gender='M',
+                klass_id=self.class_id,
+                grade_level=10,
+                academic_year_id=self.year_id,
+                status='ACTIVE',
+                is_registered=True,
+            )
+            db.session.add(classmate)
+            db.session.flush()
+            self.created['students'].append(classmate.id)
+            other_student = Student(
+                student_id=f'GR{self.token.upper()}C',
+                first_name='Other',
+                last_name='Roster',
+                dob=date(2008, 3, 3),
+                gender='F',
+                klass_id=other_id,
+                grade_level=11,
+                academic_year_id=self.year_id,
+                status='ACTIVE',
+                is_registered=True,
+            )
+            db.session.add(other_student)
+            db.session.flush()
+            self.created['students'].append(other_student.id)
+            other_grade = Grade(
+                student_id=other_student.id,
+                academic_year_id=self.year_id,
+                class_id=other_id,
+                subject='Mathematics',
+                subject_name='Mathematics',
+                score=70,
+                marking_period=1,
+                period=1,
+                submitted=True,
+            )
+            db.session.add(other_grade)
+            db.session.flush()
+            self.created['grades'].append(other_grade.id)
+            other_release = GradeRelease(
+                academic_year_id=self.year_id,
+                class_id=other_id,
+                period=1,
+                status=GradeRelease.STATUS_PENDING_VPA,
+            )
+            db.session.add(other_release)
+            db.session.flush()
+            self.created['releases'].append(other_release.id)
+            other_release_id = other_release.id
+            db.session.commit()
+
+        self._login(self.vpa_id)
+        response = self.client.post(
+            f'/vpa/grade-releases/class/{self.class_id}/approve',
+            data={'academic_year_id': self.year_id},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Released', response.data)
+
+        with self.app.app_context():
+            own = db.session.get(GradeRelease, self.release_id)
+            other = db.session.get(GradeRelease, other_release_id)
+            self.assertEqual(own.status, GradeRelease.STATUS_APPROVED)
+            self.assertEqual(other.status, GradeRelease.STATUS_PENDING_VPA)
+            student = db.session.get(Student, self.student_id)
+            self.assertFalse(student.tuition_cleared)
+
+        self._login(self.student_user_id)
+        sheet = self.client.get(f'/student/grade-sheet?academic_year_id={self.year_id}')
+        self.assertNotIn(STUDENT_GRADE_HOLD_MESSAGE.encode(), sheet.data)
+        self.assertIn(b'Published Grade Sheet', sheet.data)
+
 
 class ClassRankTestCase(unittest.TestCase):
     """Class rank uses the same approved yearly average the grade sheet prints."""

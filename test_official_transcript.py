@@ -5,6 +5,7 @@ from datetime import date
 from app import (
     STUDENT_TRANSCRIPT_HOLD_MESSAGE,
     app,
+    official_transcript_is_released,
 )
 from models import AcademicYear, Class, Grade, Student, TranscriptRelease, User, db
 
@@ -269,7 +270,12 @@ class OfficialTranscriptRouteTestCase(unittest.TestCase):
         self._login(self.vpa_id)
         queue = self.client.get('/vpa/transcript-releases')
         self.assertEqual(queue.status_code, 200)
-        self.assertIn('Approve Transcripts', queue.get_data(as_text=True))
+        body = queue.get_data(as_text=True)
+        self.assertIn('Official Transcript Cabinet', body)
+        self.assertIn(f'id="folder-{self.class_id}"', body)
+        self.assertIn('Mohammed Kamara', body)
+        self.assertIn('vpa-student-photo', body)
+        self.assertIn('Release entire class', body)
 
         with self.app.app_context():
             principal = User(
@@ -285,7 +291,59 @@ class OfficialTranscriptRouteTestCase(unittest.TestCase):
         self._login(principal_id)
         principal_queue = self.client.get('/vpa/transcript-releases')
         self.assertEqual(principal_queue.status_code, 200)
-        self.assertIn('Approve Transcripts', principal_queue.get_data(as_text=True))
+        self.assertIn('Official Transcript Cabinet', principal_queue.get_data(as_text=True))
+
+    def test_vpa_release_entire_class_transcripts(self):
+        with self.app.app_context():
+            other = Class(name=f'Transcript Other {self.token}', grade_level='11th')
+            db.session.add(other)
+            db.session.flush()
+            self.created['classes'].append(other.id)
+            other_id = other.id
+            classmate = Student(
+                student_id=f'TX{self.token.upper()}B',
+                first_name='Amina',
+                last_name='Kollie',
+                dob=date(2008, 2, 2),
+                gender='F',
+                klass_id=self.class_id,
+                grade_level='10th',
+                academic_year_id=self.year_id,
+                status='ACTIVE',
+                is_registered=True,
+            )
+            outsider = Student(
+                student_id=f'TX{self.token.upper()}C',
+                first_name='Outside',
+                last_name='Student',
+                dob=date(2008, 3, 3),
+                gender='M',
+                klass_id=other_id,
+                grade_level='11th',
+                academic_year_id=self.year_id,
+                status='ACTIVE',
+                is_registered=True,
+            )
+            db.session.add_all([classmate, outsider])
+            db.session.flush()
+            self.created['students'].extend([classmate.id, outsider.id])
+            classmate_id = classmate.id
+            outsider_id = outsider.id
+            db.session.commit()
+
+        self._login(self.vpa_id)
+        posted = self.client.post(
+            f'/vpa/transcript-releases/class/{self.class_id}/approve',
+            data={'academic_year_id': self.year_id},
+            follow_redirects=True,
+        )
+        self.assertEqual(posted.status_code, 200)
+        self.assertIn(b'Released Official Transcripts', posted.data)
+
+        with self.app.app_context():
+            self.assertTrue(official_transcript_is_released(self.student_id, self.year_id))
+            self.assertTrue(official_transcript_is_released(classmate_id, self.year_id))
+            self.assertFalse(official_transcript_is_released(outsider_id, self.year_id))
 
 
 if __name__ == '__main__':

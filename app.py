@@ -4015,14 +4015,15 @@ def get_or_create_transcript_release(academic_year_id, student_id=None):
     return release
 
 
-def approve_official_transcript(academic_year_id, student_id=None, user=None, comment=None):
+def approve_official_transcript(academic_year_id, student_id=None, user=None, comment=None, commit=True):
     release = get_or_create_transcript_release(academic_year_id, student_id)
     release.status = TranscriptRelease.STATUS_APPROVED
     release.approved_by_id = getattr(user, 'id', None)
     release.approved_at = datetime.now(timezone.utc)
     if comment:
         release.review_comment = comment
-    db.session.commit()
+    if commit:
+        db.session.commit()
     return release
 
 
@@ -22778,6 +22779,333 @@ def vpa_dashboard():
     )
 
 
+def _vpa_fee_snapshots(students, display_year, class_map=None):
+    """Tuition owing status for VPA folders. Never hides a student."""
+    from collections import defaultdict
+
+    snapshots = {}
+    if not students:
+        return snapshots
+    class_map = class_map or {}
+    year_id = display_year.id if display_year else None
+    student_ids = [student.id for student in students]
+    paid_by_student = defaultdict(float)
+    if year_id and student_ids:
+        for student_id, description, amount in (
+            db.session.query(
+                StudentPayment.student_id,
+                StudentPayment.description,
+                StudentPayment.amount_paid,
+            )
+            .filter(
+                StudentPayment.academic_year_id == year_id,
+                StudentPayment.student_id.in_(student_ids),
+            )
+            .all()
+        ):
+            if is_yearly_fee_payment(description):
+                paid_by_student[student_id] += float(amount or 0)
+
+    classes_by_id = {klass.id: klass for klass in Class.query.all()}
+    yearly_by_class = {}
+
+    for student in students:
+        class_id = class_map.get(student.id) or student.klass_id
+        if class_id not in yearly_by_class:
+            klass = classes_by_id.get(class_id) if class_id else None
+            class_fee = getattr(klass, 'yearly_fees', None) if klass else None
+            if class_fee:
+                yearly_by_class[class_id] = float(class_fee)
+            else:
+                yearly_by_class[class_id] = float(
+                    get_yearly_fee_for_student(student, display_year) or 0
+                )
+        yearly = yearly_by_class.get(class_id, 0.0)
+        paid = paid_by_student.get(student.id, 0.0)
+        balance = max(0.0, yearly - paid)
+        cleared = bool(getattr(student, 'tuition_cleared', False))
+        owing = balance > 0.009
+        if owing:
+            label, chip = f'Owes ${balance:,.2f}', 'unpaid'
+        elif cleared:
+            label, chip = 'Fees cleared', 'paid'
+        elif yearly > 0:
+            label, chip = 'Fees current', 'paid'
+        else:
+            label, chip = 'No fee on file', 'partial'
+        snapshots[student.id] = {
+            'owing': owing,
+            'fee_label': label,
+            'fee_chip': chip,
+            'fee_balance': money(balance),
+            'tuition_cleared': cleared,
+        }
+    return snapshots
+
+
+def _vpa_student_release_row(student, class_id, *, fee_map, releases_by_class, year_id, year_wide, approved_transcript_ids):
+    fee = fee_map.get(student.id) or {
+        'owing': False,
+        'fee_label': 'No fee on file',
+        'fee_chip': 'partial',
+        'fee_balance': 0,
+        'tuition_cleared': False,
+    }
+    class_releases = releases_by_class.get(class_id) or {}
+    grade_sheet_unlocked = any(
+        release.status == GradeRelease.STATUS_APPROVED
+        for release in class_releases.values()
+    )
+    report_card_unlocked = bool(
+        year_id and class_id and report_card_is_released(year_id, class_id)
+    )
+    return {
+        'student': student,
+        'owing': fee['owing'],
+        'fee_label': fee['fee_label'],
+        'fee_chip': fee['fee_chip'],
+        'fee_balance': fee['fee_balance'],
+        'tuition_cleared': fee['tuition_cleared'],
+        'grade_sheet_unlocked': grade_sheet_unlocked,
+        'report_card_unlocked': report_card_unlocked,
+        'transcript_released': bool(year_wide) or student.id in approved_transcript_ids,
+    }
+
+
+def _vpa_period_slots_for_class(class_id, releases_by_class, submitted_counts):
+    slots = []
+    shown = set((submitted_counts.get(class_id) or {}).keys()) | set(
+        (releases_by_class.get(class_id) or {}).keys()
+    )
+    for period in _sort_marking_periods(shown):
+        release = (releases_by_class.get(class_id) or {}).get(period)
+        submitted_count = (submitted_counts.get(class_id) or {}).get(period, 0)
+        if release and release.status == GradeRelease.STATUS_APPROVED:
+            status, chip, label = 'approved', 'approved', 'Approved'
+        elif release and release.status == GradeRelease.STATUS_PENDING_VPA:
+            status, chip, label = 'pending', 'pending', 'Pending VPA'
+        elif release and release.status == GradeRelease.STATUS_RETURNED:
+            status, chip, label = 'returned', 'unpaid', 'Returned'
+        elif submitted_count:
+            status, chip, label = 'draft', 'hold', 'Submitted'
+        else:
+            status, chip, label = 'draft', 'hold', 'Not submitted'
+        publisher = None
+        if release and release.published_by:
+            publisher = release.published_by.full_name
+        elif release and release.published_at:
+            publisher = 'Teacher'
+        slots.append({
+            'period': period,
+            'label': grading_period_label(period),
+            'status': status,
+            'chip': chip,
+            'status_label': label,
+            'release': release,
+            'submitted_count': submitted_count,
+            'publisher': publisher,
+        })
+    return slots
+
+
+def _build_vpa_release_cabinet(display_year, *, viewing_archived=False, open_class_id=None):
+    """All class folders for the year, with photos, fee standing, and release state."""
+    from collections import defaultdict
+
+    class_rows = sorted(Class.query.all(), key=class_sort_key_from_klass)
+    students = []
+    if display_year:
+        students = (
+            _students_for_display_year(display_year, history_mode=viewing_archived)
+            .options(joinedload(Student.user), joinedload(Student.assigned_class))
+            .order_by(Student.last_name.asc(), Student.first_name.asc())
+            .all()
+        )
+    class_map = (
+        _student_class_map_for_display_year(
+            display_year, viewing_archived=viewing_archived,
+        )
+        if display_year else {}
+    )
+    fee_map = _vpa_fee_snapshots(students, display_year, class_map)
+
+    year_wide = None
+    approved_transcript_ids = set()
+    if display_year:
+        year_wide = (
+            TranscriptRelease.query.options(joinedload(TranscriptRelease.approved_by))
+            .filter(
+                TranscriptRelease.academic_year_id == display_year.id,
+                TranscriptRelease.student_id.is_(None),
+                TranscriptRelease.status == TranscriptRelease.STATUS_APPROVED,
+            )
+            .first()
+        )
+        for student_id, in (
+            TranscriptRelease.query.filter(
+                TranscriptRelease.academic_year_id == display_year.id,
+                TranscriptRelease.student_id.isnot(None),
+                TranscriptRelease.status == TranscriptRelease.STATUS_APPROVED,
+            )
+            .with_entities(TranscriptRelease.student_id)
+            .all()
+        ):
+            if student_id:
+                approved_transcript_ids.add(student_id)
+
+    releases_by_class = defaultdict(dict)
+    if display_year:
+        for release in (
+            GradeRelease.query.options(
+                joinedload(GradeRelease.published_by),
+                joinedload(GradeRelease.approved_by),
+            )
+            .filter_by(academic_year_id=display_year.id)
+            .all()
+        ):
+            releases_by_class[release.class_id][release.period] = release
+
+    submitted_counts = defaultdict(lambda: defaultdict(int))
+    if display_year:
+        for grade in Grade.query.filter_by(
+            academic_year_id=display_year.id,
+            submitted=True,
+        ).all():
+            period = _grade_release_period(grade)
+            class_id = grade.class_id
+            if class_id and period in range(1, 9):
+                submitted_counts[class_id][period] += 1
+
+    students_by_class = defaultdict(list)
+    unassigned_students = []
+    for student in students:
+        class_id = class_map.get(student.id) or student.klass_id
+        if class_id:
+            students_by_class[class_id].append(student)
+        else:
+            unassigned_students.append(student)
+
+    year_id = display_year.id if display_year else None
+    folders = []
+    pending_count = 0
+    owing_count = 0
+    transcript_pending = 0
+    for klass in class_rows:
+        rows = [
+            _vpa_student_release_row(
+                student, klass.id,
+                fee_map=fee_map,
+                releases_by_class=releases_by_class,
+                year_id=year_id,
+                year_wide=year_wide,
+                approved_transcript_ids=approved_transcript_ids,
+            )
+            for student in students_by_class.get(klass.id, [])
+        ]
+        slots = _vpa_period_slots_for_class(klass.id, releases_by_class, submitted_counts)
+        pending_releases = [
+            slot['release'] for slot in slots
+            if slot['status'] == 'pending' and slot['release']
+        ]
+        eligible_transcript = [row for row in rows if not row['transcript_released']]
+        folder_owing = sum(1 for row in rows if row['owing'])
+        pending_count += len(pending_releases)
+        owing_count += folder_owing
+        transcript_pending += len(eligible_transcript)
+        folders.append({
+            'id': klass.id,
+            'dom_id': f'folder-{klass.id}',
+            'name': klass.name,
+            'grade_level': klass.grade_level,
+            'division_label': division_label_for_class(klass),
+            'student_count': len(rows),
+            'students': rows,
+            'klass': klass,
+            'period_slots': slots,
+            'pending_releases': pending_releases,
+            'pending_count': len(pending_releases),
+            'owing_count': folder_owing,
+            'transcript_pending_count': len(eligible_transcript),
+            'eligible_transcript_students': eligible_transcript,
+            'report_card_unlocked': bool(
+                year_id and report_card_is_released(year_id, klass.id)
+            ),
+            'is_unassigned': False,
+        })
+
+    unassigned_rows = [
+        _vpa_student_release_row(
+            student, None,
+            fee_map=fee_map,
+            releases_by_class=releases_by_class,
+            year_id=year_id,
+            year_wide=year_wide,
+            approved_transcript_ids=approved_transcript_ids,
+        )
+        for student in unassigned_students
+    ]
+    unassigned_owing = sum(1 for row in unassigned_rows if row['owing'])
+    owing_count += unassigned_owing
+    unassigned_transcript = [row for row in unassigned_rows if not row['transcript_released']]
+    transcript_pending += len(unassigned_transcript)
+    unassigned_folder = None
+    if unassigned_rows:
+        unassigned_folder = {
+            'id': None,
+            'dom_id': 'folder-unassigned',
+            'name': 'No class assigned',
+            'grade_level': None,
+            'division_label': 'Registry records without a class folder',
+            'student_count': len(unassigned_rows),
+            'students': unassigned_rows,
+            'klass': None,
+            'period_slots': [],
+            'pending_releases': [],
+            'pending_count': 0,
+            'owing_count': unassigned_owing,
+            'transcript_pending_count': len(unassigned_transcript),
+            'eligible_transcript_students': unassigned_transcript,
+            'report_card_unlocked': False,
+            'is_unassigned': True,
+        }
+
+    return {
+        'release_folders': folders,
+        'release_folders_by_division': group_items_by_class(
+            folders, lambda folder: folder.get('klass'),
+        ),
+        'unassigned_folder': unassigned_folder,
+        'open_class_id': open_class_id,
+        'year_wide': year_wide,
+        'folder_count': len(folders),
+        'student_count': len(students),
+        'pending_count': pending_count,
+        'transcript_pending_count': 0 if year_wide else transcript_pending,
+        'owing_count': owing_count,
+    }
+
+
+def _apply_grade_release_approval(release, user, comment=None):
+    release.status = GradeRelease.STATUS_APPROVED
+    release.approved_by_id = getattr(user, 'id', None)
+    release.approved_at = datetime.now(timezone.utc)
+    release.returned_by_id = None
+    release.returned_at = None
+    if comment:
+        release.review_comment = comment
+    return release
+
+
+def _vpa_release_page_redirect(endpoint, *, year_id=None, class_id=None):
+    kwargs = {}
+    if year_id:
+        kwargs['academic_year_id'] = year_id
+    url = url_for(endpoint, **kwargs)
+    if class_id:
+        url = f'{url}#folder-{class_id}'
+    return redirect(url)
+
+
 def _grade_release_queue_rows(display_year=None, status=None):
     """Class/period packages waiting on or recently reviewed by VPA."""
     query = GradeRelease.query
@@ -22846,19 +23174,26 @@ def vpa_grade_releases():
     display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
         session_key=VPA_YEAR_SESSION_KEY,
     )
-    rows = _grade_release_queue_rows(display_year)
-    pending_rows = [row for row in rows if row['release'].status == GradeRelease.STATUS_PENDING_VPA]
-    returned_rows = [row for row in rows if row['release'].status == GradeRelease.STATUS_RETURNED]
-    approved_rows = [row for row in rows if row['release'].status == GradeRelease.STATUS_APPROVED][:12]
+    cabinet = _build_vpa_release_cabinet(
+        display_year,
+        viewing_archived=viewing_archived,
+        open_class_id=request.args.get('open_class_id', type=int),
+    )
     return render_template(
         'vpa_grade_releases.html',
         display_year=display_year,
         active_year=active_year,
         years=years,
         viewing_archived=viewing_archived,
-        pending_rows=pending_rows,
-        returned_rows=returned_rows,
-        approved_rows=approved_rows,
+        cabinet_mode='grades',
+        release_folders_by_division=cabinet['release_folders_by_division'],
+        unassigned_folder=cabinet['unassigned_folder'],
+        open_class_id=cabinet['open_class_id'],
+        year_wide=cabinet['year_wide'],
+        folder_count=cabinet['folder_count'],
+        student_count=cabinet['student_count'],
+        pending_count=cabinet['pending_count'],
+        owing_count=cabinet['owing_count'],
     )
 
 
@@ -22869,13 +23204,7 @@ def vpa_approve_grade_release(release_id):
     if blocked:
         return blocked
     comment = (request.form.get('review_comment') or '').strip() or None
-    release.status = GradeRelease.STATUS_APPROVED
-    release.approved_by_id = current_user.id
-    release.approved_at = datetime.now(timezone.utc)
-    release.returned_by_id = None
-    release.returned_at = None
-    if comment:
-        release.review_comment = comment
+    _apply_grade_release_approval(release, current_user, comment)
     db.session.commit()
     report_card_open = report_card_is_released(release.academic_year_id, release.class_id)
     flash(
@@ -22889,7 +23218,11 @@ def vpa_approve_grade_release(release_id):
         ),
         'success',
     )
-    return redirect(url_for('vpa_grade_releases'))
+    return _vpa_release_page_redirect(
+        'vpa_grade_releases',
+        year_id=release.academic_year_id,
+        class_id=release.class_id,
+    )
 
 
 @app.route('/vpa/grade-releases/<int:release_id>/return', methods=['POST'])
@@ -22901,7 +23234,11 @@ def vpa_return_grade_release(release_id):
     comment = (request.form.get('review_comment') or '').strip()
     if not comment:
         flash('Please add a short comment so the teacher knows what to correct.', 'warning')
-        return redirect(url_for('vpa_grade_releases'))
+        return _vpa_release_page_redirect(
+            'vpa_grade_releases',
+            year_id=release.academic_year_id,
+            class_id=release.class_id,
+        )
     release.status = GradeRelease.STATUS_RETURNED
     release.returned_by_id = current_user.id
     release.returned_at = datetime.now(timezone.utc)
@@ -22915,7 +23252,68 @@ def vpa_return_grade_release(release_id):
         'Previously approved periods remain available.',
         'warning',
     )
-    return redirect(url_for('vpa_grade_releases'))
+    return _vpa_release_page_redirect(
+        'vpa_grade_releases',
+        year_id=release.academic_year_id,
+        class_id=release.class_id,
+    )
+
+
+@app.route('/vpa/grade-releases/class/<int:class_id>/approve', methods=['POST'])
+@login_required
+def vpa_approve_class_grade_releases(class_id):
+    """Approve every pending period package for one class in one action."""
+    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    if blocked:
+        return blocked
+    klass = Class.query.get_or_404(class_id)
+    year_id = request.form.get('academic_year_id', type=int)
+    display_year = db.session.get(AcademicYear, year_id) if year_id else get_active_academic_year()
+    if not display_year:
+        flash('Select an academic year before releasing a class.', 'warning')
+        return redirect(url_for('vpa_grade_releases'))
+    period = request.form.get('period', type=int)
+    comment = (request.form.get('review_comment') or '').strip() or None
+    query = GradeRelease.query.filter_by(
+        academic_year_id=display_year.id,
+        class_id=klass.id,
+        status=GradeRelease.STATUS_PENDING_VPA,
+    )
+    if period in range(1, 9):
+        query = query.filter_by(period=period)
+    releases = query.order_by(GradeRelease.period.asc()).all()
+    if not releases:
+        flash(
+            f'No pending grade packages for {klass.name} to release. '
+            'Teachers must publish a period before VPA can approve the class. '
+            'Fee holds were not changed.',
+            'warning',
+        )
+        return _vpa_release_page_redirect(
+            'vpa_grade_releases',
+            year_id=display_year.id,
+            class_id=klass.id,
+        )
+    for release in releases:
+        _apply_grade_release_approval(release, current_user, comment)
+    db.session.commit()
+    labels = ', '.join(grading_period_label(item.period) for item in releases)
+    report_card_open = report_card_is_released(display_year.id, klass.id)
+    flash(
+        f'Released {klass.name} ({labels}). Students may now view those grade sheets. '
+        + (
+            'The full-year Report Card is now released for this class. '
+            if report_card_open
+            else 'The Report Card stays sealed until the final marking period is approved. '
+        )
+        + 'Fee holds were not changed.',
+        'success',
+    )
+    return _vpa_release_page_redirect(
+        'vpa_grade_releases',
+        year_id=display_year.id,
+        class_id=klass.id,
+    )
 
 
 def _transcript_release_queue_context(display_year):
@@ -22973,16 +23371,26 @@ def vpa_transcript_releases():
     display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
         session_key=VPA_YEAR_SESSION_KEY,
     )
-    year_wide, pending_rows, approved_rows = _transcript_release_queue_context(display_year)
+    cabinet = _build_vpa_release_cabinet(
+        display_year,
+        viewing_archived=viewing_archived,
+        open_class_id=request.args.get('open_class_id', type=int),
+    )
     return render_template(
         'vpa_transcript_releases.html',
         display_year=display_year,
         active_year=active_year,
         years=years,
         viewing_archived=viewing_archived,
-        year_wide=year_wide,
-        pending_rows=pending_rows,
-        approved_rows=approved_rows,
+        cabinet_mode='transcripts',
+        year_wide=cabinet['year_wide'],
+        release_folders_by_division=cabinet['release_folders_by_division'],
+        unassigned_folder=cabinet['unassigned_folder'],
+        open_class_id=cabinet['open_class_id'],
+        folder_count=cabinet['folder_count'],
+        student_count=cabinet['student_count'],
+        pending_count=cabinet['transcript_pending_count'],
+        owing_count=cabinet['owing_count'],
     )
 
 
@@ -23023,7 +23431,88 @@ def vpa_approve_student_transcript(student_id):
         f'Official Transcript for {student.full_name} is released for {display_year.name}.',
         'success',
     )
-    return redirect(url_for('vpa_transcript_releases', academic_year_id=display_year.id))
+    klass = get_student_class_for_year(student, display_year.id)
+    return _vpa_release_page_redirect(
+        'vpa_transcript_releases',
+        year_id=display_year.id,
+        class_id=klass.id if klass else None,
+    )
+
+
+@app.route('/vpa/transcript-releases/class/<int:class_id>/approve', methods=['POST'])
+@login_required
+def vpa_approve_class_transcripts(class_id):
+    """Release Official Transcript for every student in one class."""
+    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    if blocked:
+        return blocked
+    klass = Class.query.get_or_404(class_id)
+    year_id = request.form.get('academic_year_id', type=int)
+    display_year = db.session.get(AcademicYear, year_id) if year_id else get_active_academic_year()
+    if not display_year:
+        flash('Select an academic year before releasing a class.', 'warning')
+        return redirect(url_for('vpa_transcript_releases'))
+    if official_transcript_is_released(None, display_year.id):
+        flash(
+            f'Year-wide transcript release is already active for {display_year.name}.',
+            'info',
+        )
+        return _vpa_release_page_redirect(
+            'vpa_transcript_releases',
+            year_id=display_year.id,
+            class_id=klass.id,
+        )
+    roster = get_class_students_for_year(
+        klass.id, display_year, viewing_archived=True,
+    )
+    if not roster:
+        flash(
+            f'{klass.name} has no students to release for {display_year.name}.',
+            'warning',
+        )
+        return _vpa_release_page_redirect(
+            'vpa_transcript_releases',
+            year_id=display_year.id,
+            class_id=klass.id,
+        )
+    fee_map = _vpa_fee_snapshots(
+        roster, display_year, {student.id: klass.id for student in roster},
+    )
+    released = 0
+    owing_released = 0
+    for student in roster:
+        if official_transcript_is_released(student.id, display_year.id):
+            continue
+        approve_official_transcript(
+            display_year.id, student_id=student.id, user=current_user, commit=False,
+        )
+        released += 1
+        if fee_map.get(student.id, {}).get('owing'):
+            owing_released += 1
+    db.session.commit()
+    if not released:
+        flash(
+            f'Every student in {klass.name} already has an Official Transcript for {display_year.name}.',
+            'info',
+        )
+    else:
+        message = (
+            f'Released Official Transcripts for {released} student'
+            f'{"s" if released != 1 else ""} in {klass.name}.'
+        )
+        if owing_released:
+            message += (
+                f' {owing_released} still owe the school — academic release does not '
+                'clear a fee hold. Coordinate with Business/VPI before issuing printed copies.'
+            )
+            flash(message, 'warning')
+        else:
+            flash(message, 'success')
+    return _vpa_release_page_redirect(
+        'vpa_transcript_releases',
+        year_id=display_year.id,
+        class_id=klass.id,
+    )
 
 
 @app.route('/payroll', methods=['GET', 'POST'])

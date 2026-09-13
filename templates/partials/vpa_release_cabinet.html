@@ -1,0 +1,297 @@
+{# VPA academic release cabinet. Expects release_folders_by_division, cabinet_mode ('grades'|'transcripts'). #}
+{% set cabinet_mode = cabinet_mode|default('grades') %}
+{% set open_class_id = open_class_id|default(none) %}
+{% set year_wide = year_wide|default(none) %}
+{% set display_year = display_year|default(none) %}
+{% set release_folders_by_division = release_folders_by_division|default([]) %}
+{% set unassigned_folder = unassigned_folder|default(none) %}
+
+<style>
+    .vpa-cabinet { width: 100%; max-width: 100%; overflow-x: hidden; }
+    .vpa-cabinet-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem 0.85rem;
+        margin: 0 0 1.15rem;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #4b5563;
+    }
+    .vpa-cabinet-legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
+    .vpa-dot {
+        width: 0.65rem; height: 0.65rem; border-radius: 50%; display: inline-block;
+    }
+    .vpa-dot-navy { background: #002d62; }
+    .vpa-dot-gold { background: #c9a227; }
+    .vpa-dot-red { background: #c82828; }
+    .vpa-dot-green { background: #047857; }
+    .vpa-division { margin-bottom: 1.7rem; }
+    .vpa-division-kicker {
+        display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.85rem;
+    }
+    .vpa-division-label {
+        margin: 0; color: #002d62; font-size: 0.72rem; font-weight: 800;
+        letter-spacing: 0.16em; text-transform: uppercase; white-space: nowrap;
+    }
+    .vpa-kicker-line {
+        flex: 1; height: 1px;
+        background: linear-gradient(90deg, rgba(201, 162, 39, 0.65), transparent);
+    }
+    .vpa-folder-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
+        gap: 1.15rem;
+    }
+    .vpa-class-folder { background: transparent; border: none; margin: 0; min-width: 0; }
+    .vpa-class-folder > summary {
+        list-style: none; cursor: pointer; display: flex; align-items: center; gap: 0.7rem;
+        background: linear-gradient(180deg, #0a3a78 0%, #002d62 62%, #001e42 100%);
+        color: #fff; border-radius: 14px 22px 0 0; padding: 0.72rem 0.95rem 0.68rem;
+        box-shadow: 0 8px 18px rgba(0, 45, 98, 0.28); user-select: none;
+        border-bottom: 3px solid #c9a227;
+    }
+    .vpa-class-folder > summary::-webkit-details-marker { display: none; }
+    .vpa-class-folder > summary::marker { content: ''; }
+    .vpa-folder-icon {
+        width: 2.15rem; height: 2.15rem; border-radius: 8px; flex-shrink: 0;
+        background: rgba(201, 162, 39, 0.22); color: #f3d56a;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+    .vpa-folder-copy { min-width: 0; flex: 1; }
+    .vpa-folder-copy .folder-name {
+        display: block; font-weight: 800; font-size: 0.98rem; color: #fff;
+        line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .vpa-folder-copy .folder-meta {
+        display: block; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em;
+        text-transform: uppercase; color: rgba(255, 255, 255, 0.78); margin-top: 0.12rem;
+    }
+    .vpa-folder-pills { display: flex; flex-wrap: wrap; gap: 0.28rem; flex-shrink: 0; justify-content: flex-end; }
+    .vpa-folder-count {
+        background: #fff8e8; color: #002d62; font-weight: 800; font-size: 0.7rem;
+        border-radius: 999px; padding: 0.28rem 0.6rem; white-space: nowrap;
+    }
+    .vpa-folder-count.waiting { background: #fff4e5; color: #c2410c; }
+    .vpa-folder-count.owing { background: #fef2f2; color: #b91c1c; }
+    .vpa-folder-count.ready { background: #ecfdf5; color: #047857; }
+    .vpa-folder-chevron { color: #c9a227; font-size: 0.78rem; transition: transform 0.2s ease; flex-shrink: 0; }
+    .vpa-class-folder[open] > summary .vpa-folder-chevron { transform: rotate(180deg); }
+    .vpa-folder-interior {
+        background: linear-gradient(180deg, #fffdf8 0%, #f7f1e8 100%);
+        border: 1px solid #d7c79a; border-top: none; border-radius: 0 0 14px 14px;
+        padding: 0.9rem 0.85rem 1rem; box-shadow: 0 14px 28px rgba(17, 24, 39, 0.14);
+        color: #1f2937;
+    }
+    .vpa-folder-toolbar {
+        display: flex; flex-wrap: wrap; align-items: stretch; gap: 0.45rem;
+        margin-bottom: 0.75rem;
+    }
+    .vpa-inclass-search {
+        flex: 1 1 12rem; min-width: 0; border: 1px solid #d7c79a; border-radius: 8px;
+        padding: 0.45rem 0.7rem; font-size: 0.82rem; color: #111827; background: #fff;
+    }
+    .vpa-inclass-search:focus { outline: 2px solid rgba(0, 45, 98, 0.28); border-color: #002d62; }
+    .vpa-bulk-form { display: flex; flex-wrap: wrap; gap: 0.4rem; flex: 1 1 100%; }
+    .vpa-bulk-form textarea {
+        width: 100%; min-height: 2.4rem; font-size: 0.8rem; border-radius: 8px;
+        border: 1px solid #d7c79a; padding: 0.4rem 0.55rem;
+    }
+    .btn-vpa-gold {
+        background: #002d62; color: #f3d56a !important; border: 1px solid #c9a227;
+        font-weight: 800; font-size: 0.78rem; border-radius: 8px; padding: 0.48rem 0.85rem;
+        display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;
+        white-space: nowrap;
+    }
+    .btn-vpa-gold:hover { background: #013a7a; color: #ffe9a0 !important; }
+    .btn-vpa-gold:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn-vpa-approve {
+        background: #002d62; color: #fff !important; border: none; font-weight: 800;
+        font-size: 0.78rem; border-radius: 8px; padding: 0.48rem 0.85rem;
+        display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;
+        min-height: 2.35rem;
+    }
+    .btn-vpa-approve:hover { background: #c82828; color: #fff !important; }
+    .btn-vpa-return {
+        background: #fff; color: #c82828 !important; border: 1px solid #c82828;
+        font-weight: 800; font-size: 0.78rem; border-radius: 8px; padding: 0.48rem 0.85rem;
+        display: inline-flex; align-items: center; justify-content: center;
+        min-height: 2.35rem;
+    }
+    .btn-vpa-link {
+        background: #fff; color: #002d62 !important; border: 1px solid #9eb1c9;
+        font-weight: 700; font-size: 0.75rem; border-radius: 8px; padding: 0.4rem 0.7rem;
+        text-decoration: none; display: inline-flex; align-items: center; gap: 0.3rem;
+        min-height: 2.2rem;
+    }
+    .btn-vpa-link:hover { background: #f3f8fd; color: #002d62 !important; }
+    .vpa-period-stack { display: flex; flex-direction: column; gap: 0.55rem; margin-bottom: 0.85rem; }
+    .vpa-period-pack {
+        background: #fff; border: 1px solid #e5edf6; border-left: 4px solid #9eb1c9;
+        border-radius: 10px; padding: 0.7rem 0.75rem;
+    }
+    .vpa-period-pack.pending { border-left-color: #c2410c; }
+    .vpa-period-pack.approved { border-left-color: #047857; }
+    .vpa-period-pack.returned { border-left-color: #c82828; }
+    .vpa-period-pack.draft { border-left-color: #6b7280; }
+    .vpa-period-head {
+        display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between;
+        gap: 0.45rem; margin-bottom: 0.45rem;
+    }
+    .vpa-period-title { font-weight: 800; color: #002d62; font-size: 0.88rem; line-height: 1.3; }
+    .vpa-period-meta { font-size: 0.75rem; color: #5f7892; }
+    .vpa-release-actions {
+        display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: stretch;
+    }
+    .vpa-release-actions .btn-vpa-approve,
+    .vpa-release-actions .btn-vpa-return,
+    .vpa-release-actions .btn-vpa-link,
+    .vpa-release-actions .btn-vpa-gold {
+        flex: 1 1 8.5rem;
+    }
+    .vpa-period-pack form textarea {
+        width: 100%; font-size: 0.8rem; border-radius: 8px; border: 1px solid #dbe7f3;
+        padding: 0.4rem 0.5rem; margin-bottom: 0.4rem;
+    }
+    .vpa-student-file {
+        background: #fff; border: 1px solid #ead9b8; border-left: 4px solid #c9a227;
+        border-radius: 10px; padding: 0.75rem 0.8rem; margin-bottom: 0.65rem;
+    }
+    .vpa-student-file:last-child { margin-bottom: 0; }
+    .vpa-student-file.is-filtered-out { display: none; }
+    .vpa-student-file.owing { border-left-color: #c82828; background: #fffafa; }
+    .vpa-student-file-main { display: flex; align-items: flex-start; gap: 0.75rem; }
+    .vpa-student-photo {
+        width: 56px; height: 56px; aspect-ratio: 1 / 1; border-radius: 50%;
+        overflow: hidden; flex-shrink: 0; background: #eef3f9;
+        border: 2px solid #c9a227;
+    }
+    .vpa-student-photo img {
+        width: 100%; height: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block;
+    }
+    .vpa-student-identity { min-width: 0; flex: 1; }
+    .vpa-student-name { margin: 0; font-size: 1rem; font-weight: 800; color: #111827; line-height: 1.25; }
+    .vpa-student-id {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.78rem; font-weight: 700; color: #002d62; margin-top: 0.1rem;
+    }
+    .vpa-chip-row { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.35rem; }
+    .vpa-chip {
+        display: inline-flex; align-items: center; border-radius: 999px;
+        padding: 0.22rem 0.58rem; font-size: 0.68rem; font-weight: 800;
+        letter-spacing: 0.02em; white-space: nowrap;
+    }
+    .vpa-chip.paid { background: #ecfdf5; color: #047857; }
+    .vpa-chip.partial { background: #fffbeb; color: #b45309; }
+    .vpa-chip.unpaid { background: #fef2f2; color: #b91c1c; }
+    .vpa-chip.pending { background: #fff7ed; color: #c2410c; }
+    .vpa-chip.approved { background: #ecfdf5; color: #047857; }
+    .vpa-chip.hold { background: #f3f4f6; color: #4b5563; }
+    .vpa-owe-note { font-size: 0.72rem; color: #9a1f1f; margin: 0.35rem 0 0; font-weight: 600; line-height: 1.35; }
+    .vpa-student-actions {
+        display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.65rem;
+        padding-top: 0.6rem; border-top: 1px dashed #ead9b8;
+    }
+    .vpa-student-actions .btn-vpa-approve,
+    .vpa-student-actions .btn-vpa-link,
+    .vpa-student-actions form { flex: 1 1 8.5rem; }
+    .vpa-student-actions form { display: flex; }
+    .vpa-student-actions form .btn-vpa-approve { width: 100%; }
+    .vpa-empty-class {
+        text-align: center; padding: 1.15rem 0.75rem; color: #4b5563; font-size: 0.82rem;
+        background: #fff; border: 1px dashed #d7c79a; border-radius: 10px;
+    }
+    .vpa-empty-class i { display: block; color: #002d62; opacity: 0.4; font-size: 1.4rem; margin-bottom: 0.4rem; }
+    @media (max-width: 767.98px) {
+        .vpa-folder-grid { display: flex; flex-direction: column; gap: 0.95rem; }
+        .vpa-folder-pills { width: 100%; justify-content: flex-start; }
+        .vpa-release-actions,
+        .vpa-student-actions,
+        .vpa-bulk-form { flex-direction: column; }
+        .vpa-release-actions .btn-vpa-approve,
+        .vpa-release-actions .btn-vpa-return,
+        .vpa-release-actions .btn-vpa-link,
+        .vpa-release-actions .btn-vpa-gold,
+        .vpa-student-actions .btn-vpa-approve,
+        .vpa-student-actions .btn-vpa-link,
+        .vpa-student-actions form { flex: 1 1 auto; width: 100%; min-width: 0; }
+        .vpa-folder-toolbar { flex-direction: column; }
+        .btn-vpa-gold, .btn-vpa-approve, .btn-vpa-return { width: 100%; }
+    }
+</style>
+
+<div class="vpa-cabinet">
+    <p class="vpa-cabinet-legend">
+        <span><i class="vpa-dot vpa-dot-navy"></i> Class folder</span>
+        <span><i class="vpa-dot vpa-dot-gold"></i> Academic seal / gold trim</span>
+        <span><i class="vpa-dot vpa-dot-red"></i> Owes the school — still listed</span>
+        <span><i class="vpa-dot vpa-dot-green"></i> Released / fees current</span>
+    </p>
+    {% if release_folders_by_division %}
+        {% for group in release_folders_by_division %}
+        <section class="vpa-division" data-division="{{ group.key }}">
+            <div class="vpa-division-kicker">
+                <h6 class="vpa-division-label">
+                    {% if group.key == 'kindergarten' %}<i class="fas fa-child me-1"></i>
+                    {% elif group.key == 'elementary' %}<i class="fas fa-book-open me-1"></i>
+                    {% elif group.key == 'junior_high' %}<i class="fas fa-user-graduate me-1"></i>
+                    {% elif group.key == 'senior_high' %}<i class="fas fa-landmark me-1"></i>
+                    {% endif %}{{ group.label }}
+                </h6>
+                <span class="vpa-kicker-line"></span>
+            </div>
+            <div class="vpa-folder-grid">
+                {% for folder in group.classes %}
+                {% include 'partials/vpa_release_class_folder.html' %}
+                {% endfor %}
+            </div>
+        </section>
+        {% endfor %}
+    {% else %}
+        <div class="vpa-empty-class">
+            <i class="fas fa-folder-open"></i>
+            No class folders are mapped yet for this academic year.
+        </div>
+    {% endif %}
+
+    {% if unassigned_folder %}
+    <section class="vpa-division" data-division="unassigned">
+        <div class="vpa-division-kicker">
+            <h6 class="vpa-division-label"><i class="fas fa-folder me-1"></i>Unassigned</h6>
+            <span class="vpa-kicker-line"></span>
+        </div>
+        <div class="vpa-folder-grid">
+            {% set folder = unassigned_folder %}
+            {% include 'partials/vpa_release_class_folder.html' %}
+        </div>
+    </section>
+    {% endif %}
+</div>
+
+<script>
+(function () {
+    function openFolderFromHash() {
+        var hash = window.location.hash || '';
+        if (!hash) return;
+        var el = document.querySelector(hash);
+        if (!el) return;
+        if (el.classList.contains('vpa-class-folder') || el.tagName === 'DETAILS') {
+            el.open = true;
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+    openFolderFromHash();
+    window.addEventListener('hashchange', openFolderFromHash);
+
+    document.querySelectorAll('.vpa-inclass-search').forEach(function (input) {
+        input.addEventListener('input', function () {
+            var needle = (input.value || '').trim().toLowerCase();
+            var box = input.closest('.vpa-folder-interior');
+            if (!box) return;
+            box.querySelectorAll('.vpa-student-file').forEach(function (row) {
+                var hay = (row.getAttribute('data-student-search') || '').toLowerCase();
+                row.classList.toggle('is-filtered-out', needle !== '' && hay.indexOf(needle) === -1);
+            });
+        });
+    });
+})();
+</script>

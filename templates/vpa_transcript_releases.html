@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Approve Transcripts — VPA{% endblock %}
+{% block title %}Transcript Cabinet — VPA{% endblock %}
 
 {% block content %}
 <style>
@@ -7,28 +7,44 @@
     .vpa-release-page h2 { color: #002d62; font-weight: 800; }
     .vpa-release-card {
         background: #fff;
-        border: 1px solid #dbe7f3;
-        border-radius: 12px;
+        border: 1px solid #d7c79a;
+        border-radius: 14px;
         box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
     }
-    .vpa-release-table th {
-        background: #f3f8fd;
-        color: #0369a1;
+    .vpa-seal-kicker {
+        color: #c82828;
         font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.16em;
         text-transform: uppercase;
-        letter-spacing: 0.04em;
+        margin-bottom: 0.35rem;
     }
-    .badge-pending { background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; }
-    .badge-approved { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
-    .btn-approve { background: #002d62; color: #fff; border: none; }
-    .btn-approve:hover { background: #c82828; color: #fff; }
+    .vpa-stat-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .vpa-stat {
+        background: #f8f4ea; border: 1px solid #ead9b8; border-radius: 999px;
+        padding: 0.32rem 0.75rem; font-size: 0.75rem; font-weight: 800; color: #002d62;
+    }
+    .vpa-stat.waiting { background: #fff7ed; color: #c2410c; border-color: #fdba74; }
+    .vpa-stat.owing { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+    .vpa-stat.ready { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+    .btn-vpa-gold {
+        background: #002d62; color: #f3d56a !important; border: 1px solid #c9a227;
+        font-weight: 800; font-size: 0.85rem; border-radius: 10px; padding: 0.55rem 1rem;
+        display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+        white-space: nowrap;
+    }
+    .btn-vpa-gold:hover { background: #013a7a; color: #ffe9a0 !important; }
+    @media (max-width: 767.98px) {
+        .btn-vpa-gold { width: 100%; }
+    }
 </style>
 
 <div class="container py-4 vpa-release-page">
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-4">
         <div>
-            <h2 class="mb-1"><i class="fas fa-scroll me-2"></i>Approve Transcripts</h2>
-            <p class="text-muted mb-0">Students and parents cannot view Official Transcript until you approve this student or release the whole academic year. Registrar, VPA, Principal, and Admin may still print.</p>
+            <div class="vpa-seal-kicker">Vice Principal for Academics</div>
+            <h2 class="mb-1"><i class="fas fa-scroll me-2"></i>Official Transcript Cabinet</h2>
+            <p class="text-muted mb-0">Open a class folder to see every student — photo, ID, and fee standing — then release that class at once. School-wide release remains available. Students and parents cannot view Official Transcript until you approve.</p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
             {% if current_user.role and current_user.role|lower == 'principal' %}
@@ -36,6 +52,7 @@
             {% else %}
             <a href="{{ url_for('vpa_dashboard') }}" class="btn btn-outline-secondary btn-sm">Back to VPA dashboard</a>
             {% endif %}
+            <a href="{{ url_for('vpa_grade_releases', academic_year_id=display_year.id if display_year else none) }}" class="btn btn-outline-secondary btn-sm">Grade cabinet</a>
             <form method="get" class="d-flex gap-2">
                 <select name="academic_year_id" class="form-select form-select-sm" onchange="this.form.submit()">
                     {% for y in years %}
@@ -51,9 +68,9 @@
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div>
                 <h5 class="mb-1" style="color:#047857;">Year-wide release is active</h5>
-                <p class="text-muted mb-0">Official Transcripts for {{ display_year.name if display_year else 'this year' }} are visible to students and parents.</p>
+                <p class="text-muted mb-0">Official Transcripts for {{ display_year.name if display_year else 'this year' }} are visible to students and parents. Class folders below remain for review and photos.</p>
             </div>
-            <span class="badge badge-approved">Released {{ year_wide.approved_at.strftime('%b %d, %Y') if year_wide.approved_at else '' }}</span>
+            <span class="vpa-stat ready">Released {{ year_wide.approved_at.strftime('%b %d, %Y') if year_wide.approved_at else '' }}</span>
         </div>
         <p class="small text-muted mb-0 mt-2">Approved by {{ year_wide.approved_by.full_name if year_wide.approved_by else 'administration' }}.</p>
     </div>
@@ -62,88 +79,35 @@
         <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3">
             <div>
                 <h5 class="mb-1" style="color:#002d62;">Release all transcripts for this year</h5>
-                <p class="text-muted mb-0">One school-wide approval unlocks Official Transcript for every student in {{ display_year.name if display_year else 'the selected year' }}.</p>
+                <p class="text-muted mb-0">School-wide approval unlocks Official Transcript for every student in {{ display_year.name if display_year else 'the selected year' }}. Prefer a class folder when only one grade should go out.</p>
             </div>
             {% if display_year %}
-            <form method="POST" action="{{ url_for('vpa_approve_year_transcripts') }}">
+            <form method="POST" action="{{ url_for('vpa_approve_year_transcripts') }}" class="w-100 w-md-auto">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="academic_year_id" value="{{ display_year.id }}">
-                <button type="submit" class="btn btn-approve">Release all for {{ display_year.name }}</button>
+                <button type="submit" class="btn-vpa-gold">Release all for {{ display_year.name }}</button>
             </form>
             {% endif %}
         </div>
     </div>
+    {% endif %}
 
     <div class="vpa-release-card p-3 p-md-4 mb-4">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="mb-0" style="color:#002d62;">Waiting for approval</h5>
-            <span class="badge badge-pending">{{ pending_rows|length }} waiting</span>
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
+            <h5 class="mb-0" style="color:#002d62;">Class folders · {{ display_year.name if display_year else 'Academic year' }}</h5>
+            <div class="vpa-stat-row">
+                <span class="vpa-stat">{{ folder_count }} folder{{ 's' if folder_count != 1 else '' }}</span>
+                <span class="vpa-stat">{{ student_count }} student{{ 's' if student_count != 1 else '' }}</span>
+                {% if not year_wide %}
+                <span class="vpa-stat waiting">{{ pending_count }} waiting</span>
+                {% endif %}
+                {% if owing_count %}
+                <span class="vpa-stat owing">{{ owing_count }} owing fees</span>
+                {% endif %}
+            </div>
         </div>
-        {% if pending_rows %}
-        <div class="table-responsive">
-            <table class="table align-middle vpa-release-table mb-0">
-                <thead>
-                    <tr>
-                        <th>Student</th>
-                        <th>Class</th>
-                        <th>Year</th>
-                        <th>Preview</th>
-                        <th>Decision</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for row in pending_rows %}
-                    <tr>
-                        <td class="fw-semibold">{{ row.student.full_name }}</td>
-                        <td>{{ row.klass.name if row.klass else '—' }}</td>
-                        <td>{{ display_year.name if display_year else '—' }}</td>
-                        <td>
-                            <a href="{{ url_for('transcript', student_id=row.student.id, academic_year_id=display_year.id if display_year else none) }}" target="_blank" rel="noopener">Official Transcript</a>
-                        </td>
-                        <td>
-                            <form method="POST" action="{{ url_for('vpa_approve_student_transcript', student_id=row.student.id) }}">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="academic_year_id" value="{{ display_year.id if display_year else '' }}">
-                                <button type="submit" class="btn btn-sm btn-approve">Approve</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% else %}
-        <p class="text-muted mb-0">No students are waiting for transcript approval{% if display_year %} in {{ display_year.name }}{% endif %}.</p>
-        {% endif %}
     </div>
-    {% endif %}
 
-    {% if approved_rows %}
-    <div class="vpa-release-card p-3 p-md-4">
-        <h5 class="mb-3" style="color:#047857;">Recently approved students</h5>
-        <div class="table-responsive">
-            <table class="table align-middle vpa-release-table mb-0">
-                <thead>
-                    <tr>
-                        <th>Student</th>
-                        <th>Class</th>
-                        <th>Approved by</th>
-                        <th>Unlocked</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for row in approved_rows %}
-                    <tr>
-                        <td class="fw-semibold">{{ row.student.full_name }}</td>
-                        <td>{{ row.klass.name if row.klass else '—' }}</td>
-                        <td>{{ row.approver.full_name if row.approver else 'Administration' }}</td>
-                        <td class="small text-muted">{{ row.release.approved_at.strftime('%b %d, %Y') if row.release.approved_at else '—' }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    {% endif %}
+    {% include 'partials/vpa_release_cabinet.html' %}
 </div>
 {% endblock %}
