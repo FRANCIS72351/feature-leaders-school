@@ -7,6 +7,7 @@ from app import (
     get_or_create_grade_release,
     mark_grade_package_pending_vpa,
     student_official_documents_state,
+    vpa_period_approval_blocked_by_fees,
     STUDENT_GRADE_HOLD_MESSAGE,
     STUDENT_REPORT_CARD_HOLD_MESSAGE,
     STUDENT_PERIOD_HOLD_MESSAGE,
@@ -626,7 +627,7 @@ class GradeReleaseAccessTestCase(unittest.TestCase):
         self.assertIn('vpa-student-photo', html)
         self.assertIn('alt="Portal Student"', html)
         self.assertIn('Owes $', html)
-        self.assertIn('Owes the school', html)
+        self.assertIn('You can still approve this period', html)
         self.assertIn('This class folder is empty', html)
 
     def test_vpa_release_entire_class_without_per_row_clicks(self):
@@ -708,6 +709,60 @@ class GradeReleaseAccessTestCase(unittest.TestCase):
             self.assertEqual(other.status, GradeRelease.STATUS_PENDING_VPA)
             student = db.session.get(Student, self.student_id)
             self.assertFalse(student.tuition_cleared)
+
+        self._login(self.student_user_id)
+        sheet = self.client.get(f'/student/grade-sheet?academic_year_id={self.year_id}')
+        self.assertNotIn(STUDENT_GRADE_HOLD_MESSAGE.encode(), sheet.data)
+        self.assertIn(b'Published Grade Sheet', sheet.data)
+
+    def test_vpa_approves_period_when_student_owes_and_is_not_cleared(self):
+        """Owing tuition / uncleared fees must not block VPA period approval."""
+        with self.app.app_context():
+            student = db.session.get(Student, self.student_id)
+            student.tuition_cleared = False
+            klass = db.session.get(Class, self.class_id)
+            klass.yearly_fees = 400
+            db.session.commit()
+            self.assertFalse(student.tuition_cleared)
+            self.assertFalse(vpa_period_approval_blocked_by_fees(student, klass))
+
+        self._login(self.vpa_id)
+        queue = self.client.get(f'/vpa/grade-releases?academic_year_id={self.year_id}')
+        self.assertEqual(queue.status_code, 200)
+        html = queue.get_data(as_text=True)
+        self.assertIn('Release entire class', html)
+        self.assertIn('>Approve<', html)
+        self.assertIn('Owes $400.00', html)
+        self.assertIn('You can still approve this period', html)
+        self.assertIn('does not wait on Business/VPI clearance', html)
+        self.assertNotIn('waiting on Business clearance before VPA can approve', html)
+
+        approve = self.client.post(
+            f'/vpa/grade-releases/{self.release_id}/approve',
+            follow_redirects=True,
+        )
+        self.assertEqual(approve.status_code, 200)
+        self.assertIn(b'approved', approve.data.lower())
+
+        period_two_id = self._add_period_two_pending()
+        bulk = self.client.post(
+            f'/vpa/grade-releases/class/{self.class_id}/approve',
+            data={'academic_year_id': self.year_id},
+            follow_redirects=True,
+        )
+        self.assertEqual(bulk.status_code, 200)
+        self.assertIn(b'Released', bulk.data)
+        self.assertIn(b'Business clearance was not required', bulk.data)
+
+        with self.app.app_context():
+            period_one = db.session.get(GradeRelease, self.release_id)
+            period_two = db.session.get(GradeRelease, period_two_id)
+            self.assertEqual(period_one.status, GradeRelease.STATUS_APPROVED)
+            self.assertEqual(period_two.status, GradeRelease.STATUS_APPROVED)
+            student = db.session.get(Student, self.student_id)
+            klass = db.session.get(Class, self.class_id)
+            self.assertFalse(student.tuition_cleared)
+            self.assertEqual(float(klass.yearly_fees or 0), 400.0)
 
         self._login(self.student_user_id)
         sheet = self.client.get(f'/student/grade-sheet?academic_year_id={self.year_id}')

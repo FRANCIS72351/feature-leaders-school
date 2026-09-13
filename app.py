@@ -23197,7 +23197,18 @@ def _build_vpa_release_cabinet(display_year, *, viewing_archived=False, open_cla
     }
 
 
+def vpa_period_approval_blocked_by_fees(*_args, **_kwargs):
+    """Periodic grade sheets (P1–P6 / exams) are academic VPA work.
+
+    Owing tuition and ``tuition_cleared`` must never block class/period
+    approval. Parent downloads and Business receipts may still apply their
+    own fee holds elsewhere — do not reuse this helper for those paths.
+    """
+    return False
+
+
 def _apply_grade_release_approval(release, user, comment=None):
+    """Stamp a class/period package approved. Never touches fee flags or balances."""
     release.status = GradeRelease.STATUS_APPROVED
     release.approved_by_id = getattr(user, 'id', None)
     release.approved_at = datetime.now(timezone.utc)
@@ -23398,7 +23409,7 @@ def vpa_approve_class_grade_releases(class_id):
         flash(
             f'No pending grade packages for {klass.name} to release. '
             'Teachers must publish a period before VPA can approve the class. '
-            'Fee holds were not changed.',
+            'Owing fees do not block this queue.',
             'warning',
         )
         return _vpa_release_page_redirect(
@@ -23418,7 +23429,7 @@ def vpa_approve_class_grade_releases(class_id):
             if report_card_open
             else 'The Report Card stays sealed until the final marking period is approved. '
         )
-        + 'Fee holds were not changed.',
+        + 'Business clearance was not required and fee balances were not changed.',
         'success',
     )
     return _vpa_release_page_redirect(

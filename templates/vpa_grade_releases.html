@@ -33,7 +33,7 @@
         <div>
             <div class="vpa-seal-kicker">Vice Principal for Academics</div>
             <h2 class="mb-1"><i class="fas fa-folder-open me-2"></i>Grade &amp; Report Cabinet</h2>
-            <p class="text-muted mb-0">Every class folder for {{ display_year.name if display_year else 'this year' }} stays on this desk — even when nothing is waiting. Open a folder to see student photos, IDs, and who owes the school. Release an entire class in one action when the period packages are ready.</p>
+            <p class="text-muted mb-0">Every class folder for {{ display_year.name if display_year else 'this year' }} stays on this desk — even when nothing is waiting. Open a folder to see student photos, IDs, and who owes the school. Approve pending periods without waiting for Business/VPI fee clearance. Release an entire class in one action when the packages are ready.</p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
             <a href="{{ url_for('vpa_dashboard') }}" class="btn btn-outline-secondary btn-sm">Back to VPA dashboard</a>
@@ -60,7 +60,7 @@
                 {% endif %}
             </div>
         </div>
-        <p class="text-muted small mb-0">Teachers still submit one marking period at a time. Approving a class releases every pending period in that folder. Students who owe tuition remain listed; a class release never clears a fee hold.</p>
+        <p class="text-muted small mb-0">Teachers still submit one marking period at a time. Approving a class releases every pending period in that folder. Owing fees do not block VPA academic approval and never require Business clearance first. Fee holds, if any, stay with parent copies and Business receipts.</p>
     </div>
 
     {% include 'partials/vpa_release_cabinet.html' %}

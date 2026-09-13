@@ -119,7 +119,11 @@
                             </span>
                         </div>
                         {% if row.owing %}
+                        {% if cabinet_mode == 'grades' %}
+                        <p class="vpa-owe-note">Owes tuition. You can still approve this period — VPA does not wait on Business/VPI clearance. Fee holds, if any, apply later to parent copies, not to this academic stamp.</p>
+                        {% else %}
                         <p class="vpa-owe-note">Owes the school. Keep the student visible here; academic release does not clear a fee hold. Do not issue a printed report until Business/VPI confirms fees are paid.</p>
+                        {% endif %}
                         {% endif %}
                     </div>
                 </div>
