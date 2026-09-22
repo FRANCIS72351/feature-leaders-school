@@ -537,6 +537,7 @@ class CreateUserForm(FlaskForm):
     password = PasswordField('Password', validators=[DataRequired()])
     role = SelectField('Role', choices=[
         ('admin', 'Admin'),
+        ('proprietor', 'School Proprietor'),
         ('teacher', 'Teacher'),
         ('student', 'Student'),
         ('parent', 'Parent'),
@@ -561,6 +562,7 @@ class EditUserForm(FlaskForm):
     password = PasswordField('New Password (leave blank to keep current)', validators=[Optional()])
     role = SelectField('Role', choices=[
         ('admin', 'Admin'),
+        ('proprietor', 'School Proprietor'),
         ('teacher', 'Teacher'),
         ('student', 'Student'),
         ('parent', 'Parent'),

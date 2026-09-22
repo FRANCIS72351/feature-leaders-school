@@ -156,14 +156,20 @@ def _signature_text_and_size(c, mark, font, max_width, base_size=13.0, min_size=
     text = (mark or '').strip()
     if not text:
         return '', base_size
-    best = (text, min_size)
+    best = None
     for index, candidate in enumerate(_signature_variants(text)):
         size = _fit_signature_size(c, candidate, font, max_width, base_size, min_size)
-        if index == 0:
-            best = (candidate, size)
         if c.stringWidth(candidate, font, size) <= max_width:
             return candidate, size
-    return best
+        # Track the shortest overflow as a last resort, then keep shrinking.
+        if best is None or len(candidate) < len(best[0]):
+            best = (candidate, size)
+    if best:
+        candidate, size = best
+        while size > 5.5 and c.stringWidth(candidate, font, size) > max_width:
+            size -= 0.25
+        return candidate, size
+    return text, min_size
 
 
 def _fit_text(c, text, font, size, max_width):
@@ -329,6 +335,133 @@ def _draw_contained_image(c, reader, x, y, w, h):
         pass
 
 
+def _prepare_signature_reader(path_or_reader):
+    """Crop empty padding and darken pale ink so signatures print clearly on white."""
+    if path_or_reader is None:
+        return None
+    if PILImage is None:
+        return _image_reader(path_or_reader) if not isinstance(path_or_reader, ImageReader) else path_or_reader
+    if isinstance(path_or_reader, ImageReader):
+        # Already prepared or opened — keep as-is.
+        return path_or_reader
+
+    path = str(path_or_reader)
+    if not os.path.isfile(path):
+        return None
+    try:
+        img = PILImage.open(path).convert('RGBA')
+        # Turn near-white paper into transparency, then crop to ink.
+        pixels = list(img.getdata())
+        cleaned = []
+        for r, g, b, a in pixels:
+            if a < 18 or (r > 242 and g > 242 and b > 242):
+                cleaned.append((0, 0, 0, 0))
+            else:
+                # Force navy ink; keep enough alpha for thin pen strokes.
+                cleaned.append((0, 45, 98, max(a, 200)))
+        img.putdata(cleaned)
+        bbox = img.getbbox()
+        if bbox:
+            pad = 3
+            left, top, right, bottom = bbox
+            img = img.crop((
+                max(0, left - pad),
+                max(0, top - pad),
+                min(img.size[0], right + pad),
+                min(img.size[1], bottom + pad),
+            ))
+        # Reject essentially empty signatures so the script mark can take over.
+        if not img.getbbox():
+            return None
+        buf = BytesIO()
+        img.save(buf, format='PNG')
+        buf.seek(0)
+        return ImageReader(buf)
+    except Exception:
+        logging.getLogger(__name__).exception('Signature prep failed for %s', path)
+        return _image_reader(path)
+
+
+def _draw_fitted_name(c, text, x, baseline_y, max_width, *, base_size=9.5, min_size=5.0, line_gap=1.18):
+    """Draw a person name in up to two lines, shrinking until the full name fits.
+
+    Never truncates with an ellipsis — long Liberian names must print in full.
+    Returns (last_baseline, font_size, line_count).
+    """
+    name = re.sub(r'\s+', ' ', (text or '').strip()) or '—'
+    words = name.split()
+
+    def lines_at(size):
+        if c.stringWidth(name, 'Helvetica-Bold', size) <= max_width:
+            return [name]
+        # Prefer a natural break after a middle initial ("Othello B." / "Gbarjuewaye").
+        best = None
+        for split_at in range(1, len(words)):
+            first = ' '.join(words[:split_at])
+            second = ' '.join(words[split_at:])
+            if (
+                c.stringWidth(first, 'Helvetica-Bold', size) <= max_width
+                and c.stringWidth(second, 'Helvetica-Bold', size) <= max_width
+            ):
+                # Prefer splits that keep both lines similarly short.
+                score = abs(
+                    c.stringWidth(first, 'Helvetica-Bold', size)
+                    - c.stringWidth(second, 'Helvetica-Bold', size)
+                )
+                if best is None or score < best[0]:
+                    best = (score, [first, second])
+        if best:
+            return best[1]
+        # Greedy wrap as a last structure.
+        lines, current = [], ''
+        for word in words:
+            trial = f'{current} {word}'.strip()
+            if current and c.stringWidth(trial, 'Helvetica-Bold', size) > max_width:
+                lines.append(current)
+                current = word
+                if len(lines) == 2:
+                    return None
+            else:
+                current = trial
+        if current:
+            lines.append(current)
+        if len(lines) > 2:
+            return None
+        if any(c.stringWidth(line, 'Helvetica-Bold', size) > max_width for line in lines):
+            return None
+        return lines
+
+    size = base_size
+    chosen = None
+    while size >= min_size:
+        chosen = lines_at(size)
+        if chosen:
+            break
+        size -= 0.25
+    if not chosen:
+        size = min_size
+        mid = max(1, len(words) // 2)
+        chosen = [' '.join(words[:mid]), ' '.join(words[mid:])] if len(words) > 1 else [name]
+        while size > 3.8 and any(
+            c.stringWidth(line, 'Helvetica-Bold', size) > max_width for line in chosen if line
+        ):
+            size -= 0.2
+
+    c.setFillColor(NAVY)
+    y = baseline_y
+    for index, line in enumerate(chosen):
+        if not line:
+            continue
+        line_size = size
+        while line_size > 3.6 and c.stringWidth(line, 'Helvetica-Bold', line_size) > max_width:
+            line_size -= 0.2
+        c.setFont('Helvetica-Bold', line_size)
+        c.drawString(x, y, line)
+        if index < len(chosen) - 1:
+            y -= line_size * line_gap
+    return y, size, len(chosen)
+
+
 # Matches print_batch.html .photo-ring img (contain, centered in a true 24mm square).
 PHOTO_PAD_X_MM = 0
 PHOTO_PAD_BOTTOM_MM = 0
@@ -399,9 +532,9 @@ def resolve_id_card_parent_name(student, card=None):
 STAFF_RAIL_W_MM = 8.6
 STAFF_HEADER_MM = 13.0
 STAFF_RAIL_TOP_MM = 13.6
-STAFF_FOOTER_MM = 7.6
-STAFF_PHOTO_TOP_MM = 19.8
-STAFF_PHOTO_MM = 26.0
+STAFF_FOOTER_MM = 7.2
+STAFF_PHOTO_TOP_MM = 19.2
+STAFF_PHOTO_MM = 22.5
 
 
 def _tracked_width(c, text, font, size, spacing):
@@ -525,52 +658,60 @@ def _draw_staff_front(c, x, y, card, assets):
     _draw_id_portrait(c, photo, photo_x, photo_y, photo_size, photo_size)
     c.restoreState()
 
-    # Name leads, position underneath, then a gold rule and the ID chip.
+    # Name leads — wrap/shrink so the full name always prints (never ellipsis).
     full_name = getattr(student, 'full_name', None) or '—'
-    name_size = _fit_font_size(c, full_name, 'Helvetica-Bold', body_w, 9.5, 6.4)
-    c.setFillColor(NAVY)
-    c.setFont('Helvetica-Bold', name_size)
-    c.drawString(body_left, _from_top(y, 50.6), full_name)
-
+    name_bottom, _name_size, name_lines = _draw_fitted_name(
+        c, full_name, body_left, _from_top(y, 46.2), body_w - 1.2 * mm,
+        base_size=9.0, min_size=4.8,
+    )
+    position_y = name_bottom - (3.0 if name_lines > 1 else 3.4)
     position = (card.get('position') or 'Staff').upper()
-    pos_size = _fit_font_size(c, position, 'Helvetica-Bold', body_w - 6, 5.6, 4.0)
+    pos_size = _fit_font_size(c, position, 'Helvetica-Bold', body_w - 4, 5.4, 4.0)
     c.setFillColor(cardinal)
-    _draw_tracked(c, position, 'Helvetica-Bold', pos_size, 0.5, body_left, _from_top(y, 54.6))
+    _draw_tracked(c, position, 'Helvetica-Bold', pos_size, 0.5, body_left, position_y)
 
+    rule_y = position_y - 2.0
     c.setFillColor(GOLD)
-    c.rect(body_left, _from_top(y, 57.2, 0.35), body_w, 0.35 * mm, stroke=0, fill=1)
+    c.rect(body_left, rule_y - 0.35 * mm, body_w, 0.35 * mm, stroke=0, fill=1)
 
     staff_id = str(card.get('staff_id') or '—')
-    chip_font = 6.4
-    chip_w = min(body_w, c.stringWidth(staff_id, 'Helvetica-Bold', chip_font) + 6.5 * mm)
-    chip_h = 4.6 * mm
-    chip_y = _from_top(y, 63.0, 4.6)
+    chip_font = 6.2
+    chip_w = min(body_w * 0.42, c.stringWidth(staff_id, 'Helvetica-Bold', chip_font) + 6.0 * mm)
+    chip_h = 4.4 * mm
+    chip_y = rule_y - 1.4 * mm - chip_h
     c.setFillColor(NAVY)
     c.roundRect(body_left, chip_y, chip_w, chip_h, chip_h / 2.0, stroke=0, fill=1)
     c.setFillColor(white)
     c.setFont('Helvetica-Bold', chip_font)
-    c.drawCentredString(body_left + chip_w / 2.0, chip_y + 1.5 * mm, staff_id)
+    c.drawCentredString(body_left + chip_w / 2.0, chip_y + 1.4 * mm, staff_id)
 
-    # Signature over a hairline, right aligned under the detail block.
-    sig_w = min(26 * mm, body_w)
+    # Large signature well — full body width, tall enough to read clearly.
+    sig_w = body_w
     sig_right = body_right
+    sig_left = body_left
+    sig_line_y = y + STAFF_FOOTER_MM * mm + 4.8 * mm
+    sig_top = chip_y - 1.0 * mm
+    sig_h = max(11.0 * mm, min(15.5 * mm, sig_top - sig_line_y - 0.8 * mm))
+    sig_box_y = sig_line_y + 0.8 * mm
     if signature:
-        _draw_contained_image(c, signature, sig_right - sig_w, _from_top(y, 72.8), sig_w, 5.0 * mm)
+        _draw_contained_image(c, signature, sig_left, sig_box_y, sig_w, sig_h)
     else:
         mark = card.get('signature_mark') or full_name or 'Authorized Staff'
-        sig_text, sig_size = _signature_text_and_size(c, mark, sig_font, sig_w, base_size=10.5)
+        sig_text, sig_size = _signature_text_and_size(
+            c, mark, sig_font, sig_w - 1 * mm, base_size=18.0, min_size=10.0,
+        )
         c.setFillColor(NAVY)
         c.setFont(sig_font, sig_size)
-        c.drawRightString(sig_right, _from_top(y, 72.0), sig_text)
-    c.setStrokeColor(HexColor('#9aa3b2'))
-    c.setLineWidth(0.3 * mm)
-    c.line(sig_right - sig_w, _from_top(y, 73.0), sig_right, _from_top(y, 73.0))
+        c.drawCentredString(body_left + body_w / 2.0, sig_line_y + 4.2 * mm, sig_text)
+    c.setStrokeColor(HexColor('#6b7280'))
+    c.setLineWidth(0.4 * mm)
+    c.line(sig_left, sig_line_y, sig_right, sig_line_y)
     caption = "HOLDER'S SIGNATURE"
     c.setFillColor(MUTED)
     _draw_tracked(
-        c, caption, 'Helvetica-Bold', 4.2, 0.3,
-        sig_right - _tracked_width(c, caption, 'Helvetica-Bold', 4.2, 0.3),
-        _from_top(y, 75.5),
+        c, caption, 'Helvetica-Bold', 4.4, 0.3,
+        body_left + (body_w - _tracked_width(c, caption, 'Helvetica-Bold', 4.4, 0.3)) / 2.0,
+        sig_line_y - 2.4 * mm,
     )
 
     # Footer: gold hairline, solid brand-red band, motto.
@@ -803,21 +944,22 @@ def _draw_back(c, x, y, card, assets):
     c.setFont('Helvetica-Bold', 7)
     c.drawCentredString(x + CARD_W / 2.0, y + 32.5 * mm, expire_text)
 
-    sig_w = 32 * mm
+    sig_w = 42 * mm
     sig_x = x + (CARD_W - sig_w) / 2.0
-    sig_y = y + 22.5 * mm
+    sig_y = y + 20.0 * mm
     mark = card.get('signature_mark') or getattr(student, 'official_signature_mark', None) or ''
     if is_staff and not mark:
-        mark = 'Authorized Staff'
-    if signature:
-        _draw_contained_image(c, signature, sig_x, sig_y, sig_w, 7 * mm)
+        mark = card.get('signature_mark') or getattr(student, 'full_name', None) or 'Authorized Staff'
+    prepared = signature  # already navy-prepped in build_class_id_cards_pdf
+    if prepared:
+        _draw_contained_image(c, prepared, sig_x, sig_y + 1.4 * mm, sig_w, 12.0 * mm)
     elif mark:
         c.setFillColor(NAVY)
-        sig_text, sig_size = _signature_text_and_size(c, mark, sig_font, sig_w)
+        sig_text, sig_size = _signature_text_and_size(c, mark, sig_font, sig_w, base_size=17.0, min_size=9.0)
         c.setFont(sig_font, sig_size)
-        c.drawCentredString(x + CARD_W / 2.0, sig_y + 1.5 * mm, _fit_text(c, sig_text, sig_font, sig_size, sig_w))
-    c.setStrokeColor(HexColor('#9ca3af'))
-    c.setLineWidth(0.35 * mm)
+        c.drawCentredString(x + CARD_W / 2.0, sig_y + 4.0 * mm, sig_text)
+    c.setStrokeColor(HexColor('#6b7280'))
+    c.setLineWidth(0.4 * mm)
     c.line(sig_x, sig_y, sig_x + sig_w, sig_y)
     c.setFillColor(MUTED)
     c.setFont('Helvetica-Bold', 6.5)
@@ -905,7 +1047,7 @@ def build_class_id_cards_pdf(
             logger.exception('ID card PDF photo failed for student %s', student_id)
             assets['photo'] = None
         try:
-            assets['signature'] = _image_reader(
+            assets['signature'] = _prepare_signature_reader(
                 signature_paths.get(student_id) or card.get('signature_path')
             )
         except Exception:

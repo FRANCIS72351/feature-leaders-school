@@ -160,6 +160,8 @@ DASHBOARD_ROLE_LABELS = {
     'dean': 'Dean',
     'vpi': 'VPI — Finance & Operations',
     'vpa': 'VPA — Academics',
+    'proprietor': 'School Proprietor',
+    'owner': 'School Proprietor',
     'student': 'Student',
     'parent': 'Parent',
     'sponsor': 'Sponsor',
@@ -171,6 +173,8 @@ ROLE_HOME_ENDPOINTS = {
     'dean': 'dean_dashboard',
     'vpi': 'vpi_dashboard',
     'vpa': 'vpa_dashboard',
+    'proprietor': 'proprietor_dashboard',
+    'owner': 'proprietor_dashboard',
     'student': 'student_dashboard',
     'sponsor': 'teacher_dashboard',
     'business': 'business_dashboard',
@@ -183,15 +187,21 @@ ROLE_HOME_ENDPOINTS = {
 ROLE_ALIASES = {
     'registry': 'registrar',
     'registry officer': 'registrar',
+    'owner': 'proprietor',
+    'school proprietor': 'proprietor',
+    'school owner': 'proprietor',
 }
 
-# VPA owns academics. VPI owns finance and campus operations. Do not mix the two offices.
+# VPA owns curriculum day-to-day. VPI owns finance. Both vice principals share the
+# academic release queues and the student academic registry for command oversight.
 ACADEMIC_COMMAND_ROLES = frozenset({'admin', 'principal', 'vpa'})
-FISCAL_COMMAND_ROLES = frozenset({'admin', 'business', 'vpi', 'principal'})
+ACADEMIC_RELEASE_ROLES = frozenset({'admin', 'principal', 'vpa', 'vpi'})
+FISCAL_COMMAND_ROLES = frozenset({'admin', 'business', 'vpi', 'principal', 'proprietor'})
 STAFF_INTERNAL_GRADE_ROLES = frozenset({
-    'admin', 'teacher', 'registrar', 'principal', 'vpa', 'vpi', 'dean', 'business',
+    'admin', 'teacher', 'registrar', 'principal', 'vpa', 'vpi', 'dean', 'business', 'proprietor',
 })
-OFFICIAL_TRANSCRIPT_STAFF_ROLES = frozenset({'admin', 'registrar', 'principal', 'vpa'})
+OFFICIAL_TRANSCRIPT_STAFF_ROLES = frozenset({'admin', 'registrar', 'principal', 'vpa', 'vpi', 'proprietor'})
+PROPRIETOR_ROLES = frozenset({'proprietor', 'owner', 'admin'})
 GRADE_RELEASE_TEACHER_FLASH = (
     'Submitted to VPA for approval. Students cannot view this period until approved. '
     'Previously approved periods remain available.'
@@ -990,7 +1000,7 @@ ATTENDANCE_SCOPE_OWN = 'own'
 def get_attendance_visibility_scope(user):
     """Return attendance access tier for a user, or None if denied."""
     role = normalize_role(user)
-    if role in ('admin', 'principal'):
+    if role in ('admin', 'principal', 'proprietor', 'owner'):
         return ATTENDANCE_SCOPE_FULL
     if role in ('registrar', 'dean'):
         return ATTENDANCE_SCOPE_READ
@@ -6149,10 +6159,21 @@ def inject_nav_flags():
         settings = None
         system_is_active = True
     return {
-        "announcements_link": role_lower in {"admin", "teacher", "principal", "vpa", "vpi", "dean"},
+        "announcements_link": role_lower in {"admin", "teacher", "principal", "vpa", "vpi", "dean", "proprietor", "owner"},
         "is_vpa_office": role_lower == "vpa",
         "is_vpi_office": role_lower == "vpi",
-        "can_manage_leaders": role_lower in {"admin", "principal"},
+        "is_proprietor_office": canonical_role(current_user) == "proprietor" if getattr(current_user, "is_authenticated", False) else False,
+        "nav_user_role": (
+            canonical_role(current_user)
+            if getattr(current_user, "is_authenticated", False)
+            else role_lower
+        ),
+        "can_manage_leaders": role_lower in {"admin", "principal", "proprietor", "owner"},
+        "dashboard_role_label": (
+            dashboard_role_label(current_user)
+            if getattr(current_user, "is_authenticated", False)
+            else "User"
+        ),
         "can_manage_events": role_lower in COMMUNICATIONS_MANAGER_ROLES,
         "can_manage_school_media": role_lower in SCHOOL_MEDIA_MANAGER_ROLES,
         "registrar_media_only": role_lower == "registrar",
@@ -8242,7 +8263,7 @@ def download_report_card(student_id):
 def class_period_grade_sheet(class_id, period):
     """Printable roster: every student in one class, one marking period.
 
-    VPA/principal/admin see the sheet as soon as the teacher submits it, so
+    VPA/VPI/principal/admin see the sheet as soon as the teacher submits it, so
     they can review before approving. Teachers see only their own classes.
     Once approved it stays visible; a return/edit puts it back on hold.
     """
@@ -8257,7 +8278,7 @@ def class_period_grade_sheet(class_id, period):
         if not teacher or not teacher_can_access_class(teacher, current_user, class_id):
             flash('You may only view the grade sheet for your assigned classes.', 'danger')
             return redirect(url_for('teacher_dashboard'))
-    elif role not in ACADEMIC_COMMAND_ROLES:
+    elif role not in ACADEMIC_RELEASE_ROLES:
         flash('Access denied.', 'danger')
         return redirect(url_for('login'))
 
@@ -8279,7 +8300,7 @@ def class_period_grade_sheet(class_id, period):
         period=period,
         display_year=data.get('display_year'),
         school_print_brand=school_print_brand(),
-        can_review=role in ACADEMIC_COMMAND_ROLES,
+        can_review=role in ACADEMIC_RELEASE_ROLES,
     )
 
 
@@ -15973,6 +15994,7 @@ DEAN_YEAR_SESSION_KEY = 'dean_display_year_id'
 VPI_YEAR_SESSION_KEY = 'vpi_display_year_id'
 VPA_YEAR_SESSION_KEY = 'vpa_display_year_id'
 TEACHER_YEAR_SESSION_KEY = 'teacher_display_year_id'
+PROPRIETOR_YEAR_SESSION_KEY = 'proprietor_display_year_id'
 
 
 def all_academic_years():
@@ -16002,6 +16024,8 @@ def dashboard_year_session_key(role=None):
         return VPI_YEAR_SESSION_KEY
     if role == 'vpa':
         return VPA_YEAR_SESSION_KEY
+    if role in ('proprietor', 'owner'):
+        return PROPRIETOR_YEAR_SESSION_KEY
     if role in ('business',):
         return BUSINESS_YEAR_SESSION_KEY
     if role == 'teacher':
@@ -16013,7 +16037,7 @@ def reset_dashboard_year_sessions(target_year=None):
     """Reset dashboard year session keys so views default to the new active academic year."""
     if not target_year:
         return
-    for role in ('admin', 'principal', 'dean', 'business', 'vpa', 'vpi', 'teacher', 'registrar'):
+    for role in ('admin', 'principal', 'dean', 'business', 'vpa', 'vpi', 'teacher', 'registrar', 'proprietor'):
         session[dashboard_year_session_key(role)] = target_year.id
 
 
@@ -21777,9 +21801,208 @@ def _principal_filter_students(students, search_query='', status_filter='', disp
     return filtered
 
 
+# -------------------------- SCHOOL PROPRIETOR -------------------------------
+def _proprietor_live_snapshot(display_year, *, viewing_archived=False):
+    """Executive live snapshot for the school proprietor command board."""
+    now = datetime.now(timezone.utc)
+    today_str = now.strftime('%Y-%m-%d')
+    year_name = display_year.name if display_year else None
+
+    year_students_q = (
+        _students_for_display_year(display_year, history_mode=viewing_archived)
+        if display_year else Student.query.filter(Student.id < 0)
+    )
+    student_count = year_students_q.count()
+    active_students = year_students_q.filter(
+        or_(Student.status.is_(None), Student.status == '', Student.status.ilike('active'))
+    ).count() if display_year else 0
+    suspended_students = year_students_q.filter(Student.status.ilike('suspended')).count() if display_year else 0
+
+    teacher_count = Teacher.query.filter_by(status='ACTIVE').count()
+    staff_count = User.query.filter(
+        User.is_active.is_(True),
+        User.role.in_(list(STAFF_ID_CARD_ROLES)),
+    ).count()
+    class_count = Class.query.count()
+
+    averages_map = _vpa_averages_map(display_year) if display_year else {}
+    graded = len(averages_map)
+    passing = sum(1 for avg in averages_map.values() if avg >= MOE_PASSING_SCORE)
+    passing_rate = round(passing / graded * 100, 1) if graded else 0.0
+    at_risk = sum(1 for avg in averages_map.values() if avg < MOE_PASSING_SCORE)
+
+    pending_grades = (
+        GradeRelease.query.filter_by(
+            academic_year_id=display_year.id,
+            status=GradeRelease.STATUS_PENDING_VPA,
+        ).count()
+        if display_year else 0
+    )
+    pending_transcripts = count_pending_transcript_releases(display_year)
+
+    revenue_q = db.session.query(func.coalesce(func.sum(BusinessTransaction.amount), 0)).filter(
+        BusinessTransaction.is_deleted.is_(False),
+        BusinessTransaction.type == 'income',
+    )
+    expense_q = db.session.query(func.coalesce(func.sum(BusinessTransaction.amount), 0)).filter(
+        BusinessTransaction.is_deleted.is_(False),
+        BusinessTransaction.type == 'expense',
+    )
+    if year_name:
+        revenue_q = revenue_q.filter(BusinessTransaction.academic_year == year_name)
+        expense_q = expense_q.filter(BusinessTransaction.academic_year == year_name)
+    total_revenue = float(revenue_q.scalar() or 0)
+    total_expenses = float(expense_q.scalar() or 0)
+
+    tuition_collected = Decimal('0')
+    total_expected = Decimal('0')
+    if display_year:
+        tuition_collected = Decimal(str(
+            db.session.query(func.coalesce(func.sum(StudentPayment.amount_paid), 0))
+            .filter(StudentPayment.academic_year_id == display_year.id)
+            .scalar() or 0
+        ))
+        fee_by_class = {c.id: Decimal(str(c.yearly_fees or 0)) for c in Class.query.all()}
+        for _sid, klass_id in year_students_q.with_entities(Student.id, Student.klass_id):
+            total_expected += fee_by_class.get(klass_id) or Decimal('0')
+    collection_rate = (
+        round(float(tuition_collected / total_expected * 100), 1)
+        if total_expected > 0 else 0.0
+    )
+    outstanding = money(max(Decimal('0'), total_expected - tuition_collected))
+
+    today_att = {'present': 0, 'absent': 0, 'late': 0, 'excused': 0, 'marked': 0}
+    att_q = Attendance.query.filter(Attendance.date == today_str)
+    if display_year:
+        att_q = att_q.filter(
+            or_(
+                Attendance.academic_year_id == display_year.id,
+                Attendance.academic_year_id.is_(None),
+            )
+        )
+    for row in att_q.with_entities(Attendance.status).all():
+        status = (row[0] or '').strip().lower()
+        if status in today_att:
+            today_att[status] += 1
+        today_att['marked'] += 1
+    present_equiv = today_att['present'] + today_att['late'] + today_att['excused']
+    attendance_rate = (
+        round(present_equiv / today_att['marked'] * 100, 1)
+        if today_att['marked'] else None
+    )
+
+    active_suspensions = Suspension.query.filter(
+        Suspension.return_date > now,
+    ).count()
+
+    today_income = float(
+        db.session.query(func.coalesce(func.sum(BusinessTransaction.amount), 0)).filter(
+            BusinessTransaction.is_deleted.is_(False),
+            BusinessTransaction.type == 'income',
+            BusinessTransaction.date == today_str,
+        ).scalar() or 0
+    )
+    today_expenses = float(
+        db.session.query(func.coalesce(func.sum(BusinessTransaction.amount), 0)).filter(
+            BusinessTransaction.is_deleted.is_(False),
+            BusinessTransaction.type == 'expense',
+            BusinessTransaction.date == today_str,
+        ).scalar() or 0
+    )
+
+    recent_payments = []
+    pay_q = StudentPayment.query.order_by(StudentPayment.paid_on.desc())
+    if display_year:
+        pay_q = pay_q.filter(StudentPayment.academic_year_id == display_year.id)
+    for payment in pay_q.limit(8).all():
+        recent_payments.append({
+            'student': payment.student.full_name if payment.student else '—',
+            'amount': float(payment.amount_paid or 0),
+            'paid_on': payment.paid_on.strftime('%Y-%m-%d %H:%M') if payment.paid_on else '—',
+        })
+
+    recent_grades = []
+    grade_q = Grade.query.order_by(Grade.id.desc())
+    if display_year:
+        grade_q = grade_q.filter(Grade.academic_year_id == display_year.id)
+    for grade in grade_q.limit(8).all():
+        recent_grades.append({
+            'student': grade.student.full_name if grade.student else '—',
+            'subject': grade.subject_name or grade.subject or '—',
+            'score': grade.score,
+            'submitted': bool(grade.submitted),
+        })
+
+    return {
+        'generated_at': now.isoformat(),
+        'clock_label': now.strftime('%b %d, %Y · %H:%M UTC'),
+        'year_name': year_name or '—',
+        'students': student_count,
+        'active_students': active_students,
+        'suspended_students': suspended_students,
+        'teachers': teacher_count,
+        'staff': staff_count,
+        'classes': class_count,
+        'passing_rate': passing_rate,
+        'at_risk': at_risk,
+        'graded_students': graded,
+        'moe_standard': MOE_PASSING_SCORE,
+        'pending_grades': pending_grades,
+        'pending_transcripts': pending_transcripts,
+        'total_revenue': money(total_revenue),
+        'total_expenses': money(total_expenses),
+        'net_position': money(total_revenue - total_expenses),
+        'tuition_collected': money(tuition_collected),
+        'outstanding': outstanding,
+        'collection_rate': collection_rate,
+        'ledger_balance': money(get_running_business_balance()),
+        'today_income': money(today_income),
+        'today_expenses': money(today_expenses),
+        'attendance_marked': today_att['marked'],
+        'attendance_present': present_equiv,
+        'attendance_absent': today_att['absent'],
+        'attendance_rate': attendance_rate,
+        'active_suspensions': active_suspensions,
+        'recent_payments': recent_payments,
+        'recent_grades': recent_grades,
+    }
+
+
+@app.route('/proprietor/dashboard')
+@login_required
+@role_required('proprietor', 'admin')
+def proprietor_dashboard():
+    """School Proprietor — live executive view of academics, finance, and campus."""
+    display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
+        session_key=PROPRIETOR_YEAR_SESSION_KEY,
+    )
+    snapshot = _proprietor_live_snapshot(display_year, viewing_archived=viewing_archived)
+    return render_template(
+        'proprietor_dashboard.html',
+        current_user=current_user,
+        display_year=display_year,
+        active_year=active_year,
+        years=years,
+        viewing_archived=viewing_archived,
+        snapshot=snapshot,
+        brand=school_print_brand(),
+    )
+
+
+@app.route('/proprietor/live.json')
+@login_required
+@role_required('proprietor', 'admin')
+def proprietor_live_json():
+    """Lightweight JSON pulse for the proprietor live board (auto-refresh)."""
+    display_year, _active, _years, viewing_archived = resolve_dashboard_academic_year(
+        session_key=PROPRIETOR_YEAR_SESSION_KEY,
+    )
+    return jsonify(_proprietor_live_snapshot(display_year, viewing_archived=viewing_archived))
+
+
 # -------------------------- PAYROLL -------------------------------
 @app.route('/principal/dashboard')
-@role_required('Principal') # Ensure only the Principal can see this
+@role_required('Principal', 'proprietor', 'admin') # Principal + school proprietor oversight
 def principal_dashboard():
     from datetime import timedelta
     display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
@@ -22137,9 +22360,9 @@ def _vpi_outstanding_students(display_year, limit=10, *, viewing_archived=False)
 
 @app.route('/vpi/dashboard')
 @login_required
-@role_required('VPI', 'principal', 'admin')
+@role_required('VPI', 'principal', 'admin', 'proprietor')
 def vpi_dashboard():
-    """VPI — tuition, ledger, collections, and campus fiscal operations (not academics)."""
+    """VPI — fiscal command plus shared academic registry and release queues."""
     display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
         session_key=VPI_YEAR_SESSION_KEY,
     )
@@ -22147,6 +22370,78 @@ def vpi_dashboard():
     selected_year_name = display_year.name if display_year else (
         active_year.name if active_year else (years[0].name if years else '')
     )
+
+    class_id = request.args.get('class_id', type=int)
+    search_q = (request.args.get('q') or '').strip()
+    selected_class = db.session.get(Class, class_id) if class_id else None
+    page, per_page = clamp_page(request.args.get('page'), DASHBOARD_PAGE_SIZE)
+    averages_map = _vpa_averages_map(display_year)
+
+    if class_id and selected_class and display_year:
+        roster = _principal_students_for_class(
+            selected_class, display_year, viewing_archived=viewing_archived,
+        )
+        if search_q:
+            needle = search_q.lower()
+            roster = [
+                student for student in roster
+                if needle in ' '.join(filter(None, [
+                    student.first_name, student.last_name, student.student_id, student.full_name,
+                ])).lower()
+            ]
+        registry_total = len(roster)
+        registry_students = roster[(page - 1) * per_page: page * per_page]
+    elif display_year:
+        students_query = _students_for_display_year(
+            display_year, history_mode=viewing_archived,
+        )
+        if search_q:
+            like = f"%{search_q}%"
+            students_query = students_query.filter(or_(
+                Student.first_name.ilike(like),
+                Student.last_name.ilike(like),
+                Student.student_id.ilike(like),
+            ))
+        students_query = students_query.order_by(Student.last_name.asc(), Student.first_name.asc())
+        registry_total = students_query.count()
+        registry_students = students_query.offset((page - 1) * per_page).limit(per_page).all()
+    else:
+        registry_students = []
+        registry_total = 0
+    registry_pages = max(1, (registry_total + per_page - 1) // per_page) if registry_total else 1
+    if page > registry_pages:
+        page = registry_pages
+    _attach_display_class(registry_students, display_year, viewing_archived=viewing_archived)
+
+    for student in registry_students:
+        student.academic_average = averages_map.get(student.id)
+        student.grade_letter = (
+            SchoolEngine.get_grade_letter(student.academic_average)
+            if student.academic_average is not None
+            else '-'
+        )
+        student.moe_status = (
+            'Passing' if student.academic_average >= MOE_PASSING_SCORE
+            else 'Below MoE Standard'
+        ) if student.academic_average is not None else 'No grades'
+
+    academic_class_snapshots = _vpa_build_class_snapshots(
+        display_year, viewing_archived=viewing_archived, averages_map=averages_map,
+    )
+    academic_class_snapshots_by_division = group_items_by_class(
+        academic_class_snapshots,
+        lambda snap: snap.get('klass') if isinstance(snap, dict) else None,
+    )
+    if not academic_class_snapshots_by_division:
+        _all_classes, academic_class_snapshots_by_division = list_classes_grouped()
+        academic_class_snapshots_by_division = [
+            {
+                'key': group['key'],
+                'label': group['label'],
+                'classes': [{'klass': klass} for klass in group['classes']],
+            }
+            for group in academic_class_snapshots_by_division
+        ]
 
     year_filter = _vpi_year_tx_query(selected_year_name) if selected_year_name else BusinessTransaction.query.filter_by(is_deleted=False)
 
@@ -22259,6 +22554,15 @@ def vpi_dashboard():
             _students_for_display_year(display_year, history_mode=viewing_archived).count()
             if display_year else 0
         ),
+        'pending_vpa_releases': (
+            GradeRelease.query.filter_by(
+                academic_year_id=display_year.id,
+                status=GradeRelease.STATUS_PENDING_VPA,
+            ).count()
+            if display_year else 0
+        ),
+        'pending_transcript_releases': count_pending_transcript_releases(display_year),
+        'moe_standard': MOE_PASSING_SCORE,
     }
 
     return render_template(
@@ -22271,6 +22575,14 @@ def vpi_dashboard():
         selected_year_name=selected_year_name,
         years=years,
         stats=stats,
+        class_id=class_id,
+        search_q=search_q,
+        selected_class=selected_class,
+        students=registry_students,
+        registry_page=page,
+        registry_pages=registry_pages,
+        registry_total=registry_total,
+        class_snapshots_by_division=academic_class_snapshots_by_division,
         class_snapshots=_vpi_class_collection_snapshots(
             display_year, viewing_archived=viewing_archived,
         ),
@@ -22284,6 +22596,8 @@ def vpi_dashboard():
         total_revenue=stats['total_revenue'],
         total_expenses=stats['total_expenses'],
         net_profit=stats['net_profit'],
+        pending_vpa_releases=stats['pending_vpa_releases'],
+        pending_transcript_releases=stats['pending_transcript_releases'],
     )
 
 # -------------------------- DEAN DASHBOARD -------------------------------
@@ -22326,7 +22640,7 @@ def _dean_build_class_snapshots(display_year=None, *, viewing_archived=False):
 
 @app.route('/dean/dashboard', methods=['GET'])
 @login_required
-@role_required('Dean')
+@role_required('Dean', 'proprietor', 'admin')
 def dean_dashboard():
     """Dean of Students — conduct, welfare, attendance, and campus oversight."""
     current_time = datetime.now(timezone.utc)
@@ -22774,7 +23088,7 @@ def _vpa_top_students(academic_year, class_id=None, limit=8, *, viewing_archived
 #--------------------vpa/dashboard----------------------#
 @app.route('/vpa/dashboard', methods=['GET'])
 @login_required
-@role_required('VPA')
+@role_required('VPA', 'proprietor', 'admin')
 def vpa_dashboard():
     """VPA — curriculum oversight, grade monitoring, and MoE academic standards."""
     display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
@@ -23345,7 +23659,7 @@ def _grade_release_queue_rows(display_year=None, status=None):
 
 
 def _load_reviewable_grade_release(release_id):
-    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    blocked = deny_unless_roles(ACADEMIC_RELEASE_ROLES)
     if blocked:
         return blocked, None
     release = db.session.get(GradeRelease, release_id)
@@ -23358,13 +23672,13 @@ def _load_reviewable_grade_release(release_id):
 @app.route('/vpa/grade-releases', methods=['GET'])
 @login_required
 def vpa_grade_releases():
-    """VPA queue: approve or return teacher-published class/period packages."""
-    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    """Leadership queue: approve or return teacher-published class/period packages."""
+    blocked = deny_unless_roles(ACADEMIC_RELEASE_ROLES)
     if blocked:
         return blocked
 
     display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
-        session_key=VPA_YEAR_SESSION_KEY,
+        session_key=dashboard_year_session_key(),
     )
     cabinet = _build_vpa_release_cabinet(
         display_year,
@@ -23555,13 +23869,13 @@ def _transcript_release_queue_context(display_year):
 @app.route('/vpa/transcript-releases', methods=['GET'])
 @login_required
 def vpa_transcript_releases():
-    """VPA / Principal queue: release Official Transcripts to students and parents."""
-    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    """Leadership queue: release Official Transcripts to students and parents."""
+    blocked = deny_unless_roles(ACADEMIC_RELEASE_ROLES)
     if blocked:
         return blocked
 
     display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
-        session_key=VPA_YEAR_SESSION_KEY,
+        session_key=dashboard_year_session_key(),
     )
     cabinet = _build_vpa_release_cabinet(
         display_year,
@@ -23589,7 +23903,7 @@ def vpa_transcript_releases():
 @app.route('/vpa/transcript-releases/approve-year', methods=['POST'])
 @login_required
 def vpa_approve_year_transcripts():
-    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    blocked = deny_unless_roles(ACADEMIC_RELEASE_ROLES)
     if blocked:
         return blocked
     year_id = request.form.get('academic_year_id', type=int)
@@ -23609,7 +23923,7 @@ def vpa_approve_year_transcripts():
 @app.route('/vpa/transcript-releases/<int:student_id>/approve', methods=['POST'])
 @login_required
 def vpa_approve_student_transcript(student_id):
-    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    blocked = deny_unless_roles(ACADEMIC_RELEASE_ROLES)
     if blocked:
         return blocked
     student = Student.query.get_or_404(student_id)

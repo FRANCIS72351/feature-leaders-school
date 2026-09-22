@@ -31,12 +31,21 @@
 <div class="container py-4 vpa-release-page">
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-4">
         <div>
-            <div class="vpa-seal-kicker">Vice Principal for Academics</div>
+            <div class="vpa-seal-kicker">Academic leadership</div>
             <h2 class="mb-1"><i class="fas fa-folder-open me-2"></i>Grade &amp; Report Cabinet</h2>
-            <p class="text-muted mb-0">Every class folder for {{ display_year.name if display_year else 'this year' }} stays on this desk — even when nothing is waiting. Open a folder to see student photos, IDs, and who owes the school. Approve pending periods without waiting for Business/VPI fee clearance. Release an entire class in one action when the packages are ready.</p>
+            <p class="text-muted mb-0">Every class folder for {{ display_year.name if display_year else 'this year' }} stays on this desk — even when nothing is waiting. Open a folder to see student photos, IDs, and who owes the school. VPA and VPI may approve pending periods without waiting for Business fee clearance. Release an entire class in one action when the packages are ready.</p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
+            {% set office_role = (current_user.role or '')|lower %}
+            {% if office_role == 'principal' %}
+            <a href="{{ url_for('principal_dashboard') }}" class="btn btn-outline-secondary btn-sm">Back to Principal dashboard</a>
+            {% elif office_role in ('vpi',) %}
+            <a href="{{ url_for('vpi_dashboard') }}" class="btn btn-outline-secondary btn-sm">Back to VPI dashboard</a>
+            {% elif office_role in ('proprietor', 'owner') %}
+            <a href="{{ url_for('proprietor_dashboard') }}" class="btn btn-outline-secondary btn-sm">Back to Proprietor board</a>
+            {% else %}
             <a href="{{ url_for('vpa_dashboard') }}" class="btn btn-outline-secondary btn-sm">Back to VPA dashboard</a>
+            {% endif %}
             <a href="{{ url_for('vpa_transcript_releases', academic_year_id=display_year.id if display_year else none) }}" class="btn btn-outline-secondary btn-sm">Transcript cabinet</a>
             <form method="get" class="d-flex gap-2">
                 <select name="academic_year_id" class="form-select form-select-sm" onchange="this.form.submit()">

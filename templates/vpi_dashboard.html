@@ -20,6 +20,7 @@
 {% endblock %}
 
 {% block content %}
+{% include 'partials/roster_status_styles.html' %}
 <style>
     body { background: #0b0f19; color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; }
     .vpi-terminal p:not(#vpi-cmd-sub),
@@ -57,6 +58,37 @@
         display: inline-block;
         padding: 0.1rem 0.35rem;
         border-radius: 4px;
+    }
+    .badge-pass { background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.2); }
+    .badge-fail { background: rgba(244,63,94,0.12); color: #f43f5e; border: 1px solid rgba(244,63,94,0.2); }
+    .badge-none { background: rgba(148,163,184,0.12); color: #94a3b8; border: 1px solid rgba(148,163,184,0.2); }
+    .registry-student-name {
+        color: #d97706 !important;
+        font-weight: 600;
+    }
+    .registry-student-class {
+        color: #0f172a !important;
+        font-weight: 500;
+        background: rgba(251, 191, 36, 0.15);
+        display: inline-block;
+        padding: 0.15rem 0.45rem;
+        border-radius: 4px;
+    }
+    .class-academic-card {
+        display: block;
+        background: #fff;
+        border: 1px solid #dbe7f3;
+        border-radius: 10px;
+        padding: 0.85rem 1rem;
+        text-decoration: none !important;
+        color: inherit;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .class-academic-card:hover,
+    .class-academic-card.active {
+        border-color: #059669;
+        box-shadow: 0 8px 20px rgba(5, 150, 105, 0.08);
+        color: inherit;
     }
 
     .vpi-terminal p:not(#vpi-cmd-sub),
@@ -179,7 +211,7 @@
                 <i class="fas fa-coins me-2" style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important"></i><span style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important">VPI Financial Command Center</span>
             </h2>
             <p id="vpi-cmd-sub" class="small mb-0 mt-1" style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important;background:none !important;text-shadow:none !important">
-                <span style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important">Vice Principal for Instruction — tuition, ledger, class fees, and fiscal oversight. Curriculum and teacher assignment belong to the VPA office.</span>{% if display_year %} · <b style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important">{{ display_year.name }}</b>{% if viewing_archived %} <span class="badge bg-warning text-dark">Archived</span>{% endif %}{% endif %}
+                <span style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important">Vice Principal for Instruction — tuition, ledger, fiscal oversight, student academic registry, and shared grade/transcript release authority with VPA.</span>{% if display_year %} · <b style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important">{{ display_year.name }}</b>{% if viewing_archived %} <span class="badge bg-warning text-dark">Archived</span>{% endif %}{% endif %}
             </p>
         </div>
         <form method="get" class="d-flex gap-2 mt-2 mt-md-0 align-items-center">
@@ -208,13 +240,19 @@
     </div>
     {% endif %}
 
-    <div class="row g-3 mb-4">
+    <div class="row g-3 mb-3">
         <div class="col-6 col-xl-2"><div class="metric-card"><span class="text-muted small d-block">Total Revenue</span><h4 class="text-emerald mb-0">${{ "{:,.2f}".format(stats.total_revenue) }}</h4></div></div>
         <div class="col-6 col-xl-2"><div class="metric-card"><span class="text-muted small d-block">Total Expenses</span><h4 class="text-rose mb-0">${{ "{:,.2f}".format(stats.total_expenses) }}</h4></div></div>
         <div class="col-6 col-xl-2"><div class="metric-card"><span class="text-muted small d-block">Net Position</span><h4 class="{% if stats.net_profit >= 0 %}text-emerald{% else %}text-rose{% endif %} mb-0">${{ "{:,.2f}".format(stats.net_profit) }}</h4></div></div>
         <div class="col-6 col-xl-2"><div class="metric-card"><span class="text-muted small d-block">Tuition Collected</span><h4 class="text-cyan mb-0">${{ "{:,.2f}".format(stats.tuition_collected) }}</h4></div></div>
         <div class="col-6 col-xl-2"><div class="metric-card"><span class="text-muted small d-block">Outstanding Fees</span><h4 class="text-amber mb-0">${{ "{:,.2f}".format(stats.outstanding_total) }}</h4></div></div>
         <div class="col-6 col-xl-2"><div class="metric-card"><span class="text-muted small d-block">Collection Rate</span><h4 class="text-emerald mb-0">{{ stats.collection_rate }}%</h4></div></div>
+    </div>
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3"><div class="metric-card"><span class="text-muted small d-block">Students on Record</span><div class="fw-bold text-emerald">{{ stats.active_students }}</div></div></div>
+        <div class="col-6 col-md-3"><div class="metric-card"><span class="text-muted small d-block">Pending Grade Releases</span><div class="fw-bold text-amber">{{ stats.pending_vpa_releases }}</div></div></div>
+        <div class="col-6 col-md-3"><div class="metric-card"><span class="text-muted small d-block">Pending Transcripts</span><div class="fw-bold text-cyan">{{ stats.pending_transcript_releases }}</div></div></div>
+        <div class="col-6 col-md-3"><div class="metric-card"><span class="text-muted small d-block">MoE Pass Standard</span><div class="fw-bold text-emerald">{{ stats.moe_standard }}%</div></div></div>
     </div>
 
     <div class="row g-3 mb-4">
@@ -243,21 +281,30 @@
             </div>
 
             <div class="card sec-card p-4">
-                <h6 class="fw-bold mb-3"><i class="fas fa-bolt text-amber me-2"></i>VPI Responsibilities (Finance only)</h6>
+                <h6 class="fw-bold mb-3"><i class="fas fa-bolt text-amber me-2"></i>VPI Responsibilities</h6>
                 <div class="d-flex flex-column gap-2 small">
                     <div><i class="fas fa-hand-holding-usd text-emerald me-2"></i>Tuition &amp; fee collection</div>
                     <div><i class="fas fa-receipt text-cyan me-2"></i>School income &amp; expense ledger</div>
                     <div><i class="fas fa-school text-amber me-2"></i>Class-by-class payment tracking</div>
-                    <div><i class="fas fa-file-invoice-dollar text-rose me-2"></i>Outstanding balance follow-up</div>
+                    <div><i class="fas fa-search text-emerald me-2"></i>Student academic registry &amp; MoE standing</div>
+                    <div><i class="fas fa-stamp text-amber me-2"></i>Approve grade releases with VPA</div>
+                    <div><i class="fas fa-scroll text-cyan me-2"></i>Approve Official Transcript releases</div>
                     <div><i class="fas fa-chart-pie text-cyan me-2"></i>Financial reports &amp; audits</div>
-                    <div><i class="fas fa-door-open text-amber me-2"></i>Campus rooms &amp; physical space inventory</div>
-                    <div class="text-muted pt-1">Not this office: subjects, teacher assignment, or grades (that is VPA).</div>
+                    <div class="text-muted pt-1">Curriculum catalogs and day-to-day teacher assignment remain with the VPA office.</div>
                 </div>
             </div>
 
             <div class="card sec-card p-4">
                 <h6 class="fw-bold mb-3 vpi-section-title"><i class="fas fa-terminal text-emerald me-2"></i>Quick Actions</h6>
                 <div>
+                    <a href="{{ url_for('vpa_grade_releases') }}" class="vpi-quick-link" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;margin-bottom:10px;background:#fff;border:1px solid #d1d5db;border-radius:10px;text-decoration:none;">
+                        <i class="fas fa-stamp" style="font-size:20px;color:#d97706;"></i>
+                        <span style="display:inline;font-size:16px !important;font-weight:700;color:#1f2937 !important;line-height:1.3;">Approve Grade Releases{% if stats.pending_vpa_releases %} ({{ stats.pending_vpa_releases }}){% endif %}</span>
+                    </a>
+                    <a href="{{ url_for('vpa_transcript_releases') }}" class="vpi-quick-link" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;margin-bottom:10px;background:#fff;border:1px solid #d1d5db;border-radius:10px;text-decoration:none;">
+                        <i class="fas fa-scroll" style="font-size:20px;color:#0ea5e9;"></i>
+                        <span style="display:inline;font-size:16px !important;font-weight:700;color:#1f2937 !important;line-height:1.3;">Approve Transcripts{% if stats.pending_transcript_releases %} ({{ stats.pending_transcript_releases }}){% endif %}</span>
+                    </a>
                     <a href="{{ url_for('business_management', year=selected_year_name) }}" class="vpi-quick-link" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;margin-bottom:10px;background:#fff;border:1px solid #d1d5db;border-radius:10px;text-decoration:none;">
                         <i class="fas fa-cash-register" style="font-size:20px;color:#0d9488;"></i>
                         <span style="display:inline;font-size:16px !important;font-weight:700;color:#1f2937 !important;line-height:1.3;">Record Tuition / Collect Fees</span>
@@ -284,6 +331,36 @@
                     </a>
                 </div>
             </div>
+
+            <div class="card sec-card p-4">
+                <h6 class="fw-bold mb-3"><i class="fas fa-layer-group text-emerald me-2"></i>Class Academic Matrix</h6>
+                <div class="row g-2">
+                    <div class="col-12 mb-1">
+                        <a href="{{ url_for('vpi_dashboard', **year_param) }}" class="class-academic-card{% if not selected_class %} active{% endif %}">
+                            <div class="fw-semibold small">All Classes</div>
+                            <div class="text-muted small">{{ stats.active_students }} {% if viewing_archived %}on record{% else %}students{% endif %} · {{ selected_year_name }}</div>
+                        </a>
+                    </div>
+                    {% for group in class_snapshots_by_division %}
+                    <div class="col-12">
+                        <div class="text-emerald small fw-semibold text-uppercase mt-2" style="font-size:0.68rem; letter-spacing:0.06em;">{{ group.label }}</div>
+                    </div>
+                    {% for snap in group.classes %}
+                    <div class="col-md-6">
+                        <a href="{{ url_for('vpi_dashboard', class_id=snap.klass.id, **year_param) }}" class="class-academic-card{% if selected_class and selected_class.id == snap.klass.id %} active{% endif %}">
+                            <div class="fw-semibold small">{{ snap.klass.name }}</div>
+                            <div class="d-flex flex-wrap gap-1 mt-2">
+                                <span class="stat-pill">{{ snap.student_count|default(0) }} {% if viewing_archived %}on record{% else %}enrolled{% endif %}</span>
+                                {% if snap.subject_count is defined %}<span class="stat-pill text-cyan">{{ snap.subject_count }} subjects</span>{% endif %}
+                                {% if snap.class_avg is not none %}<span class="stat-pill text-emerald">{{ snap.class_avg }}% avg</span>{% endif %}
+                                {% if snap.failing_count %}<span class="stat-pill text-rose">{{ snap.failing_count }} below MoE</span>{% endif %}
+                            </div>
+                        </a>
+                    </div>
+                    {% endfor %}
+                    {% endfor %}
+                </div>
+            </div>
         </div>
 
         <div class="col-xl-8 col-lg-7 d-flex flex-column gap-4">
@@ -300,6 +377,126 @@
                         <div class="chart-wrap"><canvas id="expenseChart"></canvas></div>
                     </div>
                 </div>
+            </div>
+
+            <div class="card sec-card p-4">
+                <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-3">
+                    <div>
+                        {% if selected_class %}
+                        <a href="{{ url_for('vpi_dashboard', **year_param) }}" class="small text-decoration-none text-emerald d-inline-block mb-2">
+                            <i class="fas fa-arrow-left me-1"></i>Back to all classes
+                        </a>
+                        {% endif %}
+                        <h5 class="fw-bold mb-0"><i class="fas fa-search text-emerald me-2"></i>Student Academic Registry</h5>
+                        <p class="text-muted small mb-0">
+                            {% if selected_class %}
+                            Class drill-down — <strong class="text-emerald">{{ selected_class.name }}</strong>
+                            {% else %}All {% if viewing_archived %}students on record{% else %}enrolled students{% endif %}{% endif %}
+                            · {{ selected_year_name }}
+                            {% if viewing_archived and display_year %}<span class="badge bg-warning text-dark ms-1">Archived</span>{% endif %}
+                        </p>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <span class="stat-pill text-amber">{{ stats.pending_vpa_releases }} grade release{{ 's' if stats.pending_vpa_releases != 1 else '' }} pending</span>
+                        <span class="stat-pill text-cyan">{{ stats.pending_transcript_releases }} transcript{{ 's' if stats.pending_transcript_releases != 1 else '' }} pending</span>
+                    </div>
+                </div>
+                <form method="get" class="row g-2 mb-3">
+                    {% if display_year %}<input type="hidden" name="academic_year_id" value="{{ display_year.id }}">{% endif %}
+                    <div class="col-md-4">
+                        <select name="class_id" class="form-select form-cyber form-select-sm" onchange="this.form.submit()">
+                            <option value="">All classes</option>
+                            {% for group in class_snapshots_by_division %}
+                            <optgroup label="{{ group.label }}">
+                                {% for snap in group.classes %}
+                                <option value="{{ snap.klass.id }}" {% if class_id == snap.klass.id %}selected{% endif %}>
+                                    {{ snap.klass.name }}{% if snap.klass.grade_level %} · {{ snap.klass.grade_level }}{% endif %}
+                                    {% if snap.student_count is defined %} ({{ snap.student_count }}){% endif %}
+                                </option>
+                                {% endfor %}
+                            </optgroup>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-5">
+                        <input type="text" name="q" class="form-control form-cyber form-control-sm" placeholder="Search name or student ID" value="{{ search_q or '' }}">
+                    </div>
+                    <div class="col-md-3">
+                        <button type="submit" class="btn btn-sm btn-outline-success w-100">Filter</button>
+                    </div>
+                </form>
+                <div class="table-responsive">
+                    <table class="table table-cyber table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Student</th>
+                                <th>Class</th>
+                                <th>Average</th>
+                                <th>Letter</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for student in students %}
+                            <tr>
+                                <td>
+                                    <div class="small registry-student-name">{{ student.full_name }}</div>
+                                    <div class="text-muted" style="font-size:0.7rem;">{{ student.student_id or '—' }}</div>
+                                </td>
+                                <td class="small"><span class="registry-student-class">{{ student.display_klass.name if student.display_klass else (student.klass.name if student.klass else 'Unassigned') }}</span></td>
+                                <td class="small fw-bold {% if student.academic_average is not none and student.academic_average >= stats.moe_standard %}text-emerald{% elif student.academic_average is not none %}text-rose{% endif %}">
+                                    {% if student.academic_average is not none %}{{ student.academic_average }}%{% else %}—{% endif %}
+                                </td>
+                                <td><span class="badge bg-light text-dark border">{{ student.grade_letter }}</span></td>
+                                <td class="roster-status-cell">
+                                    <div class="roster-status-cluster">
+                                        {% if student.status and student.status|upper not in ('ACTIVE',) %}
+                                        {% include 'partials/roster_status_pill.html' %}
+                                        {% endif %}
+                                        {% if student.moe_status == 'Passing' %}
+                                        <span class="badge badge-pass small roster-status-pill">{{ student.moe_status }}</span>
+                                        {% elif student.moe_status == 'Below MoE Standard' %}
+                                        <span class="badge badge-fail small roster-status-pill">{{ student.moe_status }}</span>
+                                        {% else %}
+                                        <span class="badge badge-none small roster-status-pill">{{ student.moe_status }}</span>
+                                        {% endif %}
+                                        <a href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}" class="roster-grade-sheet-link" title="Grade sheet" aria-label="Grade sheet">
+                                            <i class="fas fa-file-alt" aria-hidden="true"></i>
+                                        </a>
+                                        <a href="{{ url_for('transcript', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}" class="roster-grade-sheet-link" title="Official Transcript" aria-label="Official Transcript" target="_blank" rel="noopener">
+                                            <i class="fas fa-scroll" aria-hidden="true"></i>
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="5" class="text-muted small text-center py-3">
+                                {% if selected_class and viewing_archived and display_year %}
+                                No students are recorded in this class for {{ display_year.name }}.
+                                {% else %}
+                                No students match this filter.
+                                {% endif %}
+                            </td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% if registry_total is defined %}
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
+                    <p class="text-muted small mb-0">Showing {{ students|length }} of {{ registry_total }} student{{ 's' if registry_total != 1 else '' }} for this year only.</p>
+                    {% if registry_pages and registry_pages > 1 %}
+                    <div class="d-flex gap-2">
+                        {% if registry_page > 1 %}
+                        <a class="btn btn-sm btn-outline-success" href="{{ url_for('vpi_dashboard', academic_year_id=display_year.id if display_year else none, class_id=class_id or none, q=search_q or none, page=registry_page-1) }}">Previous</a>
+                        {% endif %}
+                        <span class="small align-self-center">Page {{ registry_page }} / {{ registry_pages }}</span>
+                        {% if registry_page < registry_pages %}
+                        <a class="btn btn-sm btn-outline-success" href="{{ url_for('vpi_dashboard', academic_year_id=display_year.id if display_year else none, class_id=class_id or none, q=search_q or none, page=registry_page+1) }}">Next</a>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
             </div>
 
             <div class="card sec-card p-4">

@@ -7,7 +7,7 @@ from flask_login import current_user
 _REGISTRY_ALIASES = frozenset({'registry', 'registry officer'})
 _PROTECTED_ROLES = frozenset({
     'vpi', 'vpa', 'principal', 'admin', 'dean', 'teacher',
-    'business', 'student', 'parent', 'sponsor',
+    'business', 'student', 'parent', 'sponsor', 'proprietor', 'owner',
 })
 _ROLE_HOME_ENDPOINTS = {
     'vpi': 'vpi_dashboard',
@@ -19,6 +19,8 @@ _ROLE_HOME_ENDPOINTS = {
     'student': 'student_dashboard',
     'sponsor': 'teacher_dashboard',
     'business': 'business_dashboard',
+    'proprietor': 'proprietor_dashboard',
+    'owner': 'proprietor_dashboard',
     'admin': 'dashboard',
     'parent': 'dashboard',
 }
@@ -27,8 +29,10 @@ _ROLE_HOME_ENDPOINTS = {
 def _canonical_role_name(role):
     """Map stored role onto the routing role. Registry aliases must never swallow vpi."""
     role = (role or '').strip().lower()
+    if role in {'owner', 'school proprietor', 'school owner'}:
+        return 'proprietor'
     if role in _PROTECTED_ROLES:
-        return role
+        return 'proprietor' if role == 'owner' else role
     if role in _REGISTRY_ALIASES:
         return 'registrar'
     return role

@@ -960,7 +960,16 @@
                   <i class="fas fa-th-large fa-sm me-1 text-primary"></i> Workspaces
                 </a>
                 <ul class="dropdown-menu dropdown-menu-end dropdown-menu-custom border-0" aria-labelledby="dashboardDropdown">
-                  {% if user_role == "vpi" %}
+                  {% if user_role == "proprietor" %}
+                    <li><h6 class="dropdown-header">School Proprietor</h6></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('proprietor_dashboard') }}"><i class="fas fa-binoculars fa-sm me-2"></i>Live School Board</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('principal_dashboard') }}"><i class="fas fa-user-shield fa-sm me-2"></i>Principal Portal</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('vpa_dashboard') }}"><i class="fas fa-graduation-cap fa-sm me-2"></i>VPA Academics</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('vpi_dashboard') }}"><i class="fas fa-coins fa-sm me-2"></i>VPI Finance</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('dean_dashboard') }}"><i class="fas fa-balance-scale fa-sm me-2"></i>Dean Campus</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('financial_reports') }}"><i class="fas fa-chart-bar fa-sm me-2"></i>Financial Reports</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('attendance_overview') }}"><i class="fas fa-clipboard-list fa-sm me-2"></i>Attendance</a></li>
+                  {% elif user_role == "vpi" %}
                     <li><h6 class="dropdown-header">VPI — Finance &amp; Operations</h6></li>
                     <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('vpi_dashboard') }}"><i class="fas fa-coins fa-sm me-2"></i>VPI Command Center</a></li>
                     <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('business_management') }}"><i class="fas fa-cash-register fa-sm me-2"></i>Collect Tuition &amp; Fees</a></li>

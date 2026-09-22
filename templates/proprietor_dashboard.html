@@ -1,0 +1,431 @@
+{% extends "base.html" %}
+{% block title %}Proprietor Live Board — {{ brand.name if brand else 'FLPA' }}{% endblock %}
+
+{% block head %}
+<meta http-equiv="refresh" content="90">
+<style>
+    :root {
+        --prop-navy: #0b1f3a;
+        --prop-ink: #12263a;
+        --prop-muted: #5b6b7c;
+        --prop-card: #ffffff;
+        --prop-line: #e4ebf3;
+        --prop-emerald: #0f9f6e;
+        --prop-amber: #d97706;
+        --prop-rose: #dc2626;
+        --prop-cyan: #0284c7;
+        --prop-gold: #b45309;
+        --prop-wash: #f3f7fb;
+    }
+    .prop-board {
+        background:
+            radial-gradient(1000px 420px at 8% -10%, rgba(2, 132, 199, 0.10), transparent 55%),
+            radial-gradient(900px 380px at 100% 0%, rgba(180, 83, 9, 0.08), transparent 50%),
+            linear-gradient(180deg, #eef4fa 0%, #f7fafc 42%, #eef2f6 100%);
+        min-height: 100vh;
+        color: var(--prop-ink);
+        padding: 1.25rem 0 3rem;
+    }
+    .prop-shell { max-width: 1280px; margin: 0 auto; padding: 0 1rem; }
+    .prop-hero {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: flex-end;
+        margin-bottom: 1.25rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid rgba(11, 31, 58, 0.08);
+    }
+    .prop-kicker {
+        font-size: 0.72rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--prop-gold);
+        font-weight: 800;
+        margin: 0 0 0.35rem;
+    }
+    .prop-title {
+        margin: 0;
+        font-size: clamp(1.55rem, 2.4vw, 2.15rem);
+        font-weight: 800;
+        color: var(--prop-navy);
+        letter-spacing: -0.02em;
+        line-height: 1.15;
+    }
+    .prop-sub {
+        margin: 0.4rem 0 0;
+        color: var(--prop-muted);
+        font-size: 0.95rem;
+        max-width: 42rem;
+    }
+    .prop-live {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        background: #ecfdf5;
+        color: #047857;
+        border: 1px solid #a7f3d0;
+        border-radius: 999px;
+        padding: 0.35rem 0.75rem;
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+    .prop-live-dot {
+        width: 0.55rem;
+        height: 0.55rem;
+        border-radius: 50%;
+        background: #10b981;
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+        animation: prop-pulse 1.6s infinite;
+    }
+    @keyframes prop-pulse {
+        0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
+        70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+    .prop-clock {
+        text-align: right;
+        color: var(--prop-muted);
+        font-size: 0.85rem;
+    }
+    .prop-clock strong { display: block; color: var(--prop-navy); font-size: 0.95rem; }
+    .prop-year select {
+        min-width: 10rem;
+        border: 1px solid var(--prop-line);
+        border-radius: 10px;
+        padding: 0.4rem 0.65rem;
+        background: #fff;
+        color: var(--prop-ink);
+        font-weight: 600;
+    }
+    .prop-grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 0.9rem;
+    }
+    .prop-card {
+        background: var(--prop-card);
+        border: 1px solid var(--prop-line);
+        border-radius: 16px;
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+        padding: 1rem 1.1rem;
+    }
+    .prop-kpi { grid-column: span 3; min-height: 108px; }
+    .prop-kpi .label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--prop-muted);
+        font-weight: 700;
+        margin-bottom: 0.45rem;
+    }
+    .prop-kpi .value {
+        font-size: clamp(1.45rem, 2.2vw, 1.9rem);
+        font-weight: 800;
+        color: var(--prop-navy);
+        line-height: 1.1;
+    }
+    .prop-kpi .meta {
+        margin-top: 0.35rem;
+        font-size: 0.8rem;
+        color: var(--prop-muted);
+    }
+    .prop-kpi.accent-emerald .value { color: var(--prop-emerald); }
+    .prop-kpi.accent-amber .value { color: var(--prop-amber); }
+    .prop-kpi.accent-rose .value { color: var(--prop-rose); }
+    .prop-kpi.accent-cyan .value { color: var(--prop-cyan); }
+    .prop-panel { grid-column: span 6; }
+    .prop-panel.wide { grid-column: span 8; }
+    .prop-panel.narrow { grid-column: span 4; }
+    .prop-panel h3 {
+        margin: 0 0 0.85rem;
+        font-size: 0.95rem;
+        font-weight: 800;
+        color: var(--prop-navy);
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+    }
+    .prop-stat-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.55rem 0;
+        border-bottom: 1px solid #eef3f8;
+        font-size: 0.9rem;
+    }
+    .prop-stat-row:last-child { border-bottom: 0; }
+    .prop-stat-row span { color: var(--prop-muted); }
+    .prop-stat-row strong { color: var(--prop-ink); font-weight: 800; }
+    .prop-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.86rem;
+    }
+    .prop-table th {
+        text-align: left;
+        font-size: 0.7rem;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--prop-muted);
+        padding: 0.35rem 0.25rem 0.55rem;
+        border-bottom: 1px solid var(--prop-line);
+    }
+    .prop-table td {
+        padding: 0.55rem 0.25rem;
+        border-bottom: 1px solid #eef3f8;
+        vertical-align: middle;
+    }
+    .prop-table tr:last-child td { border-bottom: 0; }
+    .prop-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.55rem;
+    }
+    .prop-action {
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        padding: 0.8rem 0.9rem;
+        border-radius: 12px;
+        border: 1px solid var(--prop-line);
+        background: var(--prop-wash);
+        text-decoration: none !important;
+        color: var(--prop-ink);
+        font-weight: 700;
+        transition: border-color 0.2s ease, transform 0.2s ease;
+    }
+    .prop-action:hover {
+        border-color: #94a3b8;
+        transform: translateY(-1px);
+        color: var(--prop-navy);
+    }
+    .prop-action i {
+        width: 1.5rem;
+        text-align: center;
+        color: var(--prop-cyan);
+    }
+    .prop-badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 0.15rem 0.55rem;
+        font-size: 0.72rem;
+        font-weight: 800;
+        background: #eff6ff;
+        color: #1d4ed8;
+    }
+    .prop-badge.warn { background: #fff7ed; color: #c2410c; }
+    .prop-badge.ok { background: #ecfdf5; color: #047857; }
+    .prop-badge.danger { background: #fef2f2; color: #b91c1c; }
+    @media (max-width: 1100px) {
+        .prop-kpi { grid-column: span 6; }
+        .prop-panel, .prop-panel.wide, .prop-panel.narrow { grid-column: span 12; }
+    }
+    @media (max-width: 640px) {
+        .prop-kpi { grid-column: span 12; }
+        .prop-clock { text-align: left; width: 100%; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="prop-board">
+    <div class="prop-shell">
+        <div class="prop-hero">
+            <div>
+                <p class="prop-kicker">School Proprietor</p>
+                <h1 class="prop-title">Live School Command Board</h1>
+                <p class="prop-sub">
+                    Real-time view of enrollment, tuition, academics, attendance, and campus discipline for
+                    <strong>{{ snapshot.year_name }}</strong>.
+                    {% if viewing_archived %}<span class="prop-badge warn">Archived year</span>{% endif %}
+                </p>
+            </div>
+            <div class="d-flex flex-column align-items-md-end gap-2">
+                <div class="prop-live"><span class="prop-live-dot" aria-hidden="true"></span> Live · auto-refresh</div>
+                <div class="prop-clock">
+                    <strong id="prop-clock">{{ snapshot.clock_label }}</strong>
+                    <span>Board updates about every minute</span>
+                </div>
+                <form method="get" class="prop-year">
+                    <select name="academic_year_id" onchange="this.form.submit()" aria-label="Academic year">
+                        {% for y in years %}
+                        <option value="{{ y.id }}" {% if display_year and y.id == display_year.id %}selected{% endif %}>
+                            {{ y.name }}{% if y.is_active %} (Active){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </form>
+            </div>
+        </div>
+
+        <div class="prop-grid" id="prop-kpis">
+            <div class="prop-card prop-kpi accent-cyan">
+                <div class="label">Students on record</div>
+                <div class="value" data-kpi="students">{{ snapshot.students }}</div>
+                <div class="meta"><span data-kpi="active_students">{{ snapshot.active_students }}</span> active · <span data-kpi="classes">{{ snapshot.classes }}</span> classes</div>
+            </div>
+            <div class="prop-card prop-kpi accent-emerald">
+                <div class="label">Net position</div>
+                <div class="value" data-kpi="net_position">${{ "{:,.2f}".format(snapshot.net_position) }}</div>
+                <div class="meta">Revenue <span data-kpi="total_revenue">${{ "{:,.2f}".format(snapshot.total_revenue) }}</span></div>
+            </div>
+            <div class="prop-card prop-kpi accent-amber">
+                <div class="label">Fee collection</div>
+                <div class="value" data-kpi="collection_rate">{{ snapshot.collection_rate }}%</div>
+                <div class="meta">Outstanding <span data-kpi="outstanding">${{ "{:,.2f}".format(snapshot.outstanding) }}</span></div>
+            </div>
+            <div class="prop-card prop-kpi accent-emerald">
+                <div class="label">MoE passing rate</div>
+                <div class="value" data-kpi="passing_rate">{{ snapshot.passing_rate }}%</div>
+                <div class="meta"><span data-kpi="at_risk">{{ snapshot.at_risk }}</span> below {{ snapshot.moe_standard }}%</div>
+            </div>
+
+            <div class="prop-card prop-panel">
+                <h3><i class="fas fa-coins text-success"></i> Finance pulse</h3>
+                <div class="prop-stat-row"><span>Tuition collected</span><strong data-kpi="tuition_collected">${{ "{:,.2f}".format(snapshot.tuition_collected) }}</strong></div>
+                <div class="prop-stat-row"><span>Total expenses</span><strong data-kpi="total_expenses">${{ "{:,.2f}".format(snapshot.total_expenses) }}</strong></div>
+                <div class="prop-stat-row"><span>Ledger balance</span><strong data-kpi="ledger_balance">${{ "{:,.2f}".format(snapshot.ledger_balance) }}</strong></div>
+                <div class="prop-stat-row"><span>Today's income</span><strong class="text-success" data-kpi="today_income">${{ "{:,.2f}".format(snapshot.today_income) }}</strong></div>
+                <div class="prop-stat-row"><span>Today's expenses</span><strong class="text-danger" data-kpi="today_expenses">${{ "{:,.2f}".format(snapshot.today_expenses) }}</strong></div>
+            </div>
+
+            <div class="prop-card prop-panel">
+                <h3><i class="fas fa-graduation-cap text-primary"></i> Academic &amp; campus</h3>
+                <div class="prop-stat-row"><span>Teachers on staff</span><strong data-kpi="teachers">{{ snapshot.teachers }}</strong></div>
+                <div class="prop-stat-row"><span>Staff accounts</span><strong data-kpi="staff">{{ snapshot.staff }}</strong></div>
+                <div class="prop-stat-row"><span>Pending grade releases</span><strong><span class="prop-badge warn" data-kpi="pending_grades">{{ snapshot.pending_grades }}</span></strong></div>
+                <div class="prop-stat-row"><span>Pending transcripts</span><strong><span class="prop-badge" data-kpi="pending_transcripts">{{ snapshot.pending_transcripts }}</span></strong></div>
+                <div class="prop-stat-row"><span>Active suspensions</span><strong><span class="prop-badge danger" data-kpi="active_suspensions">{{ snapshot.active_suspensions }}</span></strong></div>
+                <div class="prop-stat-row">
+                    <span>Today's attendance</span>
+                    <strong>
+                        {% if snapshot.attendance_rate is not none %}
+                        <span data-kpi="attendance_rate">{{ snapshot.attendance_rate }}%</span>
+                        <span class="text-muted small">(<span data-kpi="attendance_present">{{ snapshot.attendance_present }}</span>/<span data-kpi="attendance_marked">{{ snapshot.attendance_marked }}</span>)</span>
+                        {% else %}
+                        <span class="text-muted">Not marked yet</span>
+                        {% endif %}
+                    </strong>
+                </div>
+            </div>
+
+            <div class="prop-card prop-panel wide">
+                <h3><i class="fas fa-receipt text-success"></i> Latest tuition payments</h3>
+                <div class="table-responsive">
+                    <table class="prop-table" id="prop-payments">
+                        <thead><tr><th>Student</th><th>Amount</th><th>When</th></tr></thead>
+                        <tbody>
+                            {% for row in snapshot.recent_payments %}
+                            <tr>
+                                <td>{{ row.student }}</td>
+                                <td class="text-success fw-bold">${{ "{:,.2f}".format(row.amount) }}</td>
+                                <td class="text-muted">{{ row.paid_on }}</td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="3" class="text-muted">No payments recorded for this year yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="prop-card prop-panel narrow">
+                <h3><i class="fas fa-door-open text-primary"></i> Open an office</h3>
+                <div class="prop-actions">
+                    <a class="prop-action" href="{{ url_for('principal_dashboard') }}"><i class="fas fa-user-shield"></i> Principal portal</a>
+                    <a class="prop-action" href="{{ url_for('vpa_dashboard') }}"><i class="fas fa-graduation-cap"></i> VPA academics</a>
+                    <a class="prop-action" href="{{ url_for('vpi_dashboard') }}"><i class="fas fa-coins"></i> VPI finance</a>
+                    <a class="prop-action" href="{{ url_for('dean_dashboard') }}"><i class="fas fa-balance-scale"></i> Dean campus</a>
+                    <a class="prop-action" href="{{ url_for('attendance_overview') }}"><i class="fas fa-clipboard-list"></i> Attendance overview</a>
+                    <a class="prop-action" href="{{ url_for('financial_reports') }}"><i class="fas fa-chart-bar"></i> Financial reports</a>
+                </div>
+            </div>
+
+            <div class="prop-card prop-panel" style="grid-column: span 12;">
+                <h3><i class="fas fa-pen text-primary"></i> Recent grade entries</h3>
+                <div class="table-responsive">
+                    <table class="prop-table" id="prop-grades">
+                        <thead><tr><th>Student</th><th>Subject</th><th>Score</th><th>Status</th></tr></thead>
+                        <tbody>
+                            {% for row in snapshot.recent_grades %}
+                            <tr>
+                                <td>{{ row.student }}</td>
+                                <td>{{ row.subject }}</td>
+                                <td class="fw-bold">{{ row.score if row.score is not none else '—' }}</td>
+                                <td>{% if row.submitted %}<span class="prop-badge ok">Published</span>{% else %}<span class="prop-badge">Draft</span>{% endif %}</td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="4" class="text-muted">No grade activity yet for this year.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var moneyKeys = {
+        net_position: true, total_revenue: true, outstanding: true, tuition_collected: true,
+        total_expenses: true, ledger_balance: true, today_income: true, today_expenses: true
+    };
+    function fmtMoney(n) {
+        var v = Number(n || 0);
+        return '$' + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function applySnapshot(data) {
+        if (!data) return;
+        var clock = document.getElementById('prop-clock');
+        if (clock && data.clock_label) clock.textContent = data.clock_label;
+        document.querySelectorAll('[data-kpi]').forEach(function (el) {
+            var key = el.getAttribute('data-kpi');
+            if (!(key in data) || data[key] === null || data[key] === undefined) return;
+            var val = data[key];
+            if (moneyKeys[key]) el.textContent = fmtMoney(val);
+            else if (key === 'collection_rate' || key === 'passing_rate' || key === 'attendance_rate') el.textContent = val + '%';
+            else el.textContent = val;
+        });
+        var payBody = document.querySelector('#prop-payments tbody');
+        if (payBody && Array.isArray(data.recent_payments)) {
+            if (!data.recent_payments.length) {
+                payBody.innerHTML = '<tr><td colspan="3" class="text-muted">No payments recorded for this year yet.</td></tr>';
+            } else {
+                payBody.innerHTML = data.recent_payments.map(function (row) {
+                    return '<tr><td>' + (row.student || '—') + '</td><td class="text-success fw-bold">' +
+                        fmtMoney(row.amount) + '</td><td class="text-muted">' + (row.paid_on || '—') + '</td></tr>';
+                }).join('');
+            }
+        }
+        var gradeBody = document.querySelector('#prop-grades tbody');
+        if (gradeBody && Array.isArray(data.recent_grades)) {
+            if (!data.recent_grades.length) {
+                gradeBody.innerHTML = '<tr><td colspan="4" class="text-muted">No grade activity yet for this year.</td></tr>';
+            } else {
+                gradeBody.innerHTML = data.recent_grades.map(function (row) {
+                    var badge = row.submitted
+                        ? '<span class="prop-badge ok">Published</span>'
+                        : '<span class="prop-badge">Draft</span>';
+                    return '<tr><td>' + (row.student || '—') + '</td><td>' + (row.subject || '—') +
+                        '</td><td class="fw-bold">' + (row.score == null ? '—' : row.score) +
+                        '</td><td>' + badge + '</td></tr>';
+                }).join('');
+            }
+        }
+    }
+    function tick() {
+        fetch('{{ url_for("proprietor_live_json") }}', { headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(applySnapshot)
+            .catch(function () {});
+    }
+    setInterval(tick, 60000);
+})();
+</script>
+{% endblock %}

@@ -42,13 +42,18 @@
 <div class="container py-4 vpa-release-page">
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-4">
         <div>
-            <div class="vpa-seal-kicker">Vice Principal for Academics</div>
+            <div class="vpa-seal-kicker">Academic leadership</div>
             <h2 class="mb-1"><i class="fas fa-scroll me-2"></i>Official Transcript Cabinet</h2>
-            <p class="text-muted mb-0">Open a class folder to see every student — photo, ID, and fee standing — then release that class at once. School-wide release remains available. Students and parents cannot view Official Transcript until you approve.</p>
+            <p class="text-muted mb-0">Open a class folder to see every student — photo, ID, and fee standing — then release that class at once. School-wide release remains available. Students and parents cannot view Official Transcript until approved. Registrar, VPA, VPI, Principal, Proprietor, and Admin may still print.</p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
-            {% if current_user.role and current_user.role|lower == 'principal' %}
+            {% set office_role = (current_user.role or '')|lower %}
+            {% if office_role == 'principal' %}
             <a href="{{ url_for('principal_dashboard') }}" class="btn btn-outline-secondary btn-sm">Back to Principal dashboard</a>
+            {% elif office_role == 'vpi' %}
+            <a href="{{ url_for('vpi_dashboard') }}" class="btn btn-outline-secondary btn-sm">Back to VPI dashboard</a>
+            {% elif office_role in ('proprietor', 'owner') %}
+            <a href="{{ url_for('proprietor_dashboard') }}" class="btn btn-outline-secondary btn-sm">Back to Proprietor board</a>
             {% else %}
             <a href="{{ url_for('vpa_dashboard') }}" class="btn btn-outline-secondary btn-sm">Back to VPA dashboard</a>
             {% endif %}
