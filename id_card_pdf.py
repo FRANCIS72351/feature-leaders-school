@@ -56,7 +56,27 @@ def id_card_header_title(*, side='front', uppercase=False):
 # students use the same navy as the card header. No stripe pattern.
 ID_CARD_STUDENT_FOOTER_HEX = '#002d62'
 ID_CARD_STAFF_FOOTER_HEX = '#c82828'
-ID_CARD_BACK_FOOTER_MM = 14.0
+ID_CARD_BACK_FOOTER_MM = 20.5
+
+# Authorizing mark on the back of every student and staff card.
+PRINCIPAL_SIGNATORY_NAME = 'Emmanuel K. Agyei, Jr.'
+PRINCIPAL_SIGNATORY_TITLE = 'PROPRIETOR'
+PRINCIPAL_SIGNATURE_FILENAMES = (
+    'principal_signature.png',
+    'principal-signature.png',
+)
+
+
+def principal_signature_disk_path(explicit=None):
+    """Absolute path to the principal's authorizing signature image."""
+    if explicit and os.path.isfile(str(explicit)):
+        return str(explicit)
+    here = os.path.dirname(os.path.abspath(__file__))
+    for name in PRINCIPAL_SIGNATURE_FILENAMES:
+        path = os.path.join(here, 'static', 'images', name)
+        if os.path.isfile(path):
+            return path
+    return None
 
 
 def id_card_footer_fill(is_staff, cardinal=None):
@@ -335,8 +355,8 @@ def _draw_contained_image(c, reader, x, y, w, h):
         pass
 
 
-def _prepare_signature_reader(path_or_reader):
-    """Crop empty padding and darken pale ink so signatures print clearly on white."""
+def _prepare_signature_reader(path_or_reader, ink=(0, 45, 98)):
+    """Crop empty padding and tint ink so the mark prints clearly."""
     if path_or_reader is None:
         return None
     if PILImage is None:
@@ -350,6 +370,7 @@ def _prepare_signature_reader(path_or_reader):
         return None
     try:
         img = PILImage.open(path).convert('RGBA')
+        ink_r, ink_g, ink_b = ink
         # Turn near-white paper into transparency, then crop to ink.
         pixels = list(img.getdata())
         cleaned = []
@@ -357,8 +378,7 @@ def _prepare_signature_reader(path_or_reader):
             if a < 18 or (r > 242 and g > 242 and b > 242):
                 cleaned.append((0, 0, 0, 0))
             else:
-                # Force navy ink; keep enough alpha for thin pen strokes.
-                cleaned.append((0, 45, 98, max(a, 200)))
+                cleaned.append((ink_r, ink_g, ink_b, max(a, 210)))
         img.putdata(cleaned)
         bbox = img.getbbox()
         if bbox:
@@ -745,6 +765,8 @@ def _draw_front(c, x, y, card, assets):
     logo = assets['logo']
     photo = assets.get('photo')
     watermark = assets.get('watermark')
+    signature = assets.get('signature')
+    sig_font = assets['sig_font']
     year_label = assets.get('year_label') or ''
 
     c.saveState()
@@ -831,7 +853,7 @@ def _draw_front(c, x, y, card, assets):
     if year_label:
         rows.append(('Session:', year_label))
 
-    body_top = 50.5
+    body_top = 49.0
     label_w = 20 * mm
     value_w = CARD_W - 8.4 * mm - label_w - 1 * mm
     row_y = _from_top(y, body_top) - 6
@@ -846,13 +868,39 @@ def _draw_front(c, x, y, card, assets):
             line_y = row_y
             for line in parent_lines:
                 c.drawString(x + 4.2 * mm + label_w, line_y, line)
-                line_y -= 7.2
-            row_y -= 9.2 if len(parent_lines) < 2 else 16.4
+                line_y -= 6.6
+            row_y -= 8.0 if len(parent_lines) < 2 else 14.2
             continue
         c.drawString(x + 4.2 * mm + label_w, row_y, _fit_text(c, str(value), 'Helvetica', 6.1, value_w))
-        row_y -= 9.2
+        row_y -= 8.0
 
     footer_h = 7.2 * mm
+    sig_w = CARD_W - 8.4 * mm
+    sig_x = x + 4.2 * mm
+    sig_line_y = y + footer_h + 1.2 * mm + 3.0 * mm
+    if signature:
+        _draw_contained_image(c, signature, sig_x, sig_line_y + 0.5 * mm, sig_w, 6.4 * mm)
+    else:
+        mark = (
+            card.get('signature_mark')
+            or getattr(student, 'official_signature_mark', None)
+            or getattr(student, 'full_name', None)
+            or ''
+        )
+        if mark:
+            sig_text, sig_size = _signature_text_and_size(
+                c, mark, sig_font, sig_w, base_size=12.0, min_size=7.0,
+            )
+            c.setFillColor(NAVY)
+            c.setFont(sig_font, sig_size)
+            c.drawCentredString(x + CARD_W / 2.0, sig_line_y + 1.8 * mm, sig_text)
+    c.setStrokeColor(HexColor('#6b7280'))
+    c.setLineWidth(0.35 * mm)
+    c.line(sig_x, sig_line_y, sig_x + sig_w, sig_line_y)
+    c.setFillColor(MUTED)
+    c.setFont('Helvetica-Bold', 4.2)
+    c.drawCentredString(x + CARD_W / 2.0, sig_line_y - 2.0 * mm, "HOLDER'S SIGNATURE")
+
     c.setFillColor(GOLD)
     c.rect(x, y + footer_h, CARD_W, 1.2 * mm, stroke=0, fill=1)
     c.setFillColor(id_card_footer_fill(False, cardinal))
@@ -880,7 +928,7 @@ def _draw_back(c, x, y, card, assets):
     logo = assets['logo']
     seal = assets.get('seal')
     qr = assets.get('qr')
-    signature = assets.get('signature')
+    principal_signature = assets.get('principal_signature')
     sig_font = assets['sig_font']
     cardinal = assets['cardinal']
 
@@ -921,20 +969,20 @@ def _draw_back(c, x, y, card, assets):
         c.circle(plate_x + plate / 2.0, plate_y + plate / 2.0, plate / 2.0 - 0.4 * mm, stroke=0, fill=1)
         _draw_contained_image(c, seal, plate_x + 1.5 * mm, plate_y + 1.5 * mm, plate - 3 * mm, plate - 3 * mm)
 
-    copy_y = _from_top(y, 38.2)
+    copy_y = _from_top(y, 37.2)
     c.setFillColor(MUTED)
     c.setFont('Helvetica', 6)
     c.drawCentredString(x + CARD_W / 2.0, copy_y, 'This ID card is the property of this school.')
-    c.drawCentredString(x + CARD_W / 2.0, copy_y - 10, 'If found, please return it to the location below.')
+    c.drawCentredString(x + CARD_W / 2.0, copy_y - 8.5, 'If found, please return it to the location below.')
     c.setFillColor(NAVY)
     c.setFont('Helvetica-Bold', 6.2)
     address = (brand.get('full_address') or '').upper()
     addr_w = CARD_W - 8 * mm
     addr_lines = _wrap_text(c, address, 'Helvetica-Bold', 6.2, addr_w, 2)
-    addr_y = copy_y - 22
+    addr_y = copy_y - 19
     for line in addr_lines:
         c.drawCentredString(x + CARD_W / 2.0, addr_y, line)
-        addr_y -= 8
+        addr_y -= 7.4
 
     expires = card.get('expiration_date') or getattr(student, 'id_expiration_date', None)
     expire_text = f"Expire Date: {expires.strftime('%m/%d/%Y')}" if expires else (
@@ -942,33 +990,15 @@ def _draw_back(c, x, y, card, assets):
     )
     c.setFillColor(cardinal)
     c.setFont('Helvetica-Bold', 7)
-    c.drawCentredString(x + CARD_W / 2.0, y + 32.5 * mm, expire_text)
+    c.drawCentredString(x + CARD_W / 2.0, addr_y - 0.4, expire_text)
 
-    sig_w = 42 * mm
-    sig_x = x + (CARD_W - sig_w) / 2.0
-    sig_y = y + 20.0 * mm
-    mark = card.get('signature_mark') or getattr(student, 'official_signature_mark', None) or ''
-    if is_staff and not mark:
-        mark = card.get('signature_mark') or getattr(student, 'full_name', None) or 'Authorized Staff'
-    prepared = signature  # already navy-prepped in build_class_id_cards_pdf
-    if prepared:
-        _draw_contained_image(c, prepared, sig_x, sig_y + 1.4 * mm, sig_w, 12.0 * mm)
-    elif mark:
-        c.setFillColor(NAVY)
-        sig_text, sig_size = _signature_text_and_size(c, mark, sig_font, sig_w, base_size=17.0, min_size=9.0)
-        c.setFont(sig_font, sig_size)
-        c.drawCentredString(x + CARD_W / 2.0, sig_y + 4.0 * mm, sig_text)
-    c.setStrokeColor(HexColor('#6b7280'))
-    c.setLineWidth(0.4 * mm)
-    c.line(sig_x, sig_y, sig_x + sig_w, sig_y)
-    c.setFillColor(MUTED)
-    c.setFont('Helvetica-Bold', 6.5)
-    c.drawCentredString(x + CARD_W / 2.0, sig_y - 8, 'SIGNATURE')
+    footer_h = ID_CARD_BACK_FOOTER_MM * mm
+    footer_fill = id_card_footer_fill(is_staff, cardinal)
 
     if qr:
         qr_size = 13 * mm
         qr_x = x + CARD_W - 2.2 * mm - qr_size
-        qr_y = y + 18.8 * mm
+        qr_y = y + footer_h + 1.6 * mm
         c.setFillColor(white)
         c.setStrokeColor(HexColor('#e5e7eb'))
         c.setLineWidth(0.25 * mm)
@@ -976,12 +1006,46 @@ def _draw_back(c, x, y, card, assets):
         _draw_contained_image(c, qr, qr_x, qr_y, qr_size, qr_size)
         c.setFillColor(NAVY)
         c.setFont('Helvetica-Bold', 3.6)
-        c.drawCentredString(qr_x + qr_size / 2.0, y + 15.6 * mm, 'SCAN FOR PORTAL')
+        c.drawCentredString(qr_x + qr_size / 2.0, y + footer_h + 0.4 * mm, 'SCAN FOR PORTAL')
 
-    # Solid footer bar (14mm): staff brand red, student navy. No stripes.
-    footer_h = ID_CARD_BACK_FOOTER_MM * mm
-    c.setFillColor(id_card_footer_fill(is_staff, cardinal))
+    # Color panel first, then the proprietor mark on top so red/navy reads as the card.
+    c.setFillColor(footer_fill)
     c.rect(x, y, CARD_W, footer_h, stroke=0, fill=1)
+    c.setFillColor(GOLD)
+    c.rect(x, y + footer_h - 0.75 * mm, CARD_W, 0.75 * mm, stroke=0, fill=1)
+
+    sig_w = 40 * mm
+    sig_x = x + (CARD_W - sig_w) / 2.0
+    sig_y = y + 6.2 * mm
+    kicker = 'ISSUING AUTHORITY'
+    kicker_w = _tracked_width(c, kicker, 'Helvetica-Bold', 3.8, 0.4)
+    c.setFillColor(HexColor('#ffe9a0'))
+    _draw_tracked(
+        c, kicker, 'Helvetica-Bold', 3.8, 0.4,
+        x + (CARD_W - kicker_w) / 2.0,
+        y + footer_h - 2.8 * mm,
+    )
+    if principal_signature:
+        _draw_contained_image(
+            c, principal_signature, sig_x, sig_y + 1.0 * mm, sig_w, 7.8 * mm,
+        )
+    else:
+        c.setFillColor(HexColor('#fff8e7'))
+        sig_text, sig_size = _signature_text_and_size(
+            c, PRINCIPAL_SIGNATORY_NAME, sig_font, sig_w, base_size=13.0, min_size=7.5,
+        )
+        c.setFont(sig_font, sig_size)
+        c.drawCentredString(x + CARD_W / 2.0, sig_y + 3.2 * mm, sig_text)
+    c.setStrokeColor(HexColor('#f3d56a'))
+    c.setLineWidth(0.35 * mm)
+    c.line(sig_x, sig_y, sig_x + sig_w, sig_y)
+    title_w = _tracked_width(c, PRINCIPAL_SIGNATORY_TITLE, 'Helvetica-Bold', 5.8, 0.7)
+    c.setFillColor(HexColor('#fff4c8'))
+    _draw_tracked(
+        c, PRINCIPAL_SIGNATORY_TITLE, 'Helvetica-Bold', 5.8, 0.7,
+        sig_x + (sig_w - title_w) / 2.0,
+        y + 2.6 * mm,
+    )
 
     c.restoreState()
     c.setStrokeColor(NAVY)
@@ -999,6 +1063,7 @@ def build_class_id_cards_pdf(
     seal_path=None,
     photo_paths=None,
     signature_paths=None,
+    principal_signature_path=None,
 ):
     """Return a BytesIO PDF of ready CR80 ID cards (front + back per student)."""
     brand = brand or {}
@@ -1006,6 +1071,10 @@ def build_class_id_cards_pdf(
     logo = _image_reader(logo_path)
     watermark = faded_logo_reader(logo_path)
     seal = navy_tinted_seal_reader(seal_path)
+    principal_signature = _prepare_signature_reader(
+        principal_signature_disk_path(principal_signature_path),
+        ink=(255, 255, 255),
+    )
     sig_font = _register_signature_font()
     year_label = getattr(display_year, 'name', None) or ''
     class_label = getattr(klass, 'name', None) or ''
@@ -1029,6 +1098,7 @@ def build_class_id_cards_pdf(
         'logo': logo,
         'watermark': watermark,
         'seal': seal,
+        'principal_signature': principal_signature,
         'sig_font': sig_font,
         'year_label': year_label,
         'class_label': class_label,

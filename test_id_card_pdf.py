@@ -39,11 +39,13 @@ from id_card_pdf import (
     PHOTO_WELL_MM,
     ID_CARD_STAFF_FOOTER_HEX,
     ID_CARD_STUDENT_FOOTER_HEX,
+    PRINCIPAL_SIGNATORY_TITLE,
     id_photo_contain_rect,
     build_class_id_cards_pdf,
     id_card_footer_fill,
     id_card_header_title,
     id_cards_pdf_filename,
+    principal_signature_disk_path,
     resolve_id_card_parent_name,
 )
 from models import resolve_parent_guardian_name
@@ -203,7 +205,7 @@ class IdCardPdfTestCase(unittest.TestCase):
         self.assertIn('background: var(--staff-footer)', html)
         self.assertIn('.staff-pair .back-footer', html)
         self.assertIn('card-pair{% if is_staff %} staff-pair{% endif %}', html)
-        self.assertIn('class="back-footer" aria-hidden="true"></div>', html)
+        self.assertIn('class="back-footer"', html)
         self.assertNotIn('repeating-linear-gradient', html)
         self.assertNotIn('class="stripes"', html)
         self.assertNotIn('band-navy', html)
@@ -520,6 +522,50 @@ class IdCardPdfTestCase(unittest.TestCase):
         self.assertNotIn('center top', block)
         self.assertNotIn('22%', block)
         self.assertNotIn('position: absolute', block)
+
+    def test_back_uses_principal_signature_not_holder(self):
+        from pathlib import Path
+
+        html = Path(__file__).with_name('templates').joinpath('id_cards', 'print_batch.html').read_text(
+            encoding='utf-8'
+        )
+        start = html.find('class="principal-block"')
+        self.assertGreater(start, 0)
+        block = html[start:html.find('class="back-qr"', start)]
+        self.assertIn('principal_signature_url', block)
+        self.assertIn('Issuing authority', block)
+        self.assertIn('Proprietor', block)
+        self.assertNotIn('>Principal<', block)
+        self.assertNotIn('card.signature_url', block)
+        self.assertNotIn('student.signature_url', block)
+        self.assertNotIn('official_signature_mark', block)
+        self.assertIn('class="student-sign"', html)
+        self.assertIn("Holder's Signature", html)
+
+        student = SimpleNamespace(
+            id=1,
+            full_name='Test Student',
+            student_id='FLPA-1001',
+            parent_user=SimpleNamespace(full_name='Test Parent'),
+            parent_phone='0770000000',
+            id_expiration_date=date(2026, 7, 31),
+            official_signature_mark='Student T.',
+            signature_url=None,
+        )
+        drawn = _pdf_content_text(
+            build_class_id_cards_pdf(
+                [{'student': student, 'class_label': 'Grade 6A', 'qr_code_data_uri': None}],
+                klass=SimpleNamespace(name='Grade 6A'),
+                display_year=SimpleNamespace(name='2025-2026'),
+                brand=self._school_brand(),
+            ).getvalue()
+        )
+        self.assertIn(b'ISSUING AUTHORITY', drawn)
+        self.assertIn(PRINCIPAL_SIGNATORY_TITLE.encode(), drawn)
+        self.assertIn(b"HOLDER'S SIGNATURE", drawn)
+        principal_path = Path(principal_signature_disk_path() or '')
+        self.assertTrue(principal_path.is_file())
+        self.assertEqual(principal_path.name, 'principal_signature.png')
         well = html[html.find('.photo-ring {'):html.find('.photo-ring img {')]
         self.assertIn('aspect-ratio: 1 / 1 !important', well)
         self.assertIn('height: auto !important', well)

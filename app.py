@@ -3,7 +3,7 @@ from flask import Flask, render_template, redirect, url_for, flash, request, Res
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
-from models import db, User, Student, Teacher, Class, Announcement, Grade, GradeRelease, TranscriptRelease, AcademicYear, ClassSubjectTeacher, Room, Suspension, Discipline, StudentPayment, StudentRegistryDocument, StaffDocument, default_static_photo_url, school_logo_static_url, liberia_seal_static_url, display_font_static_url, resolve_parent_guardian_name
+from models import db, User, Student, Teacher, Class, Announcement, Grade, GradeRelease, TranscriptRelease, AcademicYear, ClassSubjectTeacher, Room, Suspension, Discipline, StudentPayment, StudentRegistryDocument, StaffDocument, default_static_photo_url, school_logo_static_url, liberia_seal_static_url, principal_signature_static_url, display_font_static_url, resolve_parent_guardian_name
 from itsdangerous import URLSafeTimedSerializer
 import pyotp
 from reportlab.pdfgen import canvas
@@ -6196,6 +6196,7 @@ def inject_nav_flags():
         "id_card_back_header_name": id_card_header_title(side='back'),
         "school_logo_url": school_logo_static_url(),
         "liberia_seal_url": liberia_seal_static_url(),
+        "principal_signature_url": principal_signature_static_url(),
         "display_font_url": display_font_static_url(),
         "default_avatar_url": default_static_photo_url(),
         "can_issue_id_cards": (
@@ -19252,6 +19253,16 @@ def _liberia_seal_disk_path():
     return None
 
 
+def _principal_signature_disk_path():
+    from models import PRINCIPAL_SIGNATURE_FILENAMES
+
+    for name in PRINCIPAL_SIGNATURE_FILENAMES:
+        path = _resolve_static_abs_path(name)
+        if path:
+            return path
+    return None
+
+
 def _student_id_photo_disk_path(student):
     if not student:
         return None
@@ -19355,6 +19366,7 @@ def _stream_id_cards_pdf(klass, display_year, ready_cards, *, single=False):
             brand=school_print_brand(),
             logo_path=_school_logo_disk_path(),
             seal_path=_liberia_seal_disk_path(),
+            principal_signature_path=_principal_signature_disk_path(),
         )
     except Exception:
         logger.exception('ID card PDF folder failed; retrying a complete PDF without logos')
@@ -20051,7 +20063,7 @@ def _staff_id_card_payload(user, display_year=None):
         'registrar': 'Registrar',
         'registry': 'Registrar',
         'vpa': 'Vice Principal Academics',
-        'vpi': 'Vice Principal Operations',
+        'vpi': 'Vice Principal Instruction',
         'dean': 'Dean',
         'business': 'Business Office',
     }
@@ -20101,6 +20113,7 @@ def _stream_staff_id_cards_pdf(cards):
             brand=school_print_brand(),
             logo_path=_school_logo_disk_path(),
             seal_path=_liberia_seal_disk_path(),
+            principal_signature_path=_principal_signature_disk_path(),
         )
     except Exception:
         logger.exception('Staff ID card PDF failed; retrying without logos')

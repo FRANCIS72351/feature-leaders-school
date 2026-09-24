@@ -221,7 +221,7 @@
         }
 
         .front-body {
-            padding: 0.8mm 4.2mm 8.5mm;
+            padding: 0.8mm 4.2mm 16.4mm;
             position: relative;
             z-index: 1;
         }
@@ -230,11 +230,11 @@
             grid-template-columns: 20mm 1fr;
             gap: 1mm;
             align-items: start;
-            margin: 0 0 1mm;
+            margin: 0 0 0.7mm;
             font-size: 6.1pt;
             line-height: 1.2;
         }
-        .front-body, .back-copy, .expire, .principal-block { position: relative; z-index: 1; }
+        .front-body, .back-copy, .expire { position: relative; z-index: 1; }
         .id-row .lbl {
             color: var(--cardinal);
             font-weight: 700;
@@ -511,46 +511,102 @@
             letter-spacing: 0.02em;
         }
         .expire {
-            margin: 2.2mm 0 1.6mm;
+            margin: 2.2mm 0 22mm;
             color: var(--cardinal);
             font-size: 7pt;
             font-weight: 800;
             text-align: center;
             letter-spacing: 0.03em;
         }
-        .principal-block {
+        .student-sign {
+            position: absolute;
+            left: 4.2mm;
+            right: 4.2mm;
+            bottom: 9.2mm;
             text-align: center;
-            margin: 0 auto 2mm;
-            width: 32mm;
+            z-index: 2;
+        }
+        .student-sign .mark {
+            font-family: "Great Vibes", "Segoe Script", cursive;
+            font-size: 11pt;
+            line-height: 1;
+            color: var(--navy) !important;
+            -webkit-text-fill-color: var(--navy);
+            white-space: nowrap;
+        }
+        .student-sign img {
+            display: block;
+            margin: 0 auto;
+            height: 6.8mm;
+            max-width: 100%;
+            object-fit: contain;
+            object-position: center bottom;
+            filter: grayscale(1) contrast(1.85) brightness(0.28);
+        }
+        .student-sign .rule {
+            margin: 0.35mm auto 0;
+            width: 100%;
+            height: 0.35mm;
+            background: #6b7280;
+        }
+        .student-sign .cap {
+            margin-top: 0.45mm;
+            font-size: 4.2pt;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+        .principal-block {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 1.4mm;
+            text-align: center;
+            margin: 0 auto;
+            width: 42mm;
+            z-index: 3;
+        }
+        .principal-kicker {
+            font-size: 3.8pt;
+            font-weight: 800;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: #ffe9a0;
+            margin-bottom: 0.35mm;
         }
         .principal-sig {
             font-family: "Great Vibes", "Segoe Script", cursive;
-            font-size: 16pt;
-            color: var(--navy) !important;
-            -webkit-text-fill-color: var(--navy);
+            font-size: 13pt;
+            color: #fff8e7 !important;
+            -webkit-text-fill-color: #fff8e7;
             line-height: 1;
-            min-height: 12mm;
+            min-height: 8mm;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
         }
         .principal-sig img {
-            height: 12mm;
-            max-width: 42mm;
+            height: 8mm;
+            max-width: 40mm;
             object-fit: contain;
-            filter: grayscale(1) contrast(1.85) brightness(0.28);
+            object-position: center bottom;
+            filter: brightness(0) invert(1);
         }
         .principal-line {
-            border-top: 0.35mm solid #9ca3af;
-            margin-top: 0.5mm;
-            padding-top: 0.6mm;
-            font-size: 6.5pt;
+            border-top: 0.35mm solid #f3d56a;
+            margin-top: 0.25mm;
+            padding-top: 0.65mm;
+            font-size: 5.8pt;
             font-weight: 800;
-            color: var(--muted);
-            letter-spacing: 0.06em;
+            color: #fff4c8;
+            letter-spacing: 0.14em;
             text-transform: uppercase;
         }
         .back-qr {
             position: absolute;
             right: 2.2mm;
-            bottom: 15.5mm;
+            bottom: 22mm;
             width: 13mm;
             text-align: center;
             z-index: 2;
@@ -577,8 +633,10 @@
             left: 0;
             right: 0;
             bottom: 0;
-            height: 14mm;
+            height: 20.5mm;
             background: var(--student-footer);
+            box-shadow: inset 0 0.75mm 0 var(--gold);
+            z-index: 1;
         }
         .staff-pair .back-footer {
             background: var(--staff-footer);
@@ -746,6 +804,17 @@
                     <div class="id-row"><span class="lbl">Session:</span><span class="val">{{ display_year.name }}</span></div>
                     {% endif %}
                 </div>
+                <div class="student-sign">
+                    {% if card.signature_url %}
+                    <img src="{{ card.signature_url }}" alt="Holder signature" decoding="async" loading="lazy">
+                    {% elif student.signature_url %}
+                    <img src="{{ student.signature_url }}" alt="Holder signature" decoding="async" loading="lazy">
+                    {% else %}
+                    <div class="mark">{{ student.official_signature_mark or student.full_name }}</div>
+                    {% endif %}
+                    <div class="rule" aria-hidden="true"></div>
+                    <div class="cap">Holder's Signature</div>
+                </div>
                 <div class="front-footer">
                     <div class="front-motto">{{ brand.motto }}</div>
                 </div>
@@ -781,20 +850,15 @@
                     {% endif %}
                 </div>
                 <div class="principal-block">
+                    <div class="principal-kicker">Issuing authority</div>
                     <div class="principal-sig">
-                        {% if is_staff %}
-                            {% if card.signature_url %}
-                            <img src="{{ card.signature_url }}" alt="Signature" decoding="async" loading="lazy">
-                            {% else %}
-                            {{ card.signature_mark or 'Authorized Staff' }}
-                            {% endif %}
-                        {% elif student.signature_url %}
-                        <img src="{{ student.signature_url }}" alt="Signature" decoding="async" loading="lazy">
+                        {% if principal_signature_url %}
+                        <img src="{{ principal_signature_url }}" alt="Proprietor signature" decoding="async" loading="lazy">
                         {% else %}
-                        {{ student.official_signature_mark }}
+                        Emmanuel K. Agyei, Jr.
                         {% endif %}
                     </div>
-                    <div class="principal-line">Signature</div>
+                    <div class="principal-line">Proprietor</div>
                 </div>
                 {% if card.qr_code_data_uri %}
                 <div class="back-qr">

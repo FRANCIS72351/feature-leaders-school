@@ -292,6 +292,20 @@ def liberia_seal_static_url():
     return None
 
 
+PRINCIPAL_SIGNATURE_FILENAMES = (
+    "images/principal_signature.png",
+    "images/principal-signature.png",
+)
+
+
+def principal_signature_static_url():
+    """School principal's authorizing signature for the back of every ID card."""
+    for name in PRINCIPAL_SIGNATURE_FILENAMES:
+        if _static_file_on_disk(name):
+            return _static_url(name)
+    return None
+
+
 # Algerian is a licensed Monotype face bundled with Windows/Office, so it cannot
 # be vendored here. Browsers use a locally installed copy when the machine has
 # one; drop a copy under static/fonts/ to serve it to everyone else.
