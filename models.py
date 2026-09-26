@@ -1266,7 +1266,7 @@ class Grade(db.Model):
     ca_score = db.Column(db.Float, default=0.0)    # 60% Continuous Assessment Weight
     exam_score = db.Column(db.Float, default=0.0)  # 40% Examination Weight
     score = db.Column(db.Float, default=0.0)       # Calculated individual total
-    # JSON: {attendance, participation, quiz, assignment, classwork, other, test, direct_total}
+    # JSON: {participation, quiz, assignment, classwork, attendance, test}
     component_scores = db.Column(db.Text, nullable=True)
     
     # 6-Period System Columns for historical summary within the session

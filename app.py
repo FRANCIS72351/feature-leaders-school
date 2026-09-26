@@ -2682,6 +2682,11 @@ def _component_key_for_assessment(assessment):
             return key
         if label and label.upper() in title:
             return key
+        plain_label = (label or '').replace('C/', '').strip()
+        if plain_label and plain_label.upper() in title:
+            return key
+        if key.upper() in title.split() or title.startswith(key.upper()):
+            return key
     type_keys = {}
     for key, activity_type in PERIOD_COMPONENT_ACTIVITY_TYPES.items():
         type_keys.setdefault(activity_type, []).append(key)
@@ -2918,7 +2923,11 @@ def find_class_for_student_grade(grade_level, stream=None, old_class_id=None):
 
 
 def record_student_class_enrollment(student, class_id, academic_year_id=None):
-    """Persist a year-tagged class enrollment when a student's class assignment changes."""
+    """Persist a year-tagged class enrollment when a student's class assignment changes.
+
+    A mid-year correction (wrong folder at registration) updates the existing
+    year row so the student moves instead of staying in both classes.
+    """
     if not student or not class_id:
         return
     if academic_year_id is None:
@@ -2926,6 +2935,22 @@ def record_student_class_enrollment(student, class_id, academic_year_id=None):
     if academic_year_id is None:
         active_year = get_active_academic_year()
         academic_year_id = active_year.id if active_year else None
+
+    if academic_year_id is not None:
+        year_rows = (
+            Enrollment.query.filter_by(
+                student_id=student.id,
+                academic_year_id=academic_year_id,
+            )
+            .order_by(Enrollment.id.desc())
+            .all()
+        )
+        if year_rows:
+            keep = year_rows[0]
+            keep.class_id = class_id
+            for extra in year_rows[1:]:
+                db.session.delete(extra)
+            return
 
     query = Enrollment.query.filter_by(student_id=student.id, class_id=class_id)
     if academic_year_id is not None:
@@ -7303,35 +7328,30 @@ def _positive_float(value):
 
 
 def _listed_max_for_component(component_key, form=None):
-    """Listed activity max from the official sheet; never below the UI-posted max."""
+    """Official listed points for this activity. Posted form values cannot raise the cap."""
     listed_max = PERIOD_COMPONENT_MAXIMA.get(component_key)
-    posted = _positive_float(form.get(f'component_max_{component_key}')) if form is not None else None
-    if listed_max is None and posted is None:
-        return None
-    if listed_max is None:
-        return posted
-    listed_max = float(listed_max)
-    if posted is not None:
-        listed_max = max(listed_max, posted)
-    return listed_max
+    if listed_max is not None:
+        return float(listed_max)
+    return _positive_float(form.get(f'component_max_{component_key}')) if form is not None else None
 
 
 def _component_field_max(form=None):
-    """Hard cap for an activity input. Teachers may exceed the listed weight up to this."""
+    """Legacy overall cap; period activities now use the listed points instead."""
     posted = _positive_float(form.get('component_field_max')) if form is not None else None
     if posted is not None:
-        return max(posted, PERIOD_COMPONENT_FIELD_MAX)
+        return min(posted, PERIOD_COMPONENT_FIELD_MAX)
     return PERIOD_COMPONENT_FIELD_MAX
 
 
 def _validate_period_component_score(component_key, score_val, student_name, form=None):
-    field_max = _component_field_max(form)
+    listed_max = _listed_max_for_component(component_key, form)
+    cap = listed_max if listed_max is not None else _component_field_max(form)
     if score_val < 0:
         return f'Invalid {_period_component_label(component_key)} score for {student_name}.'
-    if score_val > field_max:
+    if score_val > cap:
         return (
             f'Invalid {_period_component_label(component_key)} score for {student_name}. '
-            f'Max in this field is {field_max:g}.'
+            f'Max for {_period_component_label(component_key)} is {cap:g} pts.'
         )
     return None
 
@@ -16809,10 +16829,14 @@ def apply_student_form_to_record(student, form, *, registrar_name, registration_
     if klass_id:
         assigned_class = db.session.get(Class, klass_id)
         if assigned_class:
+            student.assigned_class = assigned_class
             student.grade_level = assigned_class.grade_level
             division = division_label_for_class(assigned_class)
             if division and division != 'Other':
                 student.level = division
+        record_student_class_enrollment(
+            student, klass_id, academic_year_id=academic_year_id,
+        )
 
     if form.student_id.data:
         student.student_id = form.student_id.data.strip()
@@ -16885,6 +16909,36 @@ def registrar_reassign_class_teacher(class_id):
     return redirect(url_for('dashboard', **registrar_dashboard_redirect_kwargs()))
 
 
+def _prepare_register_student_form(form, display_year=None):
+    """Fill year/level from the dashboard when the registrar already chose a class."""
+    if not form.academic_year.data and display_year is not None:
+        form.academic_year.data = display_year.id
+    if (form.level.data or '').strip():
+        return
+    klass_id = form.klass.data
+    if not klass_id:
+        return
+    klass = db.session.get(Class, klass_id)
+    label = division_label_for_class(klass) if klass else ''
+    if label and label != 'Other':
+        form.level.data = label
+
+
+def _registration_form_error_summary(form):
+    """Human list of WTForms errors so the banner names the real problem."""
+    parts = []
+    for field_name, messages in (form.errors or {}).items():
+        if field_name == 'csrf_token':
+            parts.append('Your session expired — try saving again')
+            continue
+        field = getattr(form, field_name, None)
+        label = getattr(getattr(field, 'label', None), 'text', None) or field_name.replace('_', ' ').title()
+        text = ', '.join(str(message) for message in messages if message)
+        if text:
+            parts.append(f'{label}: {text}')
+    return parts
+
+
 @app.route('/register-student', methods=['GET', 'POST'])
 @app.route('/registrar/dashboard', methods=['GET', 'POST'], endpoint='registrar_dashboard')
 @login_required
@@ -16899,8 +16953,15 @@ def register_student():
 
     # 4. Handle POST requests: Process form submissions
     if request.method == 'POST':
+        _prepare_register_student_form(form, display_year=context.get('display_year'))
         if not form.validate():
-            flash("Please correct the highlighted errors before saving.", "danger")
+            details = _registration_form_error_summary(form)
+            message = 'Please correct the highlighted error(s) before saving.'
+            if details:
+                message = f"{message} {'; '.join(details)}."
+            flash(message, "danger")
+            context['form'] = form
+            context['registration_form_invalid'] = True
             return render_template('dashboard_registrar.html', **context)
 
         try:
@@ -19811,7 +19872,52 @@ def refresh_student_id_photo(student_id):
 
 STAFF_ID_CARD_ROLES = frozenset({
     'admin', 'principal', 'teacher', 'registrar', 'registry', 'vpa', 'vpi', 'dean', 'business',
+    'proprietor', 'owner',
 })
+
+
+def _staff_directory_role_values():
+    """Stored User.role values that belong on staff folders and staff ID cards."""
+    values = {role.lower() for role in STAFF_ID_CARD_ROLES}
+    for raw, canonical in ROLE_ALIASES.items():
+        if canonical in STAFF_ID_CARD_ROLES or raw in STAFF_ID_CARD_ROLES:
+            values.add((raw or '').strip().lower())
+            values.add((canonical or '').strip().lower())
+    return {value for value in values if value}
+
+
+def _staff_directory_role_clause():
+    return db.func.lower(User.role).in_(list(_staff_directory_role_values()))
+
+
+def _matching_staff_directory_roles(role):
+    """All stored role strings that match one staff-folder filter value."""
+    role = (role or '').strip().lower()
+    if not role:
+        return set()
+    canonical = ROLE_ALIASES.get(role, role)
+    matches = {role, canonical}
+    for raw, mapped in ROLE_ALIASES.items():
+        if mapped == canonical or raw == role:
+            matches.add((raw or '').strip().lower())
+            matches.add((mapped or '').strip().lower())
+    return {value for value in matches if value}
+
+
+def _staff_folder_role_options():
+    """Canonical role choices for the staff-folder filter, with office labels."""
+    options = []
+    seen = set()
+    for role in sorted(STAFF_ID_CARD_ROLES):
+        canonical = ROLE_ALIASES.get(role, role)
+        if canonical in seen or canonical in {'registry'}:
+            continue
+        seen.add(canonical)
+        options.append((
+            canonical,
+            DASHBOARD_ROLE_LABELS.get(canonical, canonical.replace('_', ' ').title()),
+        ))
+    return options
 
 
 def _staff_id_disk_path(stored_path):
@@ -20066,6 +20172,8 @@ def _staff_id_card_payload(user, display_year=None):
         'vpi': 'Vice Principal Instruction',
         'dean': 'Dean',
         'business': 'Business Office',
+        'proprietor': 'School Proprietor',
+        'owner': 'School Proprietor',
     }
     return {
         'student': user,
@@ -20088,7 +20196,7 @@ def _staff_id_card_payload(user, display_year=None):
 
 def _staff_id_cards(display_year=None):
     users = User.query.filter(
-        User.role.in_(list(STAFF_ID_CARD_ROLES)),
+        _staff_directory_role_clause(),
         User.is_active.is_(True),
     ).order_by(User.full_name.asc()).all()
     dirty = False
@@ -20130,7 +20238,7 @@ def staff_id_cards_folder():
         return denied
     display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
     users = User.query.filter(
-        User.role.in_(list(STAFF_ID_CARD_ROLES)),
+        _staff_directory_role_clause(),
         User.is_active.is_(True),
     ).order_by(User.full_name.asc()).all()
     ready_cards = _staff_id_cards(display_year)
@@ -20169,7 +20277,7 @@ def build_staff_ids_from_accounts():
         return denied
     display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
     users = User.query.filter(
-        User.role.in_(list(STAFF_ID_CARD_ROLES)),
+        _staff_directory_role_clause(),
         User.is_active.is_(True),
     ).order_by(User.full_name.asc()).all()
 
@@ -20437,11 +20545,12 @@ def _staff_folder_guard():
 
 
 def _staff_folder_query(search=None, role=None, include_inactive=False):
-    query = User.query.filter(User.role.in_(list(STAFF_FOLDER_ROLES)))
+    query = User.query.filter(_staff_directory_role_clause())
     if not include_inactive:
         query = query.filter(User.is_active.is_(True))
-    if role and role in STAFF_FOLDER_ROLES:
-        query = query.filter(User.role == role)
+    role_matches = _matching_staff_directory_roles(role)
+    if role_matches:
+        query = query.filter(db.func.lower(User.role).in_(list(role_matches)))
     term = (search or '').strip()
     if term:
         like = f'%{term}%'
@@ -20545,7 +20654,7 @@ def staff_folders():
         search=search,
         role_filter=role_filter,
         include_inactive=include_inactive,
-        staff_roles=sorted(STAFF_FOLDER_ROLES),
+        staff_roles=_staff_folder_role_options(),
         total_count=len(rows),
         incomplete_count=sum(1 for row in rows if row['incomplete']),
     )
@@ -20776,11 +20885,11 @@ def edit_student(student_id):
     persist_parent_report_token(student)
     form = RegisterStudentForm(obj=student)
     context = build_registrar_dashboard_context(form=form)
-    form.klass.data = student.klass_id or 0
-    form.academic_year.data = student.academic_year_id or 0
     return_to = request.args.get('return_to') or request.form.get('return_to')
 
     if request.method == 'GET':
+        form.klass.data = student.klass_id or 0
+        form.academic_year.data = student.academic_year_id or 0
         form.student_id.data = student.student_id
         form.level.data = academic_level_for_student(student) or student.level
         if student.registration_fees is not None and float(student.registration_fees) > 0:
@@ -20798,6 +20907,7 @@ def edit_student(student_id):
             flash("That student ID is already assigned to another student.", "danger")
             return redirect(url_for('edit_student', student_id=student_id))
 
+        previous_class_id = student.klass_id
         try:
             registration_fee_value, academic_year_id = apply_student_form_to_record(
                 student,
@@ -20867,7 +20977,15 @@ def edit_student(student_id):
             )
 
         db.session.commit()
-        flash(f"Student {student.full_name} has been updated.", "success")
+        if student.klass_id and student.klass_id != previous_class_id:
+            new_class = student.assigned_class or db.session.get(Class, student.klass_id)
+            new_name = new_class.name if new_class else 'the selected class'
+            flash(
+                f"{student.full_name} was moved to {new_name}. Open that class folder to see the student.",
+                "success",
+            )
+        else:
+            flash(f"Student {student.full_name} has been updated.", "success")
         if (form.parent_report_pin.data or '').strip():
             flash(
                 "Parent report PIN saved. Share it with the guardian for QR report access.",
@@ -21834,7 +21952,7 @@ def _proprietor_live_snapshot(display_year, *, viewing_archived=False):
     teacher_count = Teacher.query.filter_by(status='ACTIVE').count()
     staff_count = User.query.filter(
         User.is_active.is_(True),
-        User.role.in_(list(STAFF_ID_CARD_ROLES)),
+        _staff_directory_role_clause(),
     ).count()
     class_count = Class.query.count()
 

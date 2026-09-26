@@ -200,6 +200,20 @@ class StaffFolderTestCase(unittest.TestCase):
         )
         self.assertEqual(mismatched.status_code, 404)
 
+    def test_proprietor_has_a_staff_folder(self):
+        with self.app.app_context():
+            proprietor_id = self._make_user('proprietor', 'School Proprietor')
+            owner_id = self._make_user('owner', 'Campus Owner')
+            db.session.commit()
+        self._login(self.vpa_id)
+        listing = self.client.get('/staff/folders')
+        self.assertEqual(listing.status_code, 200)
+        self.assertIn(b'School Proprietor', listing.data)
+        self.assertIn(b'Campus Owner', listing.data)
+        self.assertEqual(self.client.get(f'/staff/folders/{proprietor_id}').status_code, 200)
+        self.assertEqual(self.client.get(f'/staff/folders/{owner_id}').status_code, 200)
+        self.assertIn('proprietor', STAFF_FOLDER_ROLES)
+
     def test_students_never_get_a_staff_folder(self):
         with self.app.app_context():
             student_user_id = self._make_user('student', 'Portal Student')

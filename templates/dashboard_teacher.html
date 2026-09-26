@@ -152,11 +152,16 @@
   .grade-table th .col-max {
     display: block;
     font-size: 0.62rem;
-    font-weight: 600;
-    color: #94a3b8;
+    font-weight: 700;
+    color: #64748b;
     letter-spacing: 0;
     text-transform: none;
     margin-top: 2px;
+  }
+  .grade-table th.score-col {
+    min-width: 76px;
+    white-space: normal;
+    line-height: 1.2;
   }
   .grade-table td {
     padding: 8px 10px;
@@ -536,13 +541,12 @@
 {% set is_exam_period = grade_period in [7, 8] %}
 {% if period_component_specs is not defined %}
 {% set period_component_specs = [
-  ('attendance', 'ATT', 'Attendance', 10),
-  ('participation', 'PART', 'Participation', 10),
-  ('quiz', 'QUIZ', 'Quiz', 15),
-  ('assignment', 'ASSG', 'Assignment', 20),
-  ('classwork', 'CW', 'Class Work', 15),
-  ('other', 'HW', 'Homework', 10),
-  ('test', 'TEST', 'Test', 20),
+  ('participation', 'C/PART', 'C/Participation', 5),
+  ('quiz', 'QUIZ', 'Quiz', 30),
+  ('assignment', 'ASSG', 'Assignment', 5),
+  ('classwork', 'CW', 'Classwork', 15),
+  ('attendance', 'ATT', 'Attendance', 5),
+  ('test', 'TEST', 'Test', 40),
 ] %}
 {% endif %}
 {% set year_label = display_year.name if display_year else (header.academic_year if header and header.academic_year else '—') %}
@@ -829,7 +833,7 @@
   {% if is_exam_period %}
     <p class="scheme-note">Semester exam period: enter the exam score out of 100. Letter grade updates automatically (A 90–100 · B 80–89 · C 70–79 · D below 70).</p>
   {% else %}
-    <p class="scheme-note">Typical weights totaling {{ period_total_listed_max|default(100)|int }}: {{ period_scheme_note if period_scheme_note is defined else 'ATT 10 + PART 10 + QUIZ 15 + ASSG 20 + CW 15 + HW 10 + TEST 20 = 100' }}. Each activity box accepts 0–{{ period_component_field_max|default(100)|int }} (you may enter above the column weight). Direct period grade: 0–{{ period_total_extra_max|default(110)|int }}.</p>
+    <p class="scheme-note">Period evaluation totaling {{ period_total_listed_max|default(100)|int }}: {{ period_scheme_note if period_scheme_note is defined else 'C/Participation 5 + Quiz 30 + Assignment 5 + Classwork 15 + Attendance 5 + Test 40 = 100' }}. Enter only the listed points for each column.</p>
   {% endif %}
 
   {% if viewing_archived %}
@@ -843,7 +847,6 @@
     <input type="hidden" name="period" value="{{ grade_period }}">
     <input type="hidden" name="return_to" value="teacher_grade_sheet">
     {% if not is_exam_period %}
-      <input type="hidden" name="component_field_max" value="{{ period_component_field_max|default(100) }}">
       {% for key, _code, _label, max_score in (period_component_specs if period_component_specs is defined else []) %}
       <input type="hidden" name="component_max_{{ key }}" value="{{ max_score }}">
       {% endfor %}
@@ -860,10 +863,9 @@
           {% if is_exam_period %}
             <th>Exam<span class="col-max">/ 100</span></th>
           {% else %}
-            {% for _key, code, _label, max_score in (period_component_specs if period_component_specs is defined else []) %}
-            <th>{{ code }}<span class="col-max">/ {{ max_score|int }}</span></th>
+            {% for _key, code, label, max_score in (period_component_specs if period_component_specs is defined else []) %}
+            <th class="score-col" title="{{ label }} — {{ max_score|int }} points">{{ code }}<span class="col-max">{{ max_score|int }} pts</span></th>
             {% endfor %}
-            <th>Direct<span class="col-max">/ {{ period_total_listed_max|default(100)|int }}</span></th>
           {% endif %}
           <th>Total</th>
           <th>Grade</th>
@@ -889,23 +891,15 @@
               </td>
             {% else %}
               {% set comps = (component_rows.get(student.id, {}) if component_rows is defined and component_rows else {}) %}
-              {% for key, _code, _label, max_score in (period_component_specs if period_component_specs is defined else []) %}
-              {% set field_max = period_component_field_max|default(100) %}
+              {% for key, _code, label, max_score in (period_component_specs if period_component_specs is defined else []) %}
               <td class="text-center">
-                <input type="number" step="0.1" min="0" max="{{ field_max }}"
-                       class="score-input ca-input" data-listed-max="{{ max_score|int }}" data-ceiling="{{ field_max }}"
+                <input type="number" step="0.1" min="0" max="{{ max_score|int }}"
+                       class="score-input ca-input" data-listed-max="{{ max_score|int }}" data-ceiling="{{ max_score|int }}"
                        name="{{ key }}_{{ student.id }}"
                        value="{{ comps.get(key, '') }}"
-                       title="Typical weight {{ max_score|int }}. You may enter up to {{ field_max }}.">
+                       title="{{ label }} — {{ max_score|int }} points">
               </td>
               {% endfor %}
-              <td class="text-center">
-                <input type="number" step="0.1" min="0" max="{{ period_total_extra_max|default(110) }}"
-                       class="score-input direct-total-input" data-ceiling="{{ period_total_extra_max|default(110) }}"
-                       name="direct_total_{{ student.id }}"
-                       value="{{ comps.get('direct_total', '') }}"
-                       title="Direct period grade when skipping activities (0–{{ period_total_listed_max|default(100)|int }}, extra to {{ period_total_extra_max|default(110)|int }})">
-              </td>
             {% endif %}
             <td class="text-center"><span class="cell-total-pill cell-total">{% if total_score is not none %}{{ '%.0f'|format(total_score) }}{% else %}—{% endif %}</span></td>
             <td class="text-center"><span class="cell-grade-badge cell-grade grade-{{ letter|lower }}">{{ letter }}</span></td>
@@ -930,7 +924,7 @@
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="15">
+            <td colspan="13">
               <div class="sheet-empty">
                 <strong>No students on this roster</strong>
                 The grade sheet is ready. Names and IDs will appear when students are enrolled in this class.
@@ -950,7 +944,7 @@
     {% elif grade_release and grade_release.status == 'approved' %}
     <div class="alert alert-success py-2 px-3 mb-2">VPA approved this period. Publishing again will require a new approval.</div>
     {% endif %}
-    <span class="scheme-note mb-0">Save Draft sends ATT–TEST scores to the student dashboard immediately. Publish submits the period total to the VPA. Students cannot view the official report card or grade sheet until approved.</span>
+    <span class="scheme-note mb-0">Save Draft sends C/PART–TEST scores to the student dashboard immediately. Publish submits the period total to the VPA. Students cannot view the official report card or grade sheet until approved.</span>
     <div class="d-flex gap-2">
       <button class="btn-save-draft" type="submit" name="publish_action" value="draft">
         <i class="fas fa-save me-1"></i> Save Draft
@@ -998,12 +992,9 @@
       }
       const row = e.target.closest('tr');
       const examInput = row.querySelector('.field-exam');
-      const directInput = row.querySelector('.direct-total-input');
       const caInputs = row.querySelectorAll('.ca-input');
       let total = 0;
-      if (directInput && directInput.value !== '') {
-        total = parseFloat(directInput.value) || 0;
-      } else if (caInputs.length) {
+      if (caInputs.length) {
         caInputs.forEach(input => { total += parseFloat(input.value) || 0; });
       } else {
         total = parseFloat(examInput && examInput.value) || 0;

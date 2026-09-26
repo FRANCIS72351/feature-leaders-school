@@ -34,6 +34,29 @@ def optional_int_coerce(value):
     return int(value)
 
 
+_EMAIL_PLACEHOLDERS = frozenset({
+    'n/a', 'na', 'none', 'nil', 'null', '-', '--', '0', 'no email', 'noemail',
+})
+
+
+def optional_email(form, field):
+    """Allow blank or placeholder text; only validate real email attempts."""
+    value = (field.data or '').strip()
+    if not value or value.lower() in _EMAIL_PLACEHOLDERS:
+        field.data = ''
+        return
+    field.data = value
+    try:
+        Email()(form, field)
+        return
+    except ValidationError:
+        pass
+    except Exception:
+        pass
+    if '@' not in value or '.' not in value.rsplit('@', 1)[-1]:
+        raise ValidationError('Enter a valid email address.')
+
+
 # --------------------------------------------------------------
 # AUTHENTICATION FORMS
 # --------------------------------------------------------------
@@ -144,7 +167,7 @@ class ParentReportGateForm(FlaskForm):
 class RegisterStudentForm(FlaskForm):
     first_name = StringField("First Name", validators=[DataRequired()])
     last_name = StringField("Last Name", validators=[DataRequired()])
-    email = StringField("Email", validators=[Optional(), Email()])
+    email = StringField("Email", validators=[Optional(), optional_email])
     password = PasswordField(
         "Portal Password",
         validators=[Optional(), Length(min=6, max=128)],
@@ -170,7 +193,7 @@ class RegisterStudentForm(FlaskForm):
         validators=[Optional()],
         description="Leave blank to auto-generate for new students.",
     )
-    parent_email = StringField("Parent Email", validators=[Optional(), Email()])
+    parent_email = StringField("Parent Email", validators=[Optional(), optional_email])
     guardian_name = StringField(
         "Parent / Guardian Full Name",
         validators=[Optional(), Length(max=120)],
@@ -187,7 +210,7 @@ class RegisterStudentForm(FlaskForm):
     )
     photo = FileField("Photo", validators=[FileAllowed(["jpg", "png", "jpeg", "gif", "webp"], "Images only!")])
     klass = SelectField("Assign Class", coerce=optional_int_coerce, validators=[Optional()])
-    academic_year = SelectField("Academic Year", coerce=optional_int_coerce, validators=[DataRequired()])
+    academic_year = SelectField("Academic Year", coerce=optional_int_coerce, validators=[Optional()])
     registration_fees = CurrencyField(
         "Student Registration Fee",
         validators=[Optional(), validate_currency],

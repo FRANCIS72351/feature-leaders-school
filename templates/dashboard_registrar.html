@@ -364,6 +364,26 @@
         display: block;
         animation: dashboardFadeGlide 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
+    .enroll-field-error {
+        color: #c82828;
+        font-size: 0.72rem;
+        font-weight: 700;
+        margin-top: 0.3rem;
+    }
+    .form-cyber.is-invalid, .form-select.is-invalid, .form-control.is-invalid {
+        border-color: #c82828 !important;
+        box-shadow: 0 0 0 0.15rem rgba(200, 40, 40, 0.15);
+    }
+    .enroll-error-list {
+        background: #fff1f2;
+        border: 1px solid #fecdd3;
+        color: #9f1239;
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        font-size: 0.82rem;
+        margin-bottom: 1rem;
+    }
+    .enroll-error-list ul { margin: 0.35rem 0 0; padding-left: 1.1rem; }
     .enroll-staff-guide {
         font-size: 0.78rem;
         color: #38bdf8;
@@ -1005,6 +1025,19 @@
                     </div>
                 </div>
 
+                {% if form.errors %}
+                <div class="enroll-error-list" role="alert">
+                    <strong>This registration could not be saved.</strong>
+                    <ul>
+                        {% for field, messages in form.errors.items() %}
+                            {% for message in messages %}
+                            <li>{% if field == 'csrf_token' %}Your session expired — try saving again.{% else %}{{ (form[field].label.text if form[field] is defined else field) }}: {{ message }}{% endif %}</li>
+                            {% endfor %}
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
                 <div class="enroll-staff-guide mb-3">
                     <i class="fas fa-info-circle me-1 text-cyan"></i> <strong>Registrar Quick Start:</strong>
                     <ol class="mb-0">
@@ -1030,13 +1063,14 @@
                             <div class="col-md-6">
                                 <label class="form-label small text-muted">Student ID (Optional)</label>
                                 <div class="input-group">
-                                    <input type="text" class="form-control form-cyber" id="lookup_student_id" name="student_id" placeholder="{{ suggested_student_id or 'e.g. 2526-00001' }} — leave blank to auto-assign">
+                                    <input type="text" class="form-control form-cyber{% if form.student_id.errors %} is-invalid{% endif %}" id="lookup_student_id" name="student_id" value="{{ form.student_id.data or '' }}" placeholder="{{ suggested_student_id or 'e.g. 2526-00001' }} — leave blank to auto-assign">
                                 </div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label small text-muted">Student Email Address <span class="text-rose">*</span></label>
                                 <div class="input-group">
-                                    <input type="email" class="form-control form-cyber" id="lookup_email" name="email" placeholder="student@school.edu" required>
+                                    <input type="email" class="form-control form-cyber{% if form.email.errors %} is-invalid{% endif %}" id="lookup_email" name="email" value="{{ form.email.data or '' }}" placeholder="student@school.edu">
+                                    {% if form.email.errors %}<div class="enroll-field-error">{{ form.email.errors[0] }}</div>{% endif %}
                                     <button class="btn btn-lookup" type="button" id="btnLookupStudent">
                                         <i class="fas fa-magnifying-glass me-1"></i> Lookup
                                         <span class="spinner-border spinner-border-sm lookup-spinner ms-1" id="lookupSpinner" role="status"></span>
@@ -1068,29 +1102,33 @@
                                 <div class="col-md-6">
                                     <label class="form-label small text-muted">First Name <span class="text-rose">*</span></label>
                                     <div class="field-locked-wrap" id="wrap_first_name">
-                                        <input type="text" class="form-control form-cyber" id="first_name" name="first_name" data-step-required>
+                                        <input type="text" class="form-control form-cyber{% if form.first_name.errors %} is-invalid{% endif %}" id="first_name" name="first_name" value="{{ form.first_name.data or '' }}" data-step-required>
+                                        {% if form.first_name.errors %}<div class="enroll-field-error">{{ form.first_name.errors[0] }}</div>{% endif %}
                                         <i class="fas fa-lock lock-indicator" title="Locked from existing record"></i>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small text-muted">Last Name <span class="text-rose">*</span></label>
                                     <div class="field-locked-wrap" id="wrap_last_name">
-                                        <input type="text" class="form-control form-cyber" id="last_name" name="last_name" data-step-required>
+                                        <input type="text" class="form-control form-cyber{% if form.last_name.errors %} is-invalid{% endif %}" id="last_name" name="last_name" value="{{ form.last_name.data or '' }}" data-step-required>
+                                        {% if form.last_name.errors %}<div class="enroll-field-error">{{ form.last_name.errors[0] }}</div>{% endif %}
                                         <i class="fas fa-lock lock-indicator" title="Locked from existing record"></i>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small text-muted">Gender <span class="text-rose">*</span></label>
-                                    <select class="form-select form-cyber" id="gender" name="gender" data-step-required>
+                                    <select class="form-select form-cyber{% if form.gender.errors %} is-invalid{% endif %}" id="gender" name="gender" data-step-required>
                                         <option value="">Select Gender...</option>
-                                        <option value="Male">Male</option>
-                                        <option value="Female">Female</option>
-                                        <option value="Other">Other</option>
+                                        <option value="Male" {% if form.gender.data == 'Male' %}selected{% endif %}>Male</option>
+                                        <option value="Female" {% if form.gender.data == 'Female' %}selected{% endif %}>Female</option>
+                                        <option value="Other" {% if form.gender.data == 'Other' %}selected{% endif %}>Other</option>
                                     </select>
+                                    {% if form.gender.errors %}<div class="enroll-field-error">{{ form.gender.errors[0] }}</div>{% endif %}
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small text-muted">Date of Birth <span class="text-rose">*</span></label>
-                                    <input type="date" class="form-control form-cyber" id="dob" name="dob" data-step-required>
+                                    <input type="date" class="form-control form-cyber{% if form.dob.errors %} is-invalid{% endif %}" id="dob" name="dob" value="{{ form.dob.data.isoformat() if form.dob.data else '' }}" data-step-required>
+                                    {% if form.dob.errors %}<div class="enroll-field-error">{{ form.dob.errors[0] }}</div>{% endif %}
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small enroll-help-label" for="photo">Student Photo</label>
@@ -1106,12 +1144,13 @@
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small enroll-help-label" for="level">Academic Level <span class="text-rose">*</span></label>
-                                    <select class="form-select form-cyber" id="level" name="level" data-step-required>
+                                    <select class="form-select form-cyber{% if form.level.errors %} is-invalid{% endif %}" id="level" name="level" data-step-required>
                                         <option value="">Select Level...</option>
                                         {% for value, label in form.level.choices %}
-                                        <option value="{{ value }}">{{ label }}</option>
+                                        <option value="{{ value }}" {% if form.level.data == value %}selected{% endif %}>{{ label }}</option>
                                         {% endfor %}
                                     </select>
+                                    {% if form.level.errors %}<div class="enroll-field-error">{{ form.level.errors[0] }}</div>{% endif %}
                                     <div class="academic-division-readout" id="divisionReadout" hidden>
                                         <span class="division-chip"><i class="fas fa-layer-group" aria-hidden="true"></i> <span id="divisionChipLabel"></span></span>
                                     </div>
@@ -1139,14 +1178,14 @@
                                 <div class="col-md-6">
                                     <label class="form-label small text-muted">Target Class / Grade Level <span class="text-rose">*</span></label>
                                     <div class="field-locked-wrap" id="wrap_class_id">
-                                        <select class="form-select form-cyber" id="class_id" name="klass" data-step-required>
+                                        <select class="form-select form-cyber{% if form.klass.errors %} is-invalid{% endif %}" id="class_id" name="klass" data-step-required>
                                             <option value="">Choose Class Folder...</option>
                                             {% set class_groups = registration_class_groups if registration_class_groups is defined and registration_class_groups else classes_by_division %}
                                             {% for group in class_groups %}
                                             <optgroup label="{{ group.label }}">
                                                 {% set class_opts = group['options']|default(group['classes'], true) %}
                                                 {% for klass in class_opts %}
-                                                <option value="{{ klass.id }}" data-division="{{ group.label }}">{{ klass.name }} — {{ group.label }}</option>
+                                                <option value="{{ klass.id }}" data-division="{{ group.label }}" {% if form.klass.data and form.klass.data|string == klass.id|string %}selected{% endif %}>{{ klass.name }} — {{ group.label }}</option>
                                                 {% endfor %}
                                             </optgroup>
                                             {% endfor %}
@@ -1182,15 +1221,16 @@
                             <div class="row g-3">
                                 <div class="col-md-4">
                                     <label class="form-label small text-muted">Parent / Guardian Full Name</label>
-                                    <input type="text" class="form-control form-cyber" id="guardian_name" name="guardian_name" maxlength="120" placeholder="Name as printed on the ID card" autocomplete="name">
+                                    <input type="text" class="form-control form-cyber{% if form.guardian_name.errors %} is-invalid{% endif %}" id="guardian_name" name="guardian_name" maxlength="120" value="{{ form.guardian_name.data or '' }}" placeholder="Name as printed on the ID card" autocomplete="name">
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label small text-muted">Parent / Guardian Email</label>
-                                    <input type="email" class="form-control form-cyber" id="parent_email" name="parent_email" placeholder="parent@example.com" autocomplete="email">
+                                    <input type="email" class="form-control form-cyber{% if form.parent_email.errors %} is-invalid{% endif %}" id="parent_email" name="parent_email" value="{{ form.parent_email.data or '' }}" placeholder="parent@example.com" autocomplete="email">
+                                    {% if form.parent_email.errors %}<div class="enroll-field-error">{{ form.parent_email.errors[0] }}</div>{% endif %}
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label small text-muted">Parent Contact Telephone</label>
-                                    <input type="tel" class="form-control form-cyber" id="guardian_phone" name="parent_phone">
+                                    <input type="tel" class="form-control form-cyber{% if form.parent_phone.errors %} is-invalid{% endif %}" id="guardian_phone" name="parent_phone" value="{{ form.parent_phone.data or '' }}">
                                 </div>
                             </div>
                         </div>
@@ -1251,7 +1291,7 @@
                                 <div class="col-md-4">
                                     <label class="form-label" for="academic_year">Academic Year <span class="req-star">*</span></label>
                                     {% set selected_year_id = form.academic_year.data or (display_year.id if display_year else (active_year.id if active_year else none)) %}
-                                    <select class="form-select" id="academic_year" name="academic_year" data-step-required>
+                                    <select class="form-select{% if form.academic_year.errors %} is-invalid{% endif %}" id="academic_year" name="academic_year" data-step-required>
                                         {% for y in years %}
                                         <option value="{{ y.id }}" {% if selected_year_id|string == y.id|string %}selected{% endif %}>{{ y.name }}</option>
                                         {% endfor %}
@@ -1674,6 +1714,24 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     syncStepRequired(false);
     syncReceiptField();
+
+    {% if form.errors or registration_form_invalid|default(false) %}
+    if (step2Panel) {
+        if (wizardStep1) {
+            wizardStep1.classList.remove('active');
+            wizardStep1.classList.add('done');
+        }
+        if (wizardStep2) wizardStep2.classList.add('active');
+        step2Panel.classList.add('visible');
+        syncStepRequired(true);
+        syncReceiptField();
+        applyLevelFromClass();
+        const firstError = enrollmentForm && enrollmentForm.querySelector('.is-invalid, .enroll-field-error');
+        if (firstError) {
+            firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
+    {% endif %}
 
     if (enrollmentForm) {
         enrollmentForm.addEventListener('keydown', function (e) {

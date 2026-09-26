@@ -31,33 +31,31 @@ def grading_period_label(period_num):
 
 
 # Period continuous assessment totaling 100 (no period exam).
-# ATT 10 + PART 10 + QUIZ 15 + ASSG 20 + CW 15 + HW 10 + TEST 20 = 100
-# Form field names stay stable (homework uses `other`).
+# C/PART 5 + QUIZ 30 + ASSG 5 + CW 15 + ATT 5 + TEST 40 = 100
+# Form field names stay stable; homework (`other`) and direct total are retired.
 PERIOD_COMPONENT_SPECS = (
-    ('attendance', 'ATT', 'Attendance', 10.0),
-    ('participation', 'PART', 'Participation', 10.0),
-    ('quiz', 'QUIZ', 'Quiz', 15.0),
-    ('assignment', 'ASSG', 'Assignment', 20.0),
-    ('classwork', 'CW', 'Class Work', 15.0),
-    ('other', 'HW', 'Homework', 10.0),
-    ('test', 'TEST', 'Test', 20.0),
+    ('participation', 'C/PART', 'C/Participation', 5.0),
+    ('quiz', 'QUIZ', 'Quiz', 30.0),
+    ('assignment', 'ASSG', 'Assignment', 5.0),
+    ('classwork', 'CW', 'Classwork', 15.0),
+    ('attendance', 'ATT', 'Attendance', 5.0),
+    ('test', 'TEST', 'Test', 40.0),
 )
 PERIOD_COMPONENT_MAXIMA = {
     key: max_score for key, _code, _label, max_score in PERIOD_COMPONENT_SPECS
 }
 PERIOD_COMPONENT_SCHEME_NOTE = (
-    'ATT 10 + PART 10 + QUIZ 15 + ASSG 20 + CW 15 + HW 10 + TEST 20 = 100'
+    'C/Participation 5 + Quiz 30 + Assignment 5 + Classwork 15 + Attendance 5 + Test 40 = 100'
 )
-# Extra credit / professional override: listed max is the published weight.
-# Each activity input accepts 0–100 so teachers can enter above the listed weight.
-PERIOD_COMPONENT_EXTRA_CREDIT_FACTOR = 2.0
+# Each activity input is capped at its listed points. No extra-credit over-weight.
+PERIOD_COMPONENT_EXTRA_CREDIT_FACTOR = 1.0
 PERIOD_COMPONENT_FIELD_MAX = 100.0
 PERIOD_TOTAL_LISTED_MAX = 100.0
-PERIOD_TOTAL_EXTRA_CREDIT_MAX = 110.0
+PERIOD_TOTAL_EXTRA_CREDIT_MAX = 100.0
 
 
 def period_component_ceiling(listed_max):
-    """Highest score accepted for a component, including extra credit."""
+    """Highest score accepted for a component (equals the listed points)."""
     try:
         listed_max = float(listed_max)
     except (TypeError, ValueError):
@@ -75,6 +73,5 @@ PERIOD_COMPONENT_ACTIVITY_TYPES = {
     'quiz': 'Quiz',
     'assignment': 'Assignment',
     'classwork': 'Class Work',
-    'other': 'Assignment',
     'test': 'Test',
 }

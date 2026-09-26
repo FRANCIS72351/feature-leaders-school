@@ -55,8 +55,8 @@
                 <label for="role" class="form-label small fw-bold text-muted text-uppercase">Role</label>
                 <select class="form-select" id="role" name="role">
                     <option value="">All roles</option>
-                    {% for role in staff_roles %}
-                    <option value="{{ role }}" {% if role_filter == role %}selected{% endif %}>{{ role|title }}</option>
+                    {% for role, label in staff_roles %}
+                    <option value="{{ role }}" {% if role_filter == role %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
             </div>
