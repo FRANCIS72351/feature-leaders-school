@@ -3,7 +3,7 @@ from flask import Flask, render_template, redirect, url_for, flash, request, Res
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
-from models import db, User, Student, Teacher, Class, Announcement, Grade, GradeRelease, TranscriptRelease, AcademicYear, ClassSubjectTeacher, Room, Suspension, Discipline, StudentPayment, StudentRegistryDocument, StaffDocument, default_static_photo_url, school_logo_static_url, liberia_seal_static_url, principal_signature_static_url, display_font_static_url, resolve_parent_guardian_name
+from models import db, User, Student, Teacher, Class, Announcement, Grade, GradeRelease, StudentPeriodRelease, TranscriptRelease, AcademicYear, ClassSubjectTeacher, Room, Suspension, Discipline, StudentPayment, StudentRegistryDocument, StaffDocument, default_static_photo_url, school_logo_static_url, liberia_seal_static_url, principal_signature_static_url, display_font_static_url, resolve_parent_guardian_name
 from itsdangerous import URLSafeTimedSerializer
 import pyotp
 from reportlab.pdfgen import canvas
@@ -2927,47 +2927,67 @@ def record_student_class_enrollment(student, class_id, academic_year_id=None):
 
     A mid-year correction (wrong folder at registration) updates the existing
     year row so the student moves instead of staying in both classes.
+    New registrations are flushed first so enrollments.student_id is never NULL.
     """
     if not student or not class_id:
         return
+    try:
+        class_id = int(class_id)
+    except (TypeError, ValueError):
+        return
+    if class_id <= 0:
+        return
+
+    # New registrar saves build the Student in memory first. Writing the
+    # enrollment before students.id exists trips SQLite NOT NULL + autoflush.
+    if getattr(student, 'id', None) is None:
+        if student not in db.session:
+            db.session.add(student)
+        db.session.flush()
+    student_id = getattr(student, 'id', None)
+    if not student_id:
+        return
+
     if academic_year_id is None:
         academic_year_id = student.academic_year_id
     if academic_year_id is None:
         active_year = get_active_academic_year()
         academic_year_id = active_year.id if active_year else None
 
-    if academic_year_id is not None:
-        year_rows = (
-            Enrollment.query.filter_by(
-                student_id=student.id,
-                academic_year_id=academic_year_id,
+    with db.session.no_autoflush:
+        if academic_year_id is not None:
+            year_rows = (
+                Enrollment.query.filter_by(
+                    student_id=student_id,
+                    academic_year_id=academic_year_id,
+                )
+                .order_by(Enrollment.id.desc())
+                .all()
             )
-            .order_by(Enrollment.id.desc())
-            .all()
-        )
-        if year_rows:
-            keep = year_rows[0]
-            keep.class_id = class_id
-            for extra in year_rows[1:]:
-                db.session.delete(extra)
-            return
+            if year_rows:
+                keep = year_rows[0]
+                keep.class_id = class_id
+                for extra in year_rows[1:]:
+                    db.session.delete(extra)
+                return
 
-    query = Enrollment.query.filter_by(student_id=student.id, class_id=class_id)
-    if academic_year_id is not None:
-        query = query.filter(
-            or_(
-                Enrollment.academic_year_id == academic_year_id,
-                Enrollment.academic_year_id.is_(None),
+        query = Enrollment.query.filter_by(student_id=student_id, class_id=class_id)
+        if academic_year_id is not None:
+            query = query.filter(
+                or_(
+                    Enrollment.academic_year_id == academic_year_id,
+                    Enrollment.academic_year_id.is_(None),
+                )
             )
-        )
-    exists = query.first()
+        exists = query.first()
+
     if exists:
         if academic_year_id is not None and exists.academic_year_id is None:
             exists.academic_year_id = academic_year_id
         return
 
     db.session.add(Enrollment(
-        student_id=student.id,
+        student_id=student_id,
         class_id=class_id,
         academic_year_id=academic_year_id,
     ))
@@ -3772,6 +3792,61 @@ def is_grade_package_approved(academic_year_id, class_id, period):
     return bool(release and release.status == GradeRelease.STATUS_APPROVED)
 
 
+def is_student_period_released(academic_year_id, student_id, period, class_id=None):
+    """True when the class period is approved or this student was released alone."""
+    if not academic_year_id or not student_id or period not in range(1, 9):
+        return False
+    if class_id and is_grade_package_approved(academic_year_id, class_id, period):
+        return True
+    row = StudentPeriodRelease.query.filter_by(
+        academic_year_id=academic_year_id,
+        student_id=student_id,
+        period=period,
+    ).first()
+    return bool(row and row.status == StudentPeriodRelease.STATUS_APPROVED)
+
+
+def student_has_submitted_period_grade(academic_year_id, student_id, period):
+    if not academic_year_id or not student_id or period not in range(1, 9):
+        return False
+    for grade in Grade.query.filter_by(
+        student_id=student_id,
+        academic_year_id=academic_year_id,
+        submitted=True,
+    ).all():
+        if _grade_release_period(grade) == period:
+            return True
+    return False
+
+
+def approve_student_period_grade(student, period, academic_year_id, user, class_id=None):
+    """Release one marking period to one student without waiting on the whole class."""
+    if not student or period not in range(1, 9) or not academic_year_id:
+        return None
+    if class_id is None:
+        class_id = get_student_class_id(student, academic_year_id)
+    if not student_has_submitted_period_grade(academic_year_id, student.id, period):
+        return None
+    row = StudentPeriodRelease.query.filter_by(
+        academic_year_id=academic_year_id,
+        student_id=student.id,
+        period=period,
+    ).first()
+    if not row:
+        row = StudentPeriodRelease(
+            academic_year_id=academic_year_id,
+            student_id=student.id,
+            class_id=class_id,
+            period=period,
+        )
+        db.session.add(row)
+    row.status = StudentPeriodRelease.STATUS_APPROVED
+    row.class_id = class_id or row.class_id
+    row.approved_by_id = getattr(user, 'id', None)
+    row.approved_at = datetime.now(timezone.utc)
+    return row
+
+
 def class_submitted_periods(academic_year_id, class_id):
     """Marking periods this class actually ran (has teacher-submitted grades)."""
     if not academic_year_id or not class_id:
@@ -3890,7 +3965,9 @@ def grade_period_is_student_visible(grade):
     if not class_id and grade.student_id:
         student = db.session.get(Student, grade.student_id)
         class_id = get_student_class_id(student, grade.academic_year_id) if student else None
-    return is_grade_package_approved(grade.academic_year_id, class_id, period)
+    return is_student_period_released(
+        grade.academic_year_id, grade.student_id, period, class_id,
+    )
 
 
 def student_official_documents_state(student, year_id, period=None):
@@ -3951,7 +4028,7 @@ def student_official_documents_state(student, year_id, period=None):
         )
         if sample and sample.class_id:
             pkg_class_id = sample.class_id
-        if is_grade_package_approved(year_id, pkg_class_id, check_period):
+        if is_student_period_released(year_id, student.id, check_period, pkg_class_id):
             approved_periods.append(check_period)
             continue
         release = GradeRelease.query.filter_by(
@@ -5924,6 +6001,41 @@ def ensure_grade_releases_table():
     except Exception:
         db.session.rollback()
     _grandfather_existing_grade_releases()
+    ensure_student_period_releases_table()
+
+
+def ensure_student_period_releases_table():
+    """Create student_period_releases so VPA/VPI can release one student at a time."""
+    existing = {
+        row[1]
+        for row in db.session.execute(text('PRAGMA table_info("student_period_releases")')).fetchall()
+    }
+    if existing:
+        return
+    db.session.execute(text(
+        """
+        CREATE TABLE IF NOT EXISTS student_period_releases (
+            id INTEGER PRIMARY KEY,
+            academic_year_id INTEGER NOT NULL,
+            student_id INTEGER NOT NULL,
+            class_id INTEGER,
+            period INTEGER NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'approved',
+            approved_by_id INTEGER,
+            approved_at DATETIME,
+            FOREIGN KEY(academic_year_id) REFERENCES academic_years(id) ON DELETE CASCADE,
+            FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE,
+            FOREIGN KEY(class_id) REFERENCES classes(id) ON DELETE CASCADE,
+            FOREIGN KEY(approved_by_id) REFERENCES users(id) ON DELETE SET NULL,
+            UNIQUE(academic_year_id, student_id, period)
+        )
+        """
+    ))
+    db.session.execute(text(
+        'CREATE INDEX IF NOT EXISTS ix_student_period_releases_year_student '
+        'ON student_period_releases(academic_year_id, student_id)'
+    ))
+    db.session.commit()
 
 
 def _grandfather_existing_grade_releases():
@@ -17013,13 +17125,13 @@ def register_student():
                     student_id=student_id_value,
                     registration_type='New',
                 )
+                db.session.add(student)
                 registration_fee_value, academic_year_id = apply_student_form_to_record(
                     student,
                     form,
                     registrar_name=current_user.full_name,
                 )
                 student.student_id = student_id_value
-                db.session.add(student)
                 flash(
                     f"New student {student.first_name} {student.last_name} registered successfully "
                     f"(ID: {student_id_value}).",
@@ -23469,7 +23581,38 @@ def _vpa_fee_snapshots(students, display_year, class_map=None):
     return snapshots
 
 
-def _vpa_student_release_row(student, class_id, *, fee_map, releases_by_class, year_id, year_wide, approved_transcript_ids):
+_VPA_PERIOD_SHORT_LABELS = {
+    1: 'P1', 2: 'P2', 3: 'P3', 7: 'Exam 1',
+    4: 'P4', 5: 'P5', 6: 'P6', 8: 'Exam 2',
+}
+
+
+def _vpa_student_period_actions(
+    student_id, class_id, *, submitted_periods, class_releases, student_released_periods,
+):
+    actions = []
+    for period, label in GRADING_PERIODS:
+        if period not in submitted_periods:
+            continue
+        class_release = (class_releases or {}).get(period)
+        via_class = bool(class_release and class_release.status == GradeRelease.STATUS_APPROVED)
+        via_student = period in (student_released_periods or set())
+        released = via_class or via_student
+        actions.append({
+            'period': period,
+            'label': label,
+            'short_label': _VPA_PERIOD_SHORT_LABELS.get(period, label),
+            'released': released,
+            'via_class': via_class,
+            'can_release': not released,
+        })
+    return actions
+
+
+def _vpa_student_release_row(
+    student, class_id, *, fee_map, releases_by_class, year_id, year_wide,
+    approved_transcript_ids, submitted_by_student=None, student_released_by_student=None,
+):
     fee = fee_map.get(student.id) or {
         'owing': False,
         'fee_label': 'No fee on file',
@@ -23478,7 +23621,14 @@ def _vpa_student_release_row(student, class_id, *, fee_map, releases_by_class, y
         'tuition_cleared': False,
     }
     class_releases = releases_by_class.get(class_id) or {}
-    grade_sheet_unlocked = any(
+    period_actions = _vpa_student_period_actions(
+        student.id,
+        class_id,
+        submitted_periods=(submitted_by_student or {}).get(student.id, set()),
+        class_releases=class_releases,
+        student_released_periods=(student_released_by_student or {}).get(student.id, set()),
+    )
+    grade_sheet_unlocked = any(slot['released'] for slot in period_actions) or any(
         release.status == GradeRelease.STATUS_APPROVED
         for release in class_releases.values()
     )
@@ -23492,6 +23642,8 @@ def _vpa_student_release_row(student, class_id, *, fee_map, releases_by_class, y
         'fee_chip': fee['fee_chip'],
         'fee_balance': fee['fee_balance'],
         'tuition_cleared': fee['tuition_cleared'],
+        'period_actions': period_actions,
+        'pending_student_periods': sum(1 for slot in period_actions if slot['can_release']),
         'grade_sheet_unlocked': grade_sheet_unlocked,
         'report_card_unlocked': report_card_unlocked,
         'transcript_released': bool(year_wide) or student.id in approved_transcript_ids,
@@ -23592,6 +23744,8 @@ def _build_vpa_release_cabinet(display_year, *, viewing_archived=False, open_cla
             releases_by_class[release.class_id][release.period] = release
 
     submitted_counts = defaultdict(lambda: defaultdict(int))
+    submitted_by_student = defaultdict(set)
+    student_released_by_student = defaultdict(set)
     if display_year:
         for grade in Grade.query.filter_by(
             academic_year_id=display_year.id,
@@ -23599,8 +23753,17 @@ def _build_vpa_release_cabinet(display_year, *, viewing_archived=False, open_cla
         ).all():
             period = _grade_release_period(grade)
             class_id = grade.class_id
-            if class_id and period in range(1, 9):
-                submitted_counts[class_id][period] += 1
+            if period in range(1, 9):
+                if class_id:
+                    submitted_counts[class_id][period] += 1
+                if grade.student_id:
+                    submitted_by_student[grade.student_id].add(period)
+        for row in StudentPeriodRelease.query.filter_by(
+            academic_year_id=display_year.id,
+            status=StudentPeriodRelease.STATUS_APPROVED,
+        ).all():
+            if row.student_id and row.period in range(1, 9):
+                student_released_by_student[row.student_id].add(row.period)
 
     students_by_class = defaultdict(list)
     unassigned_students = []
@@ -23625,6 +23788,8 @@ def _build_vpa_release_cabinet(display_year, *, viewing_archived=False, open_cla
                 year_id=year_id,
                 year_wide=year_wide,
                 approved_transcript_ids=approved_transcript_ids,
+                submitted_by_student=submitted_by_student,
+                student_released_by_student=student_released_by_student,
             )
             for student in students_by_class.get(klass.id, [])
         ]
@@ -23635,6 +23800,7 @@ def _build_vpa_release_cabinet(display_year, *, viewing_archived=False, open_cla
         ]
         eligible_transcript = [row for row in rows if not row['transcript_released']]
         folder_owing = sum(1 for row in rows if row['owing'])
+        student_period_pending = sum(row.get('pending_student_periods') or 0 for row in rows)
         pending_count += len(pending_releases)
         owing_count += folder_owing
         transcript_pending += len(eligible_transcript)
@@ -23649,7 +23815,7 @@ def _build_vpa_release_cabinet(display_year, *, viewing_archived=False, open_cla
             'klass': klass,
             'period_slots': slots,
             'pending_releases': pending_releases,
-            'pending_count': len(pending_releases),
+            'pending_count': len(pending_releases) + student_period_pending,
             'owing_count': folder_owing,
             'transcript_pending_count': len(eligible_transcript),
             'eligible_transcript_students': eligible_transcript,
@@ -23667,6 +23833,8 @@ def _build_vpa_release_cabinet(display_year, *, viewing_archived=False, open_cla
             year_id=year_id,
             year_wide=year_wide,
             approved_transcript_ids=approved_transcript_ids,
+            submitted_by_student=submitted_by_student,
+            student_released_by_student=student_released_by_student,
         )
         for student in unassigned_students
     ]
@@ -23896,11 +24064,122 @@ def vpa_return_grade_release(release_id):
     )
 
 
+@app.route('/vpa/grade-releases/class/<int:class_id>', methods=['GET'])
+@login_required
+def vpa_class_grade_folder(class_id):
+    """Open one class folder so VPA/VPI can release each student's periods."""
+    blocked = deny_unless_roles(ACADEMIC_RELEASE_ROLES)
+    if blocked:
+        return blocked
+    klass = Class.query.get_or_404(class_id)
+    display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
+        session_key=dashboard_year_session_key(),
+    )
+    cabinet = _build_vpa_release_cabinet(
+        display_year,
+        viewing_archived=viewing_archived,
+        open_class_id=klass.id,
+    )
+    folder = next(
+        (item for item in cabinet['release_folders'] if item.get('id') == klass.id),
+        None,
+    )
+    if not folder:
+        flash(f'{klass.name} is not on the grade cabinet for this academic year.', 'warning')
+        return redirect(url_for(
+            'vpa_grade_releases',
+            academic_year_id=display_year.id if display_year else None,
+        ))
+    return render_template(
+        'vpa_class_grade_folder.html',
+        klass=klass,
+        folder=folder,
+        display_year=display_year,
+        active_year=active_year,
+        years=years,
+        viewing_archived=viewing_archived,
+        cabinet_mode='grades',
+        year_wide=cabinet['year_wide'],
+        open_class_id=klass.id,
+        folder_page=True,
+        release_folders_by_division=[{
+            'key': 'open-class',
+            'label': folder.get('division_label') or 'Class folder',
+            'classes': [folder],
+        }],
+        unassigned_folder=None,
+    )
+
+
+@app.route(
+    '/vpa/grade-releases/student/<int:student_id>/period/<int:period>/approve',
+    methods=['POST'],
+    endpoint='vpa_approve_student_period',
+)
+@login_required
+def vpa_approve_student_period(student_id, period):
+    """Release one marking period to one student inside a class folder."""
+    blocked = deny_unless_roles(ACADEMIC_RELEASE_ROLES)
+    if blocked:
+        return blocked
+    student = Student.query.get_or_404(student_id)
+    year_id = request.form.get('academic_year_id', type=int)
+    display_year = db.session.get(AcademicYear, year_id) if year_id else get_active_academic_year()
+    if not display_year:
+        flash('Select an academic year before releasing a student period.', 'warning')
+        return redirect(url_for('vpa_grade_releases'))
+    class_id = request.form.get('class_id', type=int) or get_student_class_id(
+        student, display_year.id,
+    )
+    if period not in range(1, 9):
+        flash('That marking period is not valid.', 'warning')
+        return _vpa_release_page_redirect(
+            'vpa_grade_releases',
+            year_id=display_year.id,
+            class_id=class_id,
+        )
+    if is_grade_package_approved(display_year.id, class_id, period):
+        flash(
+            f'{grading_period_label(period)} is already released for the whole class.',
+            'info',
+        )
+        return redirect(url_for(
+            'vpa_class_grade_folder',
+            class_id=class_id,
+            academic_year_id=display_year.id,
+        ) if class_id else url_for('vpa_grade_releases', academic_year_id=display_year.id))
+    row = approve_student_period_grade(
+        student, period, display_year.id, current_user, class_id=class_id,
+    )
+    if not row:
+        flash(
+            f'{student.full_name} has no published {grading_period_label(period)} '
+            'score to release yet.',
+            'warning',
+        )
+        return redirect(url_for(
+            'vpa_class_grade_folder',
+            class_id=class_id,
+            academic_year_id=display_year.id,
+        ) if class_id else url_for('vpa_grade_releases', academic_year_id=display_year.id))
+    db.session.commit()
+    flash(
+        f'{grading_period_label(period)} is released for {student.full_name}. '
+        'That student may now view this period on the grade sheet.',
+        'success',
+    )
+    return redirect(url_for(
+        'vpa_class_grade_folder',
+        class_id=class_id,
+        academic_year_id=display_year.id,
+    ) if class_id else url_for('vpa_grade_releases', academic_year_id=display_year.id))
+
+
 @app.route('/vpa/grade-releases/class/<int:class_id>/approve', methods=['POST'])
 @login_required
 def vpa_approve_class_grade_releases(class_id):
     """Approve every pending period package for one class in one action."""
-    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    blocked = deny_unless_roles(ACADEMIC_RELEASE_ROLES)
     if blocked:
         return blocked
     klass = Class.query.get_or_404(class_id)

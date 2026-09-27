@@ -6,10 +6,11 @@ from types import SimpleNamespace
 from app import (
     app,
     apply_returning_retention_class,
+    record_student_class_enrollment,
     returning_student_retention_info,
 )
 from constants import ROLE_REGISTRAR
-from models import AcademicYear, Class, Student, User, db
+from models import AcademicYear, Class, Enrollment, Student, User, db
 
 
 class RegistrarRepeatLookupTestCase(unittest.TestCase):
@@ -124,6 +125,10 @@ class RegistrarRepeatLookupTestCase(unittest.TestCase):
     def tearDown(self):
         with self.app.app_context():
             db.session.rollback()
+            if self.created['students']:
+                Enrollment.query.filter(
+                    Enrollment.student_id.in_(self.created['students'])
+                ).delete(synchronize_session=False)
             for student_id in self.created['students']:
                 Student.query.filter_by(id=student_id).delete(synchronize_session=False)
             db.session.flush()
@@ -218,6 +223,32 @@ class RegistrarRepeatLookupTestCase(unittest.TestCase):
         self.assertIn('retention-placement-banner is-repeat', html)
         self.assertIn(self.class_name, html)
         self.assertNotIn('reparting', html.lower())
+
+    def test_new_registration_enrollment_waits_for_student_id(self):
+        """Registrar save used to insert enrollments.student_id=NULL and crash."""
+        with self.app.app_context():
+            student = Student(
+                student_id=f'7709-{int(self.unique[:4], 16) % 90000 + 10000:05d}',
+                first_name='Fresh',
+                last_name='Enrollee',
+                dob=date(2013, 1, 2),
+                gender='Male',
+                klass_id=self.class_id,
+                academic_year_id=self.year_id,
+                status='ACTIVE',
+                registration_type='New',
+            )
+            record_student_class_enrollment(
+                student, self.class_id, academic_year_id=self.year_id,
+            )
+            AcademicYear.query.filter_by(id=self.year_id).first()
+            self.assertIsNotNone(student.id)
+            row = Enrollment.query.filter_by(
+                student_id=student.id, class_id=self.class_id,
+            ).first()
+            self.assertIsNotNone(row)
+            self.assertEqual(row.academic_year_id, self.year_id)
+            self.created['students'].append(student.id)
 
     def test_student_folder_shows_summer_school_banner(self):
         self._login()

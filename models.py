@@ -1377,6 +1377,55 @@ class GradeRelease(db.Model):
         )
 
 
+class StudentPeriodRelease(db.Model):
+    """VPA / VPI stamp that releases one marking period to one student."""
+    __tablename__ = "student_period_releases"
+
+    STATUS_APPROVED = "approved"
+
+    id = db.Column(db.Integer, primary_key=True)
+    academic_year_id = db.Column(
+        db.Integer, db.ForeignKey("academic_years.id", ondelete="CASCADE"), nullable=False
+    )
+    student_id = db.Column(
+        db.Integer, db.ForeignKey("students.id", ondelete="CASCADE"), nullable=False
+    )
+    class_id = db.Column(
+        db.Integer, db.ForeignKey("classes.id", ondelete="CASCADE"), nullable=True
+    )
+    period = db.Column(db.Integer, nullable=False)
+    status = db.Column(
+        db.String(20), nullable=False, default=STATUS_APPROVED, server_default="approved"
+    )
+    approved_by_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approved_at = db.Column(db.DateTime, nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "academic_year_id", "student_id", "period",
+            name="uq_student_period_release_year_student_period",
+        ),
+        db.Index("ix_student_period_releases_year_student", "academic_year_id", "student_id"),
+    )
+
+    academic_year = db.relationship("AcademicYear")
+    student = db.relationship("Student")
+    klass = db.relationship("Class")
+    approved_by = db.relationship("User", foreign_keys=[approved_by_id])
+
+    @property
+    def is_approved(self):
+        return self.status == self.STATUS_APPROVED
+
+    def __repr__(self):
+        return (
+            f"<StudentPeriodRelease year={self.academic_year_id} "
+            f"student={self.student_id} period={self.period} status={self.status}>"
+        )
+
+
 class TranscriptRelease(db.Model):
     """VPA / Principal approval to release Official Transcript to students and parents."""
     __tablename__ = "transcript_releases"

@@ -17,7 +17,7 @@ from app import (
     _competition_ranks,
     _ordinal_rank,
 )
-from models import AcademicYear, Class, Grade, GradeRelease, Student, User, db
+from models import AcademicYear, Class, Grade, GradeRelease, Student, StudentPeriodRelease, User, db
 
 
 class GradeReleaseAccessTestCase(unittest.TestCase):
@@ -146,6 +146,12 @@ class GradeReleaseAccessTestCase(unittest.TestCase):
 
     def tearDown(self):
         with self.app.app_context():
+            StudentPeriodRelease.query.filter(
+                db.or_(
+                    StudentPeriodRelease.academic_year_id.in_(self.created['years'] or [0]),
+                    StudentPeriodRelease.student_id.in_(self.created['students'] or [0]),
+                )
+            ).delete(synchronize_session=False)
             if self.created['years'] or self.created['classes']:
                 GradeRelease.query.filter(
                     db.or_(
@@ -882,6 +888,12 @@ class ClassRankTestCase(unittest.TestCase):
 
     def tearDown(self):
         with self.app.app_context():
+            StudentPeriodRelease.query.filter(
+                db.or_(
+                    StudentPeriodRelease.academic_year_id.in_(self.created['years'] or [0]),
+                    StudentPeriodRelease.student_id.in_(self.created['students'] or [0]),
+                )
+            ).delete(synchronize_session=False)
             if self.created['years'] or self.created['classes']:
                 GradeRelease.query.filter(
                     db.or_(
@@ -1036,6 +1048,44 @@ class ClassRankTestCase(unittest.TestCase):
             # Staff sheet includes submitted P2, so Ann's yearly rises but rank stays 1.
             self.assertGreater(staff['average'], approved['average'])
             self.assertEqual(staff['rank'], 1)
+
+
+class StudentPeriodReleaseTestCase(GradeReleaseAccessTestCase):
+    def test_vpi_opens_class_folder_and_releases_one_student_period(self):
+        with self.app.app_context():
+            vpi = User(
+                email=f'vpi-{self.token}@test.com',
+                full_name='VPI Officer',
+                role='vpi',
+            )
+            vpi.set_password('password')
+            db.session.add(vpi)
+            db.session.flush()
+            self.created['users'].append(vpi.id)
+            vpi_id = vpi.id
+            db.session.commit()
+
+        self._login(vpi_id)
+        folder = self.client.get(
+            f'/vpa/grade-releases/class/{self.class_id}?academic_year_id={self.year_id}'
+        )
+        self.assertEqual(folder.status_code, 200)
+        html = folder.get_data(as_text=True)
+        self.assertIn('Portal Student', html)
+        self.assertIn('Release', html)
+
+        approve = self.client.post(
+            f'/vpa/grade-releases/student/{self.student_id}/period/1/approve',
+            data={'academic_year_id': self.year_id, 'class_id': self.class_id},
+            follow_redirects=True,
+        )
+        self.assertEqual(approve.status_code, 200)
+        self.assertIn(b'released', approve.data.lower())
+
+        self._login(self.student_user_id)
+        sheet = self.client.get(f'/student/grade-sheet?academic_year_id={self.year_id}')
+        self.assertNotIn(STUDENT_GRADE_HOLD_MESSAGE.encode(), sheet.data)
+        self.assertIn(b'Published Grade Sheet', sheet.data)
 
 
 if __name__ == '__main__':

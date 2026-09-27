@@ -5,7 +5,7 @@
 {% set pending_releases = folder.pending_releases|default([]) %}
 {% set eligible_transcript_students = folder.eligible_transcript_students|default([]) %}
 
-<details class="vpa-class-folder" id="{{ folder_dom_id }}" {% if open_class_id and folder.id and open_class_id|string == folder.id|string %}open{% endif %}>
+<details class="vpa-class-folder" id="{{ folder_dom_id }}" {% if folder_page|default(false) or (open_class_id and folder.id and open_class_id|string == folder.id|string) %}open{% endif %}>
     <summary>
         <span class="vpa-folder-icon" aria-hidden="true"><i class="fas fa-folder{% if open_class_id and folder.id and open_class_id|string == folder.id|string %}-open{% endif %}"></i></span>
         <span class="vpa-folder-copy">
@@ -31,6 +31,11 @@
         <div class="vpa-folder-toolbar">
             {% if students %}
             <input type="search" class="vpa-inclass-search" placeholder="Find a student in {{ folder.name }}…" aria-label="Find student in {{ folder.name }}">
+            {% endif %}
+            {% if cabinet_mode == 'grades' and not is_unassigned and folder.id and not folder_page|default(false) %}
+            <a class="btn-vpa-gold" href="{{ url_for('vpa_class_grade_folder', class_id=folder.id, academic_year_id=display_year.id if display_year else none) }}">
+                <i class="fas fa-folder-open"></i> Open class folder
+            </a>
             {% endif %}
             {% if cabinet_mode == 'grades' and not is_unassigned and folder.id and pending_releases %}
             <form method="POST" action="{{ url_for('vpa_approve_class_grade_releases', class_id=folder.id) }}" class="vpa-bulk-form">
@@ -118,6 +123,25 @@
                                 {{ 'Transcript released' if row.transcript_released or year_wide else 'Transcript sealed' }}
                             </span>
                         </div>
+                        {% if cabinet_mode == 'grades' and row.period_actions %}
+                        <div class="vpa-student-periods">
+                            {% for slot in row.period_actions %}
+                            <div class="vpa-student-period">
+                                <span class="vpa-student-period-label" title="{{ slot.label }}">{{ slot.short_label }}</span>
+                                {% if slot.released %}
+                                <span class="vpa-chip approved">{{ 'Class' if slot.via_class else 'Released' }}</span>
+                                {% elif slot.can_release %}
+                                <form method="POST" action="{{ url_for('vpa_approve_student_period', student_id=student.id, period=slot.period) }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    {% if display_year %}<input type="hidden" name="academic_year_id" value="{{ display_year.id }}">{% endif %}
+                                    {% if folder.id %}<input type="hidden" name="class_id" value="{{ folder.id }}">{% endif %}
+                                    <button type="submit" class="btn-vpa-approve btn-vpa-period">Release</button>
+                                </form>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
                         {% if row.owing %}
                         {% if cabinet_mode == 'grades' %}
                         <p class="vpa-owe-note">Owes tuition. You can still approve this period — VPA does not wait on Business/VPI clearance. Fee holds, if any, apply later to parent copies, not to this academic stamp.</p>
