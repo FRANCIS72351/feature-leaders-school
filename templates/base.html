@@ -963,6 +963,8 @@
                   {% if user_role == "proprietor" %}
                     <li><h6 class="dropdown-header">School Proprietor</h6></li>
                     <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('proprietor_dashboard') }}"><i class="fas fa-binoculars fa-sm me-2"></i>Live School Board</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('proprietor_senior_grade_releases') }}"><i class="fas fa-landmark fa-sm me-2"></i>Senior High Seal Desk</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('proprietor_audit_logs') }}"><i class="fas fa-clipboard-list fa-sm me-2"></i>Activity Audit Trail</a></li>
                     <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('principal_dashboard') }}"><i class="fas fa-user-shield fa-sm me-2"></i>Principal Portal</a></li>
                     <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('vpa_dashboard') }}"><i class="fas fa-graduation-cap fa-sm me-2"></i>VPA Academics</a></li>
                     <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('vpi_dashboard') }}"><i class="fas fa-coins fa-sm me-2"></i>VPI Finance</a></li>

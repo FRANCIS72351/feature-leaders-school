@@ -83,7 +83,7 @@ class OfficialTranscriptRouteTestCase(unittest.TestCase):
 
             klass = Class(
                 name=f'Transcript Class {self.token}',
-                grade_level='10th',
+                grade_level='8th',
             )
             db.session.add(klass)
             db.session.flush()
@@ -109,7 +109,7 @@ class OfficialTranscriptRouteTestCase(unittest.TestCase):
                 dob=date(2008, 1, 1),
                 gender='M',
                 klass_id=klass.id,
-                grade_level='10th',
+                grade_level='8th',
                 academic_year_id=year.id,
                 status='ACTIVE',
                 is_registered=True,
@@ -326,7 +326,7 @@ class OfficialTranscriptRouteTestCase(unittest.TestCase):
                 dob=date(2008, 2, 2),
                 gender='F',
                 klass_id=self.class_id,
-                grade_level='10th',
+                grade_level='8th',
                 academic_year_id=self.year_id,
                 status='ACTIVE',
                 is_registered=True,

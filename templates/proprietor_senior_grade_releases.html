@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Senior High Seal Desk — {{ brand.name if brand else 'FLPA' }}{% endblock %}
+
+{% block content %}
+{% set cabinet_mode = cabinet_mode|default('grades') %}
+{% set is_transcripts = cabinet_mode == 'transcripts' %}
+<style>
+    .prop-seal-page { color: #12263a; }
+    .prop-seal-kicker {
+        color: #b45309;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        margin-bottom: 0.35rem;
+    }
+    .prop-seal-page h2 {
+        color: #0b1f3a;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+    }
+    .prop-seal-card {
+        background: #ffffff;
+        border: 1px solid #e4ebf3;
+        border-radius: 16px;
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+    }
+    .prop-seal-banner {
+        border-left: 4px solid #b45309;
+        background: linear-gradient(90deg, #fff7ed 0%, #ffffff 70%);
+        border-radius: 12px;
+        padding: 0.85rem 1rem;
+        margin-bottom: 1.15rem;
+    }
+    .prop-seal-stat-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .prop-seal-stat {
+        background: #f3f7fb; border: 1px solid #e4ebf3; border-radius: 999px;
+        padding: 0.32rem 0.75rem; font-size: 0.75rem; font-weight: 800; color: #0b1f3a;
+    }
+    .prop-seal-stat.waiting { background: #fff7ed; color: #c2410c; border-color: #fdba74; }
+    .prop-seal-stat.owing { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+    .prop-seal-tabs {
+        display: flex; flex-wrap: wrap; gap: 0.45rem; margin-bottom: 1rem;
+    }
+    .prop-seal-tab {
+        display: inline-flex; align-items: center; gap: 0.4rem;
+        padding: 0.5rem 0.95rem; border-radius: 999px; font-weight: 800; font-size: 0.82rem;
+        text-decoration: none !important; border: 1px solid #e4ebf3; color: #5b6b7c; background: #fff;
+    }
+    .prop-seal-tab.active {
+        background: #0b1f3a; color: #fff; border-color: #0b1f3a;
+    }
+    .btn-prop-seal {
+        background: #0b1f3a; color: #f8fafc !important; border: 1px solid #b45309;
+        font-weight: 800; font-size: 0.85rem; border-radius: 10px; padding: 0.55rem 1rem;
+        display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+    }
+    .btn-prop-seal:hover { background: #163556; color: #fff !important; }
+</style>
+
+<div class="container py-4 prop-seal-page">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-3">
+        <div>
+            <div class="prop-seal-kicker">School Proprietor · Confidential</div>
+            <h2 class="mb-1">
+                <i class="fas fa-{% if is_transcripts %}scroll{% else %}landmark{% endif %} me-2"></i>
+                Senior High Seal Desk
+            </h2>
+            <p class="text-muted mb-0">
+                Only the proprietor may release Grades 10–12 results and Official Transcripts.
+                Open a class folder to release <strong>one student at a time</strong>, or stamp the whole class.
+                {% if folder_page and klass %} Open folder: <strong>{{ klass.name }}</strong>.{% endif %}
+            </p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ url_for('proprietor_dashboard') }}" class="btn btn-outline-secondary btn-sm">Live school board</a>
+            {% if folder_page %}
+            <a href="{{ url_for('proprietor_senior_transcript_releases' if is_transcripts else 'proprietor_senior_grade_releases', academic_year_id=display_year.id if display_year else none) }}" class="btn btn-outline-secondary btn-sm">All Senior High folders</a>
+            {% endif %}
+            <form method="get" class="d-flex gap-2">
+                <select name="academic_year_id" class="form-select form-select-sm" onchange="this.form.submit()" aria-label="Academic year">
+                    {% for y in years %}
+                    <option value="{{ y.id }}" {% if display_year and y.id == display_year.id %}selected{% endif %}>
+                        {{ y.name }}{% if y.is_active %} (Active){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </form>
+        </div>
+    </div>
+
+    <div class="prop-seal-tabs" role="tablist" aria-label="Senior High seal modes">
+        <a class="prop-seal-tab {% if not is_transcripts %}active{% endif %}"
+           href="{{ url_for('proprietor_senior_grade_releases', academic_year_id=display_year.id if display_year else none) }}">
+            <i class="fas fa-stamp"></i> Grades per student
+        </a>
+        <a class="prop-seal-tab {% if is_transcripts %}active{% endif %}"
+           href="{{ url_for('proprietor_senior_transcript_releases', academic_year_id=display_year.id if display_year else none) }}">
+            <i class="fas fa-scroll"></i> Transcripts per student
+        </a>
+    </div>
+
+    <div class="prop-seal-banner">
+        <strong>Unique authority:</strong>
+        Kindergarten, Elementary, and Junior High remain on the VPA cabinets.
+        Senior High period grades and Official Transcripts stay sealed until you release them here —
+        student by student, or by whole class folder.
+    </div>
+
+    {% if is_transcripts and not folder_page and display_year %}
+    <div class="prop-seal-card p-3 p-md-4 mb-4">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3">
+            <div>
+                <h5 class="mb-1" style="color:#0b1f3a;">Release all Senior High transcripts</h5>
+                <p class="text-muted mb-0 small">
+                    Unlocks Official Transcript for every Grades 10–12 student in {{ display_year.name }}.
+                    Prefer a class folder when only one cohort should go out.
+                </p>
+            </div>
+            <form method="POST" action="{{ url_for('proprietor_approve_all_senior_transcripts') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="academic_year_id" value="{{ display_year.id }}">
+                <button type="submit" class="btn-prop-seal">
+                    <i class="fas fa-scroll"></i> Release all Senior High
+                </button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="prop-seal-card p-3 p-md-4 mb-4">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-2">
+            <h5 class="mb-0" style="color:#0b1f3a;">
+                {% if is_transcripts %}Senior High transcripts{% else %}Senior High grades{% endif %}
+                · {{ display_year.name if display_year else 'Academic year' }}
+            </h5>
+            <div class="prop-seal-stat-row">
+                <span class="prop-seal-stat">{{ folder_count }} folder{{ 's' if folder_count != 1 else '' }}</span>
+                <span class="prop-seal-stat">{{ student_count }} student{{ 's' if student_count != 1 else '' }}</span>
+                <span class="prop-seal-stat waiting">{{ pending_count }} waiting</span>
+                {% if owing_count %}
+                <span class="prop-seal-stat owing">{{ owing_count }} owing fees</span>
+                {% endif %}
+            </div>
+        </div>
+        <p class="text-muted small mb-0">
+            {% if is_transcripts %}
+            Open a folder to approve Official Transcript for one student, or release the entire class.
+            {% else %}
+            Open a folder to release Period 1–6 and exams for one student, or stamp the whole class package.
+            {% endif %}
+            Fee balances do not block this academic seal.
+        </p>
+    </div>
+
+    {% if is_transcripts %}
+    {% set open_class_folder_endpoint = 'proprietor_senior_class_transcript_folder' %}
+    {% else %}
+    {% set open_class_folder_endpoint = 'proprietor_senior_class_grade_folder' %}
+    {% endif %}
+    {% include 'partials/vpa_release_cabinet.html' %}
+</div>
+{% endblock %}

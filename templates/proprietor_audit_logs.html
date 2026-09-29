@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+{% block title %}Activity Audit Trail — {{ brand.name if brand else 'FLPA' }}{% endblock %}
+
+{% block head %}
+<style>
+    :root {
+        --prop-navy: #0b1f3a;
+        --prop-ink: #12263a;
+        --prop-muted: #5b6b7c;
+        --prop-card: #ffffff;
+        --prop-line: #e4ebf3;
+        --prop-gold: #b45309;
+        --prop-wash: #f7fafc;
+    }
+    .audit-board {
+        background: linear-gradient(180deg, #ffffff 0%, #f4f7fb 100%);
+        min-height: 100vh;
+        color: var(--prop-ink);
+        padding: 1.25rem 0 3rem;
+    }
+    .audit-shell { max-width: 1280px; margin: 0 auto; padding: 0 1rem; }
+    .audit-hero {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: flex-end;
+        margin-bottom: 1.15rem;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid var(--prop-navy);
+    }
+    .audit-kicker {
+        font-size: 0.72rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--prop-gold);
+        font-weight: 800;
+        margin: 0 0 0.35rem;
+    }
+    .audit-title {
+        margin: 0;
+        font-size: clamp(1.45rem, 2.3vw, 2rem);
+        font-weight: 800;
+        color: var(--prop-navy);
+        letter-spacing: -0.02em;
+    }
+    .audit-sub {
+        margin: 0.4rem 0 0;
+        color: var(--prop-muted);
+        font-size: 0.95rem;
+        max-width: 44rem;
+    }
+    .audit-live {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        background: #ecfdf5;
+        color: #047857;
+        border: 1px solid #a7f3d0;
+        border-radius: 999px;
+        padding: 0.35rem 0.75rem;
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+    .audit-live-dot {
+        width: 0.55rem;
+        height: 0.55rem;
+        border-radius: 50%;
+        background: #10b981;
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+        animation: audit-pulse 1.6s infinite;
+    }
+    @keyframes audit-pulse {
+        0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
+        70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+    .audit-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.65rem;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+    .audit-toolbar form {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        flex: 1;
+        min-width: 18rem;
+    }
+    .audit-toolbar input,
+    .audit-toolbar select {
+        border: 1px solid var(--prop-line);
+        border-radius: 10px;
+        padding: 0.45rem 0.7rem;
+        background: #fff;
+        color: var(--prop-ink);
+        font-weight: 600;
+        font-size: 0.88rem;
+    }
+    .audit-toolbar input { min-width: 14rem; flex: 1; }
+    .audit-btn {
+        border: 1px solid var(--prop-navy);
+        background: var(--prop-navy);
+        color: #fff;
+        border-radius: 10px;
+        padding: 0.45rem 0.85rem;
+        font-weight: 700;
+        font-size: 0.88rem;
+        text-decoration: none !important;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+    .audit-btn.ghost {
+        background: #fff;
+        color: var(--prop-navy);
+    }
+    .audit-card {
+        background: var(--prop-card);
+        border: 1px solid var(--prop-line);
+        border-radius: 16px;
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+        overflow: hidden;
+    }
+    .audit-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.86rem;
+    }
+    .audit-table th {
+        text-align: left;
+        font-size: 0.7rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--prop-muted);
+        background: #f8fafc;
+        padding: 0.7rem 0.8rem;
+        border-bottom: 1px solid var(--prop-line);
+        white-space: nowrap;
+    }
+    .audit-table td {
+        padding: 0.7rem 0.8rem;
+        border-bottom: 1px solid #eef3f8;
+        vertical-align: top;
+    }
+    .audit-table tr:nth-child(even) td { background: #fcfdfe; }
+    .audit-table tr:last-child td { border-bottom: 0; }
+    .audit-badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 0.12rem 0.55rem;
+        font-size: 0.72rem;
+        font-weight: 800;
+        background: #eff6ff;
+        color: #1d4ed8;
+        border: 1px solid #dbeafe;
+        text-transform: capitalize;
+        white-space: nowrap;
+    }
+    .audit-action { font-weight: 800; color: var(--prop-navy); white-space: nowrap; }
+    .audit-meta { color: var(--prop-muted); font-size: 0.8rem; }
+    .audit-empty { text-align: center; color: var(--prop-muted); padding: 2rem 1rem; }
+    .audit-print-note { display: none; }
+    @media print {
+        nav, footer, .audit-toolbar, .audit-live, .navbar, .flash-container { display: none !important; }
+        .audit-board { background: #fff; padding: 0; }
+        .audit-card { box-shadow: none; border: 1px solid #ccc; }
+        .audit-print-note { display: block; font-size: 0.8rem; color: #555; margin-bottom: 0.75rem; }
+        .audit-table { font-size: 8.5pt; }
+    }
+    @media (max-width: 720px) {
+        .audit-toolbar input { min-width: 100%; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="audit-board">
+    <div class="audit-shell">
+        <div class="audit-hero">
+            <div>
+                <p class="audit-kicker">Proprietor only · Confidential</p>
+                <h1 class="audit-title">{{ brand.name if brand else 'Future Leaders Preparatory Academy' }}</h1>
+                <p class="audit-sub">
+                    Live activity audit trail. Every sign-in, student change, and grade update is recorded
+                    with the staff member, role, time, and IP address.
+                </p>
+            </div>
+            <div class="d-flex flex-column align-items-md-end gap-2">
+                <div class="audit-live"><span class="audit-live-dot" aria-hidden="true"></span> Monitoring</div>
+                <div class="audit-meta" id="audit-clock">Latest 250 records · UTC</div>
+                <a class="audit-btn ghost" href="{{ url_for('proprietor_dashboard') }}"><i class="fas fa-binoculars"></i> Live board</a>
+            </div>
+        </div>
+
+        <p class="audit-print-note">Printed {{ current_year }} · Proprietor Activity Monitoring &amp; Audit Trail</p>
+
+        <div class="audit-toolbar">
+            <form method="get" action="{{ url_for('proprietor_audit_logs') }}">
+                <input type="search" name="q" value="{{ search or '' }}" placeholder="Search name, action, details, or IP" aria-label="Search audit logs">
+                <select name="action" aria-label="Filter by action">
+                    <option value="">All actions</option>
+                    {% for act in actions %}
+                    <option value="{{ act }}" {% if action_filter == act %}selected{% endif %}>{{ action_label(act) }}</option>
+                    {% endfor %}
+                </select>
+                <button class="audit-btn" type="submit"><i class="fas fa-search"></i> Filter</button>
+                {% if search or action_filter %}
+                <a class="audit-btn ghost" href="{{ url_for('proprietor_audit_logs') }}">Clear</a>
+                {% endif %}
+            </form>
+            <button class="audit-btn ghost" type="button" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
+        </div>
+
+        <div class="audit-card">
+            <div class="table-responsive">
+                <table class="audit-table" id="audit-table">
+                    <thead>
+                        <tr>
+                            <th>Date &amp; time (UTC)</th>
+                            <th>Staff</th>
+                            <th>Role</th>
+                            <th>Action</th>
+                            <th>Details &amp; changes</th>
+                            <th>IP address</th>
+                        </tr>
+                    </thead>
+                    <tbody id="audit-body">
+                        {% for log in logs %}
+                        <tr>
+                            <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else '—' }}</td>
+                            <td><strong>{{ log.user_name }}</strong></td>
+                            <td><span class="audit-badge">{{ log.user_role }}</span></td>
+                            <td class="audit-action">{{ action_label(log.action) }}</td>
+                            <td>{{ log.details or '—' }}</td>
+                            <td class="audit-meta">{{ log.ip_address or '—' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="audit-empty">No school activity recorded yet. New logins, registrations, and grade changes will appear here.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var live = {{ 'false' if search or action_filter else 'true' }};
+    function esc(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+    function renderLogs(logs) {
+        var body = document.getElementById('audit-body');
+        if (!body) return;
+        if (!logs || !logs.length) {
+            body.innerHTML = '<tr><td colspan="6" class="audit-empty">No school activity recorded yet.</td></tr>';
+            return;
+        }
+        body.innerHTML = logs.map(function (log) {
+            return '<tr><td>' + esc(log.timestamp || '—') +
+                '</td><td><strong>' + esc(log.user_name || '—') + '</strong></td>' +
+                '<td><span class="audit-badge">' + esc(log.user_role || '—') + '</span></td>' +
+                '<td class="audit-action">' + esc(log.action_label || log.action || '—') + '</td>' +
+                '<td>' + esc(log.details || '—') + '</td>' +
+                '<td class="audit-meta">' + esc(log.ip_address || '—') + '</td></tr>';
+        }).join('');
+    }
+    function tick() {
+        if (!live) return;
+        fetch('{{ url_for("proprietor_audit_logs_json") }}', { headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (data) {
+                if (!data || !Array.isArray(data.logs)) return;
+                renderLogs(data.logs);
+                var clock = document.getElementById('audit-clock');
+                if (clock && data.generated_at) {
+                    clock.textContent = 'Live pulse · ' + data.generated_at.replace('T', ' ').slice(0, 19) + ' UTC';
+                }
+            })
+            .catch(function () {});
+    }
+    if (live) setInterval(tick, 20000);
+})();
+</script>
+{% endblock %}

@@ -79,7 +79,7 @@ class GradeReleaseAccessTestCase(unittest.TestCase):
 
             klass = Class(
                 name=f'Release Class {self.token}',
-                grade_level=10,
+                grade_level=8,
                 sponsor_id=sponsor.id,
             )
             db.session.add(klass)
@@ -106,7 +106,7 @@ class GradeReleaseAccessTestCase(unittest.TestCase):
                 dob=date(2008, 1, 1),
                 gender='F',
                 klass_id=klass.id,
-                grade_level=10,
+                grade_level=8,
                 academic_year_id=year.id,
                 user_id=student_user.id,
                 status='ACTIVE',
@@ -650,7 +650,7 @@ class GradeReleaseAccessTestCase(unittest.TestCase):
                 dob=date(2008, 2, 2),
                 gender='M',
                 klass_id=self.class_id,
-                grade_level=10,
+                grade_level=8,
                 academic_year_id=self.year_id,
                 status='ACTIVE',
                 is_registered=True,

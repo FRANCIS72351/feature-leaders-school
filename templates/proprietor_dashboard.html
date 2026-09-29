@@ -299,6 +299,8 @@
                 <div class="prop-stat-row"><span>Teachers on staff</span><strong data-kpi="teachers">{{ snapshot.teachers }}</strong></div>
                 <div class="prop-stat-row"><span>Staff accounts</span><strong data-kpi="staff">{{ snapshot.staff }}</strong></div>
                 <div class="prop-stat-row"><span>Pending grade releases</span><strong><span class="prop-badge warn" data-kpi="pending_grades">{{ snapshot.pending_grades }}</span></strong></div>
+                <div class="prop-stat-row"><span>Senior High awaiting your seal</span><strong><span class="prop-badge warn" data-kpi="pending_senior_grades">{{ snapshot.pending_senior_grades }}</span></strong></div>
+                <div class="prop-stat-row"><span>Senior High transcripts waiting</span><strong><span class="prop-badge warn" data-kpi="pending_senior_transcripts">{{ snapshot.pending_senior_transcripts|default(0) }}</span></strong></div>
                 <div class="prop-stat-row"><span>Pending transcripts</span><strong><span class="prop-badge" data-kpi="pending_transcripts">{{ snapshot.pending_transcripts }}</span></strong></div>
                 <div class="prop-stat-row"><span>Active suspensions</span><strong><span class="prop-badge danger" data-kpi="active_suspensions">{{ snapshot.active_suspensions }}</span></strong></div>
                 <div class="prop-stat-row">
@@ -337,6 +339,9 @@
             <div class="prop-card prop-panel narrow">
                 <h3><i class="fas fa-door-open text-primary"></i> Open an office</h3>
                 <div class="prop-actions">
+                    <a class="prop-action" href="{{ url_for('proprietor_senior_grade_releases') }}"><i class="fas fa-landmark"></i> Senior High grades{% if snapshot.pending_senior_grades %} ({{ snapshot.pending_senior_grades }}){% endif %}</a>
+                    <a class="prop-action" href="{{ url_for('proprietor_senior_transcript_releases') }}"><i class="fas fa-scroll"></i> Senior High transcripts{% if snapshot.pending_senior_transcripts %} ({{ snapshot.pending_senior_transcripts }}){% endif %}</a>
+                    <a class="prop-action" href="{{ url_for('proprietor_audit_logs') }}"><i class="fas fa-clipboard-list"></i> Activity audit trail</a>
                     <a class="prop-action" href="{{ url_for('principal_dashboard') }}"><i class="fas fa-user-shield"></i> Principal portal</a>
                     <a class="prop-action" href="{{ url_for('vpa_dashboard') }}"><i class="fas fa-graduation-cap"></i> VPA academics</a>
                     <a class="prop-action" href="{{ url_for('vpi_dashboard') }}"><i class="fas fa-coins"></i> VPI finance</a>
@@ -361,6 +366,30 @@
                             </tr>
                             {% else %}
                             <tr><td colspan="4" class="text-muted">No grade activity yet for this year.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="prop-card prop-panel" style="grid-column: span 12;">
+                <h3>
+                    <i class="fas fa-clipboard-list text-primary"></i> Latest staff activity
+                    <a href="{{ url_for('proprietor_audit_logs') }}" class="ms-auto small fw-bold" style="margin-left:auto;font-size:0.78rem;color:#0284c7;text-decoration:none;">Open full audit</a>
+                </h3>
+                <div class="table-responsive">
+                    <table class="prop-table" id="prop-audit">
+                        <thead><tr><th>When</th><th>Staff</th><th>Action</th><th>Details</th></tr></thead>
+                        <tbody>
+                            {% for row in snapshot.recent_audit %}
+                            <tr>
+                                <td class="text-muted">{{ row.timestamp }}</td>
+                                <td>{{ row.user_name }} <span class="prop-badge">{{ row.user_role }}</span></td>
+                                <td class="fw-bold">{{ row.action_label }}</td>
+                                <td>{{ row.details or '—' }}</td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="4" class="text-muted">No audit events yet. Sign-ins and grade work will appear here.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -415,6 +444,20 @@
                     return '<tr><td>' + (row.student || '—') + '</td><td>' + (row.subject || '—') +
                         '</td><td class="fw-bold">' + (row.score == null ? '—' : row.score) +
                         '</td><td>' + badge + '</td></tr>';
+                }).join('');
+            }
+        }
+        var auditBody = document.querySelector('#prop-audit tbody');
+        if (auditBody && Array.isArray(data.recent_audit)) {
+            if (!data.recent_audit.length) {
+                auditBody.innerHTML = '<tr><td colspan="4" class="text-muted">No audit events yet. Sign-ins and grade work will appear here.</td></tr>';
+            } else {
+                auditBody.innerHTML = data.recent_audit.map(function (row) {
+                    return '<tr><td class="text-muted">' + (row.timestamp || '—') +
+                        '</td><td>' + (row.user_name || '—') +
+                        ' <span class="prop-badge">' + (row.user_role || '') + '</span></td>' +
+                        '<td class="fw-bold">' + (row.action_label || row.action || '—') + '</td>' +
+                        '<td>' + (row.details || '—') + '</td></tr>';
                 }).join('');
             }
         }

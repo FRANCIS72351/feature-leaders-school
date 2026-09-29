@@ -33,7 +33,8 @@
             <input type="search" class="vpa-inclass-search" placeholder="Find a student in {{ folder.name }}…" aria-label="Find student in {{ folder.name }}">
             {% endif %}
             {% if cabinet_mode == 'grades' and not is_unassigned and folder.id and not folder_page|default(false) %}
-            <a class="btn-vpa-gold" href="{{ url_for('vpa_class_grade_folder', class_id=folder.id, academic_year_id=display_year.id if display_year else none) }}">
+            {% set open_folder_endpoint = open_class_folder_endpoint|default('vpa_class_grade_folder') %}
+            <a class="btn-vpa-gold" href="{{ url_for(open_folder_endpoint, class_id=folder.id, academic_year_id=display_year.id if display_year else none) }}">
                 <i class="fas fa-folder-open"></i> Open class folder
             </a>
             {% endif %}

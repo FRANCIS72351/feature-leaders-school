@@ -3,7 +3,7 @@ from flask import Flask, render_template, redirect, url_for, flash, request, Res
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
-from models import db, User, Student, Teacher, Class, Announcement, Grade, GradeRelease, StudentPeriodRelease, TranscriptRelease, AcademicYear, ClassSubjectTeacher, Room, Suspension, Discipline, StudentPayment, StudentRegistryDocument, StaffDocument, default_static_photo_url, school_logo_static_url, liberia_seal_static_url, principal_signature_static_url, display_font_static_url, resolve_parent_guardian_name
+from models import db, User, Student, Teacher, Class, Announcement, Grade, GradeRelease, StudentPeriodRelease, TranscriptRelease, AcademicYear, ClassSubjectTeacher, Room, Suspension, Discipline, StudentPayment, StudentRegistryDocument, StaffDocument, AuditLog, default_static_photo_url, school_logo_static_url, liberia_seal_static_url, principal_signature_static_url, display_font_static_url, resolve_parent_guardian_name
 from itsdangerous import URLSafeTimedSerializer
 import pyotp
 from reportlab.pdfgen import canvas
@@ -32,6 +32,7 @@ from school_divisions import (
     class_document_context,
     class_sort_key_from_klass,
     display_report_score,
+    DIVISION_SENIOR_HIGH,
     division_document_titles,
     academic_level_for_student,
     division_label_for_class,
@@ -194,16 +195,24 @@ ROLE_ALIASES = {
 
 # VPA owns curriculum day-to-day. VPI owns finance. Both vice principals share the
 # academic release queues and the student academic registry for command oversight.
+# Senior High grade release is reserved for the School Proprietor alone.
 ACADEMIC_COMMAND_ROLES = frozenset({'admin', 'principal', 'vpa'})
 ACADEMIC_RELEASE_ROLES = frozenset({'admin', 'principal', 'vpa', 'vpi'})
+SENIOR_GRADE_RELEASE_ROLES = frozenset({'proprietor'})
 FISCAL_COMMAND_ROLES = frozenset({'admin', 'business', 'vpi', 'principal', 'proprietor'})
 STAFF_INTERNAL_GRADE_ROLES = frozenset({
     'admin', 'teacher', 'registrar', 'principal', 'vpa', 'vpi', 'dean', 'business', 'proprietor',
 })
 OFFICIAL_TRANSCRIPT_STAFF_ROLES = frozenset({'admin', 'registrar', 'principal', 'vpa', 'vpi', 'proprietor'})
 PROPRIETOR_ROLES = frozenset({'proprietor', 'owner', 'admin'})
+PROPRIETOR_AUDIT_ROLES = frozenset({'proprietor'})
+SENIOR_GRADE_RELEASE_HOLD_MESSAGE = (
+    'Senior High grade and transcript release is reserved for the School Proprietor. '
+    'Kindergarten, Elementary, and Junior High remain on the academic release cabinet.'
+)
 GRADE_RELEASE_TEACHER_FLASH = (
-    'Submitted to VPA for approval. Students cannot view this period until approved. '
+    'Submitted for academic approval. Students cannot view this period until approved. '
+    'Senior High packages go to the Proprietor; other divisions go to VPA. '
     'Previously approved periods remain available.'
 )
 STUDENT_GRADE_HOLD_MESSAGE = (
@@ -263,6 +272,135 @@ def canonical_role(user):
     """Map stored role strings (e.g. registry) onto the routing role."""
     role = normalize_role(user)
     return ROLE_ALIASES.get(role, role)
+
+
+def is_senior_high_class(klass):
+    """True when a class maps to Senior High (Grades 10–12)."""
+    if not klass:
+        return False
+    return resolve_from_class(klass) == DIVISION_SENIOR_HIGH
+
+
+def is_senior_high_student(student, year_id=None):
+    """True when the student's class for the year is Senior High."""
+    if not student:
+        return False
+    klass = None
+    if year_id:
+        klass = get_student_class_for_year(student, year_id)
+    if not klass:
+        klass = getattr(student, 'assigned_class', None)
+    if not klass and getattr(student, 'klass_id', None):
+        klass = db.session.get(Class, student.klass_id)
+    return is_senior_high_class(klass)
+
+
+def user_may_release_senior_grades(user=None):
+    """Senior High grade and transcript stamps belong only to the School Proprietor."""
+    actor = user if user is not None else current_user
+    return canonical_role(actor) in SENIOR_GRADE_RELEASE_ROLES
+
+
+def user_may_release_class_grades(klass, user=None):
+    """Who may approve/return grade packages for this class division."""
+    actor = user if user is not None else current_user
+    if is_senior_high_class(klass):
+        return user_may_release_senior_grades(actor)
+    return canonical_role(actor) in ACADEMIC_RELEASE_ROLES
+
+
+def user_may_release_student_transcript(student, year_id=None, user=None):
+    """Who may release an Official Transcript for this student."""
+    actor = user if user is not None else current_user
+    if is_senior_high_student(student, year_id):
+        return user_may_release_senior_grades(actor)
+    return canonical_role(actor) in ACADEMIC_RELEASE_ROLES
+
+
+def deny_unless_may_release_class_grades(klass, *, year_id=None):
+    """Block grade release actions that the caller's office does not own."""
+    if user_may_release_class_grades(klass):
+        return None
+    if is_senior_high_class(klass):
+        flash(SENIOR_GRADE_RELEASE_HOLD_MESSAGE, 'danger')
+        return redirect(url_for(
+            'vpa_grade_releases',
+            academic_year_id=year_id,
+        ))
+    return deny_unless_roles(ACADEMIC_RELEASE_ROLES, academic_office=True)
+
+
+def deny_unless_may_release_student_transcript(student, *, year_id=None):
+    """Block transcript release actions that the caller's office does not own."""
+    if user_may_release_student_transcript(student, year_id):
+        return None
+    if is_senior_high_student(student, year_id):
+        flash(SENIOR_GRADE_RELEASE_HOLD_MESSAGE, 'danger')
+        return redirect(url_for(
+            'vpa_transcript_releases',
+            academic_year_id=year_id,
+        ))
+    return deny_unless_roles(ACADEMIC_RELEASE_ROLES, academic_office=True)
+
+
+def count_pending_grade_releases(display_year, *, senior_only=False, exclude_senior=False):
+    """Pending class/period packages, optionally scoped by Senior High."""
+    if not display_year:
+        return 0
+    query = GradeRelease.query.filter_by(
+        academic_year_id=display_year.id,
+        status=GradeRelease.STATUS_PENDING_VPA,
+    )
+    if not senior_only and not exclude_senior:
+        return query.count()
+    pending = 0
+    for release in query.options(joinedload(GradeRelease.klass)).all():
+        is_senior = is_senior_high_class(release.klass)
+        if senior_only and is_senior:
+            pending += 1
+        elif exclude_senior and not is_senior:
+            pending += 1
+    return pending
+
+
+def count_pending_transcript_releases(display_year, *, senior_only=False, exclude_senior=False):
+    """Students still waiting for an Official Transcript release."""
+    if not display_year:
+        return 0
+    year_wide = TranscriptRelease.query.filter(
+        TranscriptRelease.academic_year_id == display_year.id,
+        TranscriptRelease.student_id.is_(None),
+        TranscriptRelease.status == TranscriptRelease.STATUS_APPROVED,
+    ).first()
+    students = (
+        _students_for_display_year(display_year, history_mode=True)
+        .options(joinedload(Student.assigned_class))
+        .all()
+    )
+    if not students:
+        return 0
+    approved_ids = {
+        row[0]
+        for row in TranscriptRelease.query.filter(
+            TranscriptRelease.academic_year_id == display_year.id,
+            TranscriptRelease.student_id.in_([s.id for s in students]),
+            TranscriptRelease.status == TranscriptRelease.STATUS_APPROVED,
+        ).with_entities(TranscriptRelease.student_id).all()
+        if row[0]
+    }
+    pending = 0
+    for student in students:
+        is_senior = is_senior_high_student(student, display_year.id)
+        if senior_only and not is_senior:
+            continue
+        if exclude_senior and is_senior:
+            continue
+        if year_wide and not is_senior:
+            continue
+        if student.id in approved_ids:
+            continue
+        pending += 1
+    return pending
 
 
 def dashboard_role_label(user):
@@ -569,6 +707,58 @@ def log_incident(event_type):
     db.session.add(log)
     db.session.commit()
 
+
+def _client_ip():
+    """Client address, preferring the first forwarded hop when behind a proxy."""
+    if not has_request_context():
+        return None
+    forwarded = (request.headers.get('X-Forwarded-For') or '').split(',')[0].strip()
+    return forwarded or request.remote_addr
+
+
+def log_activity(action, details=None, *, user=None, commit=False):
+    """Record a school activity for the proprietor audit desk.
+
+    Adds the row to the current session. Callers that already commit (grades,
+    registration) should leave commit=False so this does not close their work
+    early. Login/logout pass commit=True.
+    """
+    try:
+        actor = user
+        if actor is None and has_request_context() and getattr(current_user, 'is_authenticated', False):
+            actor = current_user
+        if actor is not None:
+            user_id = getattr(actor, 'id', None)
+            user_name = (
+                (getattr(actor, 'full_name', None) or getattr(actor, 'email', None) or 'Staff')
+            ).strip()
+            user_role = canonical_role(actor)
+        else:
+            user_id, user_name, user_role = None, 'System / Guest', 'guest'
+        entry = AuditLog(
+            user_id=user_id,
+            user_name=(user_name or 'Staff')[:120],
+            user_role=(user_role or 'guest')[:50],
+            action=(action or 'ACTIVITY')[:80],
+            details=((details or '').strip() or None),
+            ip_address=_client_ip(),
+            timestamp=datetime.now(timezone.utc),
+        )
+        db.session.add(entry)
+        if commit:
+            db.session.commit()
+        else:
+            db.session.flush()
+        return entry
+    except Exception:
+        logger.exception('Failed to record audit log')
+        if commit:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+        return None
+
 def check_brute_force(ip):
     """Block login after 5 failed attempts from the same IP within 15 minutes."""
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
@@ -582,9 +772,9 @@ def check_brute_force(ip):
 # Local imports handled in init_db.py to avoid circular imports during app import
 from models import (
     db, User, Student, Teacher, Class, ClassSubject, Enrollment, Grade,
-    GradeRelease, TranscriptRelease, Attendance, Sponsor, Announcement, Discipline, Payroll,
+    GradeRelease, StudentPeriodRelease, TranscriptRelease, Attendance, Sponsor, Announcement, Discipline, Payroll,
     Assessment, AcademicYear, BusinessTransaction, StudentPayment,
-    Leader, LeaderCategory, Event, SchoolMedia, SecurityLog, Suspension, Room,
+    Leader, LeaderCategory, Event, SchoolMedia, SecurityLog, AuditLog, Suspension, Room,
     Asset, MaintenanceTicket, Activity, Submission, RolloverLog,
     SponsorWelfareNote, ClassAnnouncement,
 )
@@ -4132,9 +4322,24 @@ def render_official_grade_hold(
 
 
 def official_transcript_is_released(student_id, academic_year_id):
-    """True when a student-year approval or a school-wide year release exists."""
+    """True when a student-year approval or a non-senior school-wide year release exists.
+
+    A year-wide stamp never unlocks Senior High — those students need a
+    proprietor per-student or Senior High class/group release.
+    """
     if not academic_year_id:
         return False
+    if student_id:
+        student_release = TranscriptRelease.query.filter_by(
+            academic_year_id=academic_year_id,
+            student_id=student_id,
+            status=TranscriptRelease.STATUS_APPROVED,
+        ).first()
+        if student_release:
+            return True
+        student = db.session.get(Student, student_id)
+        if is_senior_high_student(student, academic_year_id):
+            return False
     year_wide = TranscriptRelease.query.filter(
         TranscriptRelease.academic_year_id == academic_year_id,
         TranscriptRelease.student_id.is_(None),
@@ -4142,13 +4347,7 @@ def official_transcript_is_released(student_id, academic_year_id):
     ).first()
     if year_wide:
         return True
-    if not student_id:
-        return False
-    return TranscriptRelease.query.filter_by(
-        academic_year_id=academic_year_id,
-        student_id=student_id,
-        status=TranscriptRelease.STATUS_APPROVED,
-    ).first() is not None
+    return False
 
 
 def viewer_must_wait_for_transcript_release(student, year_id):
@@ -4205,36 +4404,6 @@ def approve_official_transcript(academic_year_id, student_id=None, user=None, co
     if commit:
         db.session.commit()
     return release
-
-
-def count_pending_transcript_releases(display_year):
-    """Students in the year still waiting for an Official Transcript release."""
-    if not display_year:
-        return 0
-    if TranscriptRelease.query.filter(
-        TranscriptRelease.academic_year_id == display_year.id,
-        TranscriptRelease.student_id.is_(None),
-        TranscriptRelease.status == TranscriptRelease.STATUS_APPROVED,
-    ).first():
-        return 0
-    student_ids = [
-        row[0]
-        for row in _students_for_display_year(display_year, history_mode=True)
-        .with_entities(Student.id)
-        .all()
-    ]
-    if not student_ids:
-        return 0
-    approved_ids = {
-        row[0]
-        for row in TranscriptRelease.query.filter(
-            TranscriptRelease.academic_year_id == display_year.id,
-            TranscriptRelease.student_id.in_(student_ids),
-            TranscriptRelease.status == TranscriptRelease.STATUS_APPROVED,
-        ).with_entities(TranscriptRelease.student_id).all()
-        if row[0]
-    }
-    return max(0, len(set(student_ids) - approved_ids) )
 
 
 def _ordinal_rank(n):
@@ -6038,6 +6207,34 @@ def ensure_student_period_releases_table():
     db.session.commit()
 
 
+def ensure_audit_logs_table():
+    """Create audit_logs for the proprietor activity desk on existing databases."""
+    existing = {
+        row[1]
+        for row in db.session.execute(text('PRAGMA table_info("audit_logs")')).fetchall()
+    }
+    if existing:
+        return
+    db.session.execute(text(
+        """
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER,
+            user_name VARCHAR(120) NOT NULL,
+            user_role VARCHAR(50) NOT NULL,
+            action VARCHAR(80) NOT NULL,
+            details TEXT,
+            ip_address VARCHAR(45),
+            timestamp DATETIME NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+        )
+        """
+    ))
+    db.session.execute(text('CREATE INDEX IF NOT EXISTS ix_audit_logs_action ON audit_logs(action)'))
+    db.session.execute(text('CREATE INDEX IF NOT EXISTS ix_audit_logs_timestamp ON audit_logs(timestamp)'))
+    db.session.commit()
+
+
 def _grandfather_existing_grade_releases():
     """Existing submitted class/period packages stay visible until a teacher republishes."""
     now = datetime.now(timezone.utc)
@@ -6476,6 +6673,12 @@ def login():
         user = resolve_user_for_login(identifier)
         if user and not user.is_account_active():
             track_failed_attempt(ip, identifier)
+            log_activity(
+                'LOGIN_FAILED',
+                f'Inactive account sign-in blocked for "{identifier}".',
+                user=user,
+                commit=True,
+            )
             flash('This account is inactive. Contact your administrator to restore access.', 'danger')
         elif user and user.check_password(password):
             settings = get_system_settings()
@@ -6483,6 +6686,12 @@ def login():
                 flash('The system is on hold. Contact the administrator to renew service.', 'danger')
                 return render_template('login.html', form=form)
             login_user(user)
+            log_activity(
+                'USER_LOGIN',
+                f'Signed in to the {dashboard_role_label(user)} workspace.',
+                user=user,
+                commit=True,
+            )
             log_incident('SUCCESSFUL_LOGIN')
             if getattr(user, 'must_change_password', False):
                 flash('Please change your initial password before continuing.', 'warning')
@@ -6499,6 +6708,12 @@ def login():
             return redirect(url_for(home_ep))
 
         track_failed_attempt(ip, identifier)
+        log_activity(
+            'LOGIN_FAILED',
+            f'Failed sign-in for "{identifier}".',
+            user=user,
+            commit=True,
+        )
         if user:
             flash('Incorrect password for that account. Staff: use your portal email (admin may also use username admin).', 'danger')
         elif looks_like_student_id(identifier):
@@ -6510,6 +6725,7 @@ def login():
 @app.route('/logout')
 @login_required
 def logout():
+    log_activity('USER_LOGOUT', 'Signed out of the school portal.', commit=True)
     logout_user()
     flash('You have logged out.', 'info')
     return redirect(url_for('login'))
@@ -7698,6 +7914,7 @@ def save_grades(class_id):
     students = get_class_students_for_year(class_id, active_year)
     period_label = grading_period_label(period)
     saved_count = 0
+    score_changes = []
 
     for student in students:
         parsed, err = _parse_student_period_grade_from_form(student, request.form, klass, period)
@@ -7742,6 +7959,7 @@ def save_grades(class_id):
         grade.marking_period = period
         grade.period = period
         grade.activity_type = 'Semester Exam' if period in (7, 8) else 'Period Assessment'
+        old_score = grade.score if grade.id else None
         grade.ca_score = ca_score
         grade.exam_score = exam_score if period in range(1, 7) else total
         grade.score = total
@@ -7753,11 +7971,22 @@ def save_grades(class_id):
             setattr(grade, f'p{period}', int(round(total)))
 
         saved_count += 1
+        if old_score != total:
+            old_txt = f'{old_score:g}' if old_score is not None else '—'
+            score_changes.append(f'{student.full_name} {old_txt} → {total:g}')
 
     if saved_count:
         reconcile_grade_package_after_save(
             active_year.id, class_id, period, published=publish_to_report,
             actor_id=current_user.id,
+        )
+        change_note = '; '.join(score_changes[:12])
+        if len(score_changes) > 12:
+            change_note += f'; +{len(score_changes) - 12} more'
+        log_activity(
+            'PUBLISH_GRADES' if publish_to_report else 'UPDATE_GRADE',
+            f'{klass.name} · {subject_name} · {period_label}: {saved_count} score(s).'
+            + (f' Changes: {change_note}' if change_note else ''),
         )
     db.session.commit()
     if saved_count:
@@ -7792,6 +8021,7 @@ def _persist_period_grades_from_form(
     klass = Class.query.get(class_id)
     students = get_class_students_for_year(class_id, active_year)
     saved_count = 0
+    score_changes = []
 
     for student in students:
         parsed, err = _parse_student_period_grade_from_form(student, request.form, klass, period)
@@ -7825,6 +8055,7 @@ def _persist_period_grades_from_form(
             )
             db.session.add(grade)
 
+        old_score = grade.score if getattr(grade, 'id', None) else None
         grade.teacher_id = teacher_id
         grade.class_id = class_id
         grade.academic_year_id = active_year.id
@@ -7846,6 +8077,9 @@ def _persist_period_grades_from_form(
         if 1 <= period <= 6:
             setattr(grade, f'p{period}', int(round(total)))
         saved_count += 1
+        if old_score != total:
+            old_txt = f'{old_score:g}' if old_score is not None else '—'
+            score_changes.append(f'{student.full_name} {old_txt} → {total:g}')
 
     if saved_count:
         reconcile_grade_package_after_save(
@@ -7854,6 +8088,15 @@ def _persist_period_grades_from_form(
             period,
             published=publish_to_report,
             actor_id=entered_by_user_id,
+        )
+        change_note = '; '.join(score_changes[:12])
+        if len(score_changes) > 12:
+            change_note += f'; +{len(score_changes) - 12} more'
+        log_activity(
+            'PUBLISH_GRADES' if publish_to_report else 'UPDATE_GRADE',
+            f'{(klass.name if klass else "Class")} · {subject_name} · {grading_period_label(period)}: '
+            f'{saved_count} score(s).'
+            + (f' Changes: {change_note}' if change_note else ''),
         )
     db.session.commit()
     return saved_count, None
@@ -7916,6 +8159,11 @@ def publish_period_grades(class_id):
     if published_count:
         reconcile_grade_package_after_save(
             active_year.id, class_id, period, published=True, actor_id=current_user.id,
+        )
+        log_activity(
+            'PUBLISH_GRADES',
+            f'{klass.name} · {subject_name} · {grading_period_label(period)}: '
+            f'published {published_count} score(s).',
         )
     db.session.commit()
     period_label = grading_period_label(period)
@@ -8411,6 +8659,10 @@ def class_period_grade_sheet(class_id, period):
         if not teacher or not teacher_can_access_class(teacher, current_user, class_id):
             flash('You may only view the grade sheet for your assigned classes.', 'danger')
             return redirect(url_for('teacher_dashboard'))
+    elif is_senior_high_class(klass):
+        if not user_may_release_senior_grades():
+            flash(SENIOR_GRADE_RELEASE_HOLD_MESSAGE, 'danger')
+            return redirect(url_for(role_home_endpoint()))
     elif role not in ACADEMIC_RELEASE_ROLES:
         flash('Access denied.', 'danger')
         return redirect(url_for('login'))
@@ -8433,7 +8685,12 @@ def class_period_grade_sheet(class_id, period):
         period=period,
         display_year=data.get('display_year'),
         school_print_brand=school_print_brand(),
-        can_review=role in ACADEMIC_RELEASE_ROLES,
+        can_review=user_may_release_class_grades(klass),
+        back_endpoint=(
+            'proprietor_senior_grade_releases'
+            if is_senior_high_class(klass)
+            else 'vpa_grade_releases'
+        ),
     )
 
 
@@ -15538,7 +15795,11 @@ LOOKUP_RATE_WINDOW_MINUTES = 15
 
 
 def _client_ip():
-    return request.headers.get('X-Forwarded-For', request.remote_addr)
+    """Client address, preferring the first forwarded hop when behind a proxy."""
+    if not has_request_context():
+        return None
+    forwarded = (request.headers.get('X-Forwarded-For') or '').split(',')[0].strip()
+    return forwarded or request.remote_addr
 
 
 def check_student_lookup_rate_limit(ip):
@@ -17195,6 +17456,14 @@ def register_student():
                 )
 
             _sync_student_id_card(student, academic_year=academic_year)
+            log_activity(
+                'REREGISTER_STUDENT' if existing_student else 'REGISTER_STUDENT',
+                (
+                    f'{"Re-registered" if existing_student else "Registered"} '
+                    f'{student.full_name} (ID: {student.student_id})'
+                    f'{f" in {student.assigned_class.name}" if student.assigned_class else ""}.'
+                ),
+            )
             db.session.commit()
             if issued_password:
                 stash_registrar_credential_password(student.id, issued_password)
@@ -21088,6 +21357,15 @@ def edit_student(student_id):
                 update_existing=True,
             )
 
+        move_note = ''
+        if student.klass_id and student.klass_id != previous_class_id:
+            new_class = student.assigned_class or db.session.get(Class, student.klass_id)
+            new_name = new_class.name if new_class else 'the selected class'
+            move_note = f' Moved to {new_name}.'
+        log_activity(
+            'UPDATE_STUDENT',
+            f'Updated student record for {student.full_name} (ID: {student.student_id}).{move_note}',
+        )
         db.session.commit()
         if student.klass_id and student.klass_id != previous_class_id:
             new_class = student.assigned_class or db.session.get(Class, student.klass_id)
@@ -22074,14 +22352,10 @@ def _proprietor_live_snapshot(display_year, *, viewing_archived=False):
     passing_rate = round(passing / graded * 100, 1) if graded else 0.0
     at_risk = sum(1 for avg in averages_map.values() if avg < MOE_PASSING_SCORE)
 
-    pending_grades = (
-        GradeRelease.query.filter_by(
-            academic_year_id=display_year.id,
-            status=GradeRelease.STATUS_PENDING_VPA,
-        ).count()
-        if display_year else 0
-    )
-    pending_transcripts = count_pending_transcript_releases(display_year)
+    pending_grades = count_pending_grade_releases(display_year, exclude_senior=True)
+    pending_senior_grades = count_pending_grade_releases(display_year, senior_only=True)
+    pending_transcripts = count_pending_transcript_releases(display_year, exclude_senior=True)
+    pending_senior_transcripts = count_pending_transcript_releases(display_year, senior_only=True)
 
     revenue_q = db.session.query(func.coalesce(func.sum(BusinessTransaction.amount), 0)).filter(
         BusinessTransaction.is_deleted.is_(False),
@@ -22176,6 +22450,24 @@ def _proprietor_live_snapshot(display_year, *, viewing_archived=False):
             'submitted': bool(grade.submitted),
         })
 
+    recent_audit = []
+    try:
+        for log in AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(8).all():
+            recent_audit.append({
+                'timestamp': log.timestamp.strftime('%Y-%m-%d %H:%M') if log.timestamp else '',
+                'user_name': log.user_name,
+                'user_role': log.user_role,
+                'action': log.action,
+                'action_label': _audit_action_label(log.action),
+                'details': (log.details or '')[:160],
+            })
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        recent_audit = []
+
     return {
         'generated_at': now.isoformat(),
         'clock_label': now.strftime('%b %d, %Y · %H:%M UTC'),
@@ -22191,7 +22483,9 @@ def _proprietor_live_snapshot(display_year, *, viewing_archived=False):
         'graded_students': graded,
         'moe_standard': MOE_PASSING_SCORE,
         'pending_grades': pending_grades,
+        'pending_senior_grades': pending_senior_grades,
         'pending_transcripts': pending_transcripts,
+        'pending_senior_transcripts': pending_senior_transcripts,
         'total_revenue': money(total_revenue),
         'total_expenses': money(total_expenses),
         'net_position': money(total_revenue - total_expenses),
@@ -22208,6 +22502,7 @@ def _proprietor_live_snapshot(display_year, *, viewing_archived=False):
         'active_suspensions': active_suspensions,
         'recent_payments': recent_payments,
         'recent_grades': recent_grades,
+        'recent_audit': recent_audit,
     }
 
 
@@ -22241,6 +22536,321 @@ def proprietor_live_json():
         session_key=PROPRIETOR_YEAR_SESSION_KEY,
     )
     return jsonify(_proprietor_live_snapshot(display_year, viewing_archived=viewing_archived))
+
+
+def _proprietor_audit_guard():
+    """Audit trail is proprietor-only. Owner aliases map to proprietor."""
+    if canonical_role(current_user) in PROPRIETOR_AUDIT_ROLES:
+        return None
+    flash('The activity audit desk is reserved for the School Proprietor.', 'danger')
+    return redirect(url_for(home_endpoint_for_role(current_user)))
+
+
+def _audit_action_label(action):
+    return (action or 'ACTIVITY').replace('_', ' ').title()
+
+
+@app.route('/proprietor/audit-logs', methods=['GET'])
+@login_required
+def proprietor_audit_logs():
+    """Proprietor desk: live record of logins, student changes, and grade work."""
+    blocked = _proprietor_audit_guard()
+    if blocked:
+        return blocked
+    action_filter = (request.args.get('action') or '').strip()
+    q = (request.args.get('q') or '').strip()
+    query = AuditLog.query
+    if action_filter:
+        query = query.filter(AuditLog.action == action_filter)
+    if q:
+        like = f'%{q}%'
+        query = query.filter(db.or_(
+            AuditLog.user_name.ilike(like),
+            AuditLog.details.ilike(like),
+            AuditLog.action.ilike(like),
+            AuditLog.ip_address.ilike(like),
+        ))
+    logs = query.order_by(AuditLog.timestamp.desc()).limit(250).all()
+    actions = [
+        row[0] for row in
+        db.session.query(AuditLog.action).distinct().order_by(AuditLog.action.asc()).all()
+        if row[0]
+    ]
+    return render_template(
+        'proprietor_audit_logs.html',
+        logs=logs,
+        actions=actions,
+        action_filter=action_filter,
+        search=q,
+        brand=school_print_brand(),
+        action_label=_audit_action_label,
+    )
+
+
+@app.route('/proprietor/audit-logs.json', methods=['GET'])
+@login_required
+def proprietor_audit_logs_json():
+    """Live pulse of the latest audit rows for the proprietor desk."""
+    blocked = _proprietor_audit_guard()
+    if blocked:
+        return blocked
+    logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(40).all()
+    return jsonify({
+        'generated_at': datetime.now(timezone.utc).isoformat(),
+        'logs': [
+            {
+                'id': log.id,
+                'timestamp': log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else '',
+                'user_name': log.user_name,
+                'user_role': log.user_role,
+                'action': log.action,
+                'action_label': _audit_action_label(log.action),
+                'details': log.details or '',
+                'ip_address': log.ip_address or '',
+            }
+            for log in logs
+        ],
+    })
+
+
+def _proprietor_senior_release_guard():
+    """Senior High grade seal is proprietor-only."""
+    if user_may_release_senior_grades():
+        return None
+    flash(SENIOR_GRADE_RELEASE_HOLD_MESSAGE, 'danger')
+    return redirect(url_for(home_endpoint_for_role(current_user)))
+
+
+@app.route('/proprietor/senior-grade-releases', methods=['GET'])
+@login_required
+def proprietor_senior_grade_releases():
+    """Proprietor seal desk: Senior High grade and report release only."""
+    blocked = _proprietor_senior_release_guard()
+    if blocked:
+        return blocked
+    display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
+        session_key=PROPRIETOR_YEAR_SESSION_KEY,
+    )
+    cabinet = _build_vpa_release_cabinet(
+        display_year,
+        viewing_archived=viewing_archived,
+        open_class_id=request.args.get('open_class_id', type=int),
+        division_scope='senior_only',
+    )
+    return render_template(
+        'proprietor_senior_grade_releases.html',
+        display_year=display_year,
+        active_year=active_year,
+        years=years,
+        viewing_archived=viewing_archived,
+        cabinet_mode='grades',
+        release_folders_by_division=cabinet['release_folders_by_division'],
+        unassigned_folder=None,
+        open_class_id=cabinet['open_class_id'],
+        year_wide=cabinet['year_wide'],
+        folder_count=cabinet['folder_count'],
+        student_count=cabinet['student_count'],
+        pending_count=cabinet['pending_count'],
+        owing_count=cabinet['owing_count'],
+        brand=school_print_brand(),
+    )
+
+
+@app.route('/proprietor/senior-grade-releases/class/<int:class_id>', methods=['GET'])
+@login_required
+def proprietor_senior_class_grade_folder(class_id):
+    """Open one Senior High class folder for proprietor period release."""
+    blocked = _proprietor_senior_release_guard()
+    if blocked:
+        return blocked
+    klass = Class.query.get_or_404(class_id)
+    if not is_senior_high_class(klass):
+        flash(
+            f'{klass.name} is not a Senior High class. Use the academic release cabinet for that division.',
+            'warning',
+        )
+        return redirect(url_for('vpa_grade_releases'))
+    display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
+        session_key=PROPRIETOR_YEAR_SESSION_KEY,
+    )
+    cabinet = _build_vpa_release_cabinet(
+        display_year,
+        viewing_archived=viewing_archived,
+        open_class_id=klass.id,
+        division_scope='senior_only',
+    )
+    folder = next(
+        (item for item in cabinet['release_folders'] if item.get('id') == klass.id),
+        None,
+    )
+    if not folder:
+        flash(f'{klass.name} is not on the Senior High seal desk for this year.', 'warning')
+        return redirect(url_for(
+            'proprietor_senior_grade_releases',
+            academic_year_id=display_year.id if display_year else None,
+        ))
+    return render_template(
+        'proprietor_senior_grade_releases.html',
+        klass=klass,
+        folder=folder,
+        display_year=display_year,
+        active_year=active_year,
+        years=years,
+        viewing_archived=viewing_archived,
+        cabinet_mode='grades',
+        year_wide=cabinet['year_wide'],
+        open_class_id=klass.id,
+        folder_page=True,
+        release_folders_by_division=[{
+            'key': DIVISION_SENIOR_HIGH,
+            'label': 'Senior High',
+            'classes': [folder],
+        }],
+        unassigned_folder=None,
+        folder_count=1,
+        student_count=folder.get('student_count', 0),
+        pending_count=folder.get('pending_count', 0),
+        owing_count=folder.get('owing_count', 0),
+        brand=school_print_brand(),
+    )
+
+
+@app.route('/proprietor/senior-transcript-releases', methods=['GET'])
+@login_required
+def proprietor_senior_transcript_releases():
+    """Proprietor seal desk: Senior High Official Transcripts, per student or class."""
+    blocked = _proprietor_senior_release_guard()
+    if blocked:
+        return blocked
+    display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
+        session_key=PROPRIETOR_YEAR_SESSION_KEY,
+    )
+    cabinet = _build_vpa_release_cabinet(
+        display_year,
+        viewing_archived=viewing_archived,
+        open_class_id=request.args.get('open_class_id', type=int),
+        division_scope='senior_only',
+    )
+    return render_template(
+        'proprietor_senior_grade_releases.html',
+        display_year=display_year,
+        active_year=active_year,
+        years=years,
+        viewing_archived=viewing_archived,
+        cabinet_mode='transcripts',
+        release_folders_by_division=cabinet['release_folders_by_division'],
+        unassigned_folder=None,
+        open_class_id=cabinet['open_class_id'],
+        year_wide=None,
+        folder_count=cabinet['folder_count'],
+        student_count=cabinet['student_count'],
+        pending_count=cabinet['transcript_pending_count'],
+        owing_count=cabinet['owing_count'],
+        brand=school_print_brand(),
+    )
+
+
+@app.route('/proprietor/senior-transcript-releases/class/<int:class_id>', methods=['GET'])
+@login_required
+def proprietor_senior_class_transcript_folder(class_id):
+    """Open one Senior High class folder for per-student transcript release."""
+    blocked = _proprietor_senior_release_guard()
+    if blocked:
+        return blocked
+    klass = Class.query.get_or_404(class_id)
+    if not is_senior_high_class(klass):
+        flash(
+            f'{klass.name} is not a Senior High class. Use the academic transcript cabinet for that division.',
+            'warning',
+        )
+        return redirect(url_for('vpa_transcript_releases'))
+    display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
+        session_key=PROPRIETOR_YEAR_SESSION_KEY,
+    )
+    cabinet = _build_vpa_release_cabinet(
+        display_year,
+        viewing_archived=viewing_archived,
+        open_class_id=klass.id,
+        division_scope='senior_only',
+    )
+    folder = next(
+        (item for item in cabinet['release_folders'] if item.get('id') == klass.id),
+        None,
+    )
+    if not folder:
+        flash(f'{klass.name} is not on the Senior High transcript desk for this year.', 'warning')
+        return redirect(url_for(
+            'proprietor_senior_transcript_releases',
+            academic_year_id=display_year.id if display_year else None,
+        ))
+    return render_template(
+        'proprietor_senior_grade_releases.html',
+        klass=klass,
+        folder=folder,
+        display_year=display_year,
+        active_year=active_year,
+        years=years,
+        viewing_archived=viewing_archived,
+        cabinet_mode='transcripts',
+        year_wide=None,
+        open_class_id=klass.id,
+        folder_page=True,
+        release_folders_by_division=[{
+            'key': DIVISION_SENIOR_HIGH,
+            'label': 'Senior High',
+            'classes': [folder],
+        }],
+        unassigned_folder=None,
+        folder_count=1,
+        student_count=folder.get('student_count', 0),
+        pending_count=folder.get('transcript_pending_count', 0),
+        owing_count=folder.get('owing_count', 0),
+        brand=school_print_brand(),
+    )
+
+
+@app.route('/proprietor/senior-transcript-releases/approve-all', methods=['POST'])
+@login_required
+def proprietor_approve_all_senior_transcripts():
+    """Release Official Transcript for every Senior High student in the year."""
+    blocked = _proprietor_senior_release_guard()
+    if blocked:
+        return blocked
+    year_id = request.form.get('academic_year_id', type=int)
+    display_year = db.session.get(AcademicYear, year_id) if year_id else get_active_academic_year()
+    if not display_year:
+        flash('Select an academic year before releasing Senior High transcripts.', 'warning')
+        return redirect(url_for('proprietor_senior_transcript_releases'))
+    students = (
+        _students_for_display_year(display_year, history_mode=True)
+        .options(joinedload(Student.assigned_class))
+        .all()
+    )
+    released = 0
+    for student in students:
+        if not is_senior_high_student(student, display_year.id):
+            continue
+        if official_transcript_is_released(student.id, display_year.id):
+            continue
+        approve_official_transcript(
+            display_year.id, student_id=student.id, user=current_user, commit=False,
+        )
+        released += 1
+    if released:
+        log_activity(
+            'RELEASE_TRANSCRIPT',
+            f'Released Official Transcripts for {released} Senior High student(s) in {display_year.name}.',
+        )
+    db.session.commit()
+    flash(
+        f'Released Official Transcripts for {released} Senior High student'
+        f'{"s" if released != 1 else ""} in {display_year.name}.',
+        'success' if released else 'info',
+    )
+    return redirect(url_for(
+        'proprietor_senior_transcript_releases',
+        academic_year_id=display_year.id,
+    ))
 
 
 # -------------------------- PAYROLL -------------------------------
@@ -22797,14 +23407,12 @@ def vpi_dashboard():
             _students_for_display_year(display_year, history_mode=viewing_archived).count()
             if display_year else 0
         ),
-        'pending_vpa_releases': (
-            GradeRelease.query.filter_by(
-                academic_year_id=display_year.id,
-                status=GradeRelease.STATUS_PENDING_VPA,
-            ).count()
-            if display_year else 0
+        'pending_vpa_releases': count_pending_grade_releases(
+            display_year, exclude_senior=True,
         ),
-        'pending_transcript_releases': count_pending_transcript_releases(display_year),
+        'pending_transcript_releases': count_pending_transcript_releases(
+            display_year, exclude_senior=True,
+        ),
         'moe_standard': MOE_PASSING_SCORE,
     }
 
@@ -23433,14 +24041,12 @@ def vpa_dashboard():
         'total_assessments': assessment_query.count(),
         'grades_entered': grade_query.count(),
         'grades_published': grade_query.filter_by(submitted=True).count(),
-        'pending_vpa_releases': (
-            GradeRelease.query.filter_by(
-                academic_year_id=display_year.id,
-                status=GradeRelease.STATUS_PENDING_VPA,
-            ).count()
-            if display_year else 0
+        'pending_vpa_releases': count_pending_grade_releases(
+            display_year, exclude_senior=True,
         ),
-        'pending_transcript_releases': count_pending_transcript_releases(display_year),
+        'pending_transcript_releases': count_pending_transcript_releases(
+            display_year, exclude_senior=True,
+        ),
         'passing_rate': passing_rate,
         'failing_count': performance_bands['needs_improvement'],
         'no_grade_data': performance_bands['no_grades'],
@@ -23646,7 +24252,7 @@ def _vpa_student_release_row(
         'pending_student_periods': sum(1 for slot in period_actions if slot['can_release']),
         'grade_sheet_unlocked': grade_sheet_unlocked,
         'report_card_unlocked': report_card_unlocked,
-        'transcript_released': bool(year_wide) or student.id in approved_transcript_ids,
+        'transcript_released': official_transcript_is_released(student.id, year_id) if year_id else False,
     }
 
 
@@ -23686,11 +24292,27 @@ def _vpa_period_slots_for_class(class_id, releases_by_class, submitted_counts):
     return slots
 
 
-def _build_vpa_release_cabinet(display_year, *, viewing_archived=False, open_class_id=None):
-    """All class folders for the year, with photos, fee standing, and release state."""
+def _build_vpa_release_cabinet(
+    display_year,
+    *,
+    viewing_archived=False,
+    open_class_id=None,
+    division_scope='all',
+):
+    """All class folders for the year, with photos, fee standing, and release state.
+
+    division_scope:
+      - 'all': every division
+      - 'exclude_senior': hide Senior High (VPA/VPI/principal/admin desk)
+      - 'senior_only': Proprietor Senior High seal desk
+    """
     from collections import defaultdict
 
     class_rows = sorted(Class.query.all(), key=class_sort_key_from_klass)
+    if division_scope == 'exclude_senior':
+        class_rows = [klass for klass in class_rows if not is_senior_high_class(klass)]
+    elif division_scope == 'senior_only':
+        class_rows = [klass for klass in class_rows if is_senior_high_class(klass)]
     students = []
     if display_year:
         students = (
@@ -23771,7 +24393,7 @@ def _build_vpa_release_cabinet(display_year, *, viewing_archived=False, open_cla
         class_id = class_map.get(student.id) or student.klass_id
         if class_id:
             students_by_class[class_id].append(student)
-        else:
+        elif division_scope != 'senior_only':
             unassigned_students.append(student)
 
     year_id = display_year.id if display_year else None
@@ -23874,7 +24496,7 @@ def _build_vpa_release_cabinet(display_year, *, viewing_archived=False, open_cla
         'folder_count': len(folders),
         'student_count': len(students),
         'pending_count': pending_count,
-        'transcript_pending_count': 0 if year_wide else transcript_pending,
+        'transcript_pending_count': transcript_pending,
         'owing_count': owing_count,
     }
 
@@ -23958,13 +24580,14 @@ def _grade_release_queue_rows(display_year=None, status=None):
 
 
 def _load_reviewable_grade_release(release_id):
-    blocked = deny_unless_roles(ACADEMIC_RELEASE_ROLES)
-    if blocked:
-        return blocked, None
     release = db.session.get(GradeRelease, release_id)
     if not release:
         flash('That grade package was not found.', 'danger')
         return redirect(url_for('vpa_grade_releases')), None
+    klass = release.klass or (db.session.get(Class, release.class_id) if release.class_id else None)
+    blocked = deny_unless_may_release_class_grades(klass, year_id=release.academic_year_id)
+    if blocked:
+        return blocked, None
     return None, release
 
 
@@ -23983,6 +24606,7 @@ def vpa_grade_releases():
         display_year,
         viewing_archived=viewing_archived,
         open_class_id=request.args.get('open_class_id', type=int),
+        division_scope='exclude_senior',
     )
     return render_template(
         'vpa_grade_releases.html',
@@ -23999,6 +24623,7 @@ def vpa_grade_releases():
         student_count=cabinet['student_count'],
         pending_count=cabinet['pending_count'],
         owing_count=cabinet['owing_count'],
+        senior_release_reserved=True,
     )
 
 
@@ -24010,6 +24635,11 @@ def vpa_approve_grade_release(release_id):
         return blocked
     comment = (request.form.get('review_comment') or '').strip() or None
     _apply_grade_release_approval(release, current_user, comment)
+    log_activity(
+        'APPROVE_GRADE_PERIOD',
+        f'Approved {grading_period_label(release.period)} for '
+        f'{(release.klass.name if release.klass else "this class")}.',
+    )
     db.session.commit()
     report_card_open = report_card_is_released(release.academic_year_id, release.class_id)
     flash(
@@ -24024,7 +24654,11 @@ def vpa_approve_grade_release(release_id):
         'success',
     )
     return _vpa_release_page_redirect(
-        'vpa_grade_releases',
+        (
+            'proprietor_senior_grade_releases'
+            if is_senior_high_class(release.klass)
+            else 'vpa_grade_releases'
+        ),
         year_id=release.academic_year_id,
         class_id=release.class_id,
     )
@@ -24050,6 +24684,11 @@ def vpa_return_grade_release(release_id):
     release.approved_by_id = None
     release.approved_at = None
     release.review_comment = comment
+    log_activity(
+        'RETURN_GRADE_PERIOD',
+        f'Returned {grading_period_label(release.period)} for '
+        f'{(release.klass.name if release.klass else "this class")}. Comment: {comment}',
+    )
     db.session.commit()
     flash(
         f'{grading_period_label(release.period)} was returned to the teacher. '
@@ -24058,7 +24697,11 @@ def vpa_return_grade_release(release_id):
         'warning',
     )
     return _vpa_release_page_redirect(
-        'vpa_grade_releases',
+        (
+            'proprietor_senior_grade_releases'
+            if is_senior_high_class(release.klass)
+            else 'vpa_grade_releases'
+        ),
         year_id=release.academic_year_id,
         class_id=release.class_id,
     )
@@ -24067,11 +24710,20 @@ def vpa_return_grade_release(release_id):
 @app.route('/vpa/grade-releases/class/<int:class_id>', methods=['GET'])
 @login_required
 def vpa_class_grade_folder(class_id):
-    """Open one class folder so VPA/VPI can release each student's periods."""
+    """Open one class folder so leadership can release each student's periods."""
+    klass = Class.query.get_or_404(class_id)
+    if is_senior_high_class(klass):
+        if not user_may_release_senior_grades():
+            flash(SENIOR_GRADE_RELEASE_HOLD_MESSAGE, 'danger')
+            return redirect(url_for('vpa_grade_releases'))
+        return redirect(url_for(
+            'proprietor_senior_class_grade_folder',
+            class_id=klass.id,
+            academic_year_id=request.args.get('academic_year_id', type=int),
+        ))
     blocked = deny_unless_roles(ACADEMIC_RELEASE_ROLES)
     if blocked:
         return blocked
-    klass = Class.query.get_or_404(class_id)
     display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
         session_key=dashboard_year_session_key(),
     )
@@ -24079,6 +24731,7 @@ def vpa_class_grade_folder(class_id):
         display_year,
         viewing_archived=viewing_archived,
         open_class_id=klass.id,
+        division_scope='exclude_senior',
     )
     folder = next(
         (item for item in cabinet['release_folders'] if item.get('id') == klass.id),
@@ -24119,9 +24772,6 @@ def vpa_class_grade_folder(class_id):
 @login_required
 def vpa_approve_student_period(student_id, period):
     """Release one marking period to one student inside a class folder."""
-    blocked = deny_unless_roles(ACADEMIC_RELEASE_ROLES)
-    if blocked:
-        return blocked
     student = Student.query.get_or_404(student_id)
     year_id = request.form.get('academic_year_id', type=int)
     display_year = db.session.get(AcademicYear, year_id) if year_id else get_active_academic_year()
@@ -24131,6 +24781,10 @@ def vpa_approve_student_period(student_id, period):
     class_id = request.form.get('class_id', type=int) or get_student_class_id(
         student, display_year.id,
     )
+    klass = db.session.get(Class, class_id) if class_id else None
+    blocked = deny_unless_may_release_class_grades(klass, year_id=display_year.id)
+    if blocked:
+        return blocked
     if period not in range(1, 9):
         flash('That marking period is not valid.', 'warning')
         return _vpa_release_page_redirect(
@@ -24162,14 +24816,23 @@ def vpa_approve_student_period(student_id, period):
             class_id=class_id,
             academic_year_id=display_year.id,
         ) if class_id else url_for('vpa_grade_releases', academic_year_id=display_year.id))
+    log_activity(
+        'RELEASE_STUDENT_PERIOD',
+        f'Released {grading_period_label(period)} for {student.full_name} (ID: {student.student_id}).',
+    )
     db.session.commit()
     flash(
         f'{grading_period_label(period)} is released for {student.full_name}. '
         'That student may now view this period on the grade sheet.',
         'success',
     )
+    folder_endpoint = (
+        'proprietor_senior_class_grade_folder'
+        if is_senior_high_class(klass)
+        else 'vpa_class_grade_folder'
+    )
     return redirect(url_for(
-        'vpa_class_grade_folder',
+        folder_endpoint,
         class_id=class_id,
         academic_year_id=display_year.id,
     ) if class_id else url_for('vpa_grade_releases', academic_year_id=display_year.id))
@@ -24179,15 +24842,15 @@ def vpa_approve_student_period(student_id, period):
 @login_required
 def vpa_approve_class_grade_releases(class_id):
     """Approve every pending period package for one class in one action."""
-    blocked = deny_unless_roles(ACADEMIC_RELEASE_ROLES)
-    if blocked:
-        return blocked
     klass = Class.query.get_or_404(class_id)
     year_id = request.form.get('academic_year_id', type=int)
     display_year = db.session.get(AcademicYear, year_id) if year_id else get_active_academic_year()
     if not display_year:
         flash('Select an academic year before releasing a class.', 'warning')
         return redirect(url_for('vpa_grade_releases'))
+    blocked = deny_unless_may_release_class_grades(klass, year_id=display_year.id)
+    if blocked:
+        return blocked
     period = request.form.get('period', type=int)
     comment = (request.form.get('review_comment') or '').strip() or None
     query = GradeRelease.query.filter_by(
@@ -24201,19 +24864,23 @@ def vpa_approve_class_grade_releases(class_id):
     if not releases:
         flash(
             f'No pending grade packages for {klass.name} to release. '
-            'Teachers must publish a period before VPA can approve the class. '
+            'Teachers must publish a period before it can be approved. '
             'Owing fees do not block this queue.',
             'warning',
         )
         return _vpa_release_page_redirect(
-            'vpa_grade_releases',
+            'proprietor_senior_grade_releases' if is_senior_high_class(klass) else 'vpa_grade_releases',
             year_id=display_year.id,
             class_id=klass.id,
         )
     for release in releases:
         _apply_grade_release_approval(release, current_user, comment)
-    db.session.commit()
     labels = ', '.join(grading_period_label(item.period) for item in releases)
+    log_activity(
+        'APPROVE_GRADE_PERIOD',
+        f'Released entire class {klass.name} ({labels}).',
+    )
+    db.session.commit()
     report_card_open = report_card_is_released(display_year.id, klass.id)
     flash(
         f'Released {klass.name} ({labels}). Students may now view those grade sheets. '
@@ -24226,7 +24893,7 @@ def vpa_approve_class_grade_releases(class_id):
         'success',
     )
     return _vpa_release_page_redirect(
-        'vpa_grade_releases',
+        'proprietor_senior_grade_releases' if is_senior_high_class(klass) else 'vpa_grade_releases',
         year_id=display_year.id,
         class_id=klass.id,
     )
@@ -24291,6 +24958,7 @@ def vpa_transcript_releases():
         display_year,
         viewing_archived=viewing_archived,
         open_class_id=request.args.get('open_class_id', type=int),
+        division_scope='exclude_senior',
     )
     return render_template(
         'vpa_transcript_releases.html',
@@ -24307,6 +24975,7 @@ def vpa_transcript_releases():
         student_count=cabinet['student_count'],
         pending_count=cabinet['transcript_pending_count'],
         owing_count=cabinet['owing_count'],
+        senior_release_reserved=True,
     )
 
 
@@ -24321,35 +24990,68 @@ def vpa_approve_year_transcripts():
     if not display_year:
         flash('Select an academic year before releasing transcripts.', 'warning')
         return redirect(url_for('vpa_transcript_releases'))
-    approve_official_transcript(display_year.id, student_id=None, user=current_user)
-    flash(
-        f'Official Transcripts for {display_year.name} are released. '
-        'Students and parents may now view the portrait document in the portal.',
-        'success',
+    students = (
+        _students_for_display_year(display_year, history_mode=True)
+        .options(joinedload(Student.assigned_class))
+        .all()
     )
+    released = 0
+    skipped_senior = 0
+    for student in students:
+        if is_senior_high_student(student, display_year.id):
+            skipped_senior += 1
+            continue
+        if official_transcript_is_released(student.id, display_year.id):
+            continue
+        approve_official_transcript(
+            display_year.id, student_id=student.id, user=current_user, commit=False,
+        )
+        released += 1
+    db.session.commit()
+    message = (
+        f'Released Official Transcripts for {released} non–Senior High student'
+        f'{"s" if released != 1 else ""} in {display_year.name}.'
+    )
+    if skipped_senior:
+        message += (
+            f' {skipped_senior} Senior High student'
+            f'{"s" if skipped_senior != 1 else ""} remain sealed for the Proprietor.'
+        )
+    flash(message, 'success' if released else 'info')
     return redirect(url_for('vpa_transcript_releases', academic_year_id=display_year.id))
 
 
 @app.route('/vpa/transcript-releases/<int:student_id>/approve', methods=['POST'])
 @login_required
 def vpa_approve_student_transcript(student_id):
-    blocked = deny_unless_roles(ACADEMIC_RELEASE_ROLES)
-    if blocked:
-        return blocked
     student = Student.query.get_or_404(student_id)
     year_id = request.form.get('academic_year_id', type=int)
     display_year = db.session.get(AcademicYear, year_id) if year_id else get_active_academic_year()
     if not display_year:
         flash('Select an academic year before releasing a transcript.', 'warning')
         return redirect(url_for('vpa_transcript_releases'))
-    approve_official_transcript(display_year.id, student_id=student.id, user=current_user)
+    blocked = deny_unless_may_release_student_transcript(student, year_id=display_year.id)
+    if blocked:
+        return blocked
+    approve_official_transcript(
+        display_year.id, student_id=student.id, user=current_user, commit=False,
+    )
+    log_activity(
+        'RELEASE_TRANSCRIPT',
+        f'Released Official Transcript for {student.full_name} (ID: {student.student_id}).',
+    )
+    db.session.commit()
     flash(
         f'Official Transcript for {student.full_name} is released for {display_year.name}.',
         'success',
     )
     klass = get_student_class_for_year(student, display_year.id)
     return _vpa_release_page_redirect(
-        'vpa_transcript_releases',
+        (
+            'proprietor_senior_transcript_releases'
+            if is_senior_high_class(klass)
+            else 'vpa_transcript_releases'
+        ),
         year_id=display_year.id,
         class_id=klass.id if klass else None,
     )
@@ -24359,16 +25061,24 @@ def vpa_approve_student_transcript(student_id):
 @login_required
 def vpa_approve_class_transcripts(class_id):
     """Release Official Transcript for every student in one class."""
-    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
-    if blocked:
-        return blocked
     klass = Class.query.get_or_404(class_id)
     year_id = request.form.get('academic_year_id', type=int)
     display_year = db.session.get(AcademicYear, year_id) if year_id else get_active_academic_year()
     if not display_year:
         flash('Select an academic year before releasing a class.', 'warning')
         return redirect(url_for('vpa_transcript_releases'))
-    if official_transcript_is_released(None, display_year.id):
+    if is_senior_high_class(klass):
+        if not user_may_release_senior_grades():
+            flash(SENIOR_GRADE_RELEASE_HOLD_MESSAGE, 'danger')
+            return redirect(url_for(
+                'vpa_transcript_releases',
+                academic_year_id=display_year.id,
+            ))
+    else:
+        blocked = deny_unless_roles(ACADEMIC_RELEASE_ROLES)
+        if blocked:
+            return blocked
+    if official_transcript_is_released(None, display_year.id) and not is_senior_high_class(klass):
         flash(
             f'Year-wide transcript release is already active for {display_year.name}.',
             'info',
@@ -24387,7 +25097,11 @@ def vpa_approve_class_transcripts(class_id):
             'warning',
         )
         return _vpa_release_page_redirect(
-            'vpa_transcript_releases',
+            (
+                'proprietor_senior_transcript_releases'
+                if is_senior_high_class(klass)
+                else 'vpa_transcript_releases'
+            ),
             year_id=display_year.id,
             class_id=klass.id,
         )
@@ -24405,6 +25119,11 @@ def vpa_approve_class_transcripts(class_id):
         released += 1
         if fee_map.get(student.id, {}).get('owing'):
             owing_released += 1
+    if released:
+        log_activity(
+            'RELEASE_TRANSCRIPT',
+            f'Released Official Transcripts for {released} student(s) in {klass.name}.',
+        )
     db.session.commit()
     if not released:
         flash(
@@ -24425,7 +25144,11 @@ def vpa_approve_class_transcripts(class_id):
         else:
             flash(message, 'success')
     return _vpa_release_page_redirect(
-        'vpa_transcript_releases',
+        (
+            'proprietor_senior_transcript_releases'
+            if is_senior_high_class(klass)
+            else 'vpa_transcript_releases'
+        ),
         year_id=display_year.id,
         class_id=klass.id,
     )
@@ -24930,6 +25653,10 @@ def admin_users():
                 else:
                     logger.warning(f"⚠️ Teacher profile already exists for user {user.id}")
 
+            log_activity(
+                'CREATE_STAFF_USER',
+                f'Created {canonical_role(user)} account for {user.full_name} ({user.email}).',
+            )
             db.session.commit()
             flash(f"User {user.full_name} ({user.role}) created successfully.", "success")
             return redirect(url_for('admin_users'))
@@ -25006,6 +25733,7 @@ with app.app_context():
         ensure_legacy_sqlite_schema()
         ensure_grade_releases_table()
         ensure_transcript_releases_table()
+        ensure_audit_logs_table()
         ensure_scale_indexes(db)
         sealed = seal_academic_year_folders(db)
         if sealed:

@@ -425,6 +425,29 @@ class SecurityLog(db.Model):
         return f"<SecurityLog {self.event} from {self.ip_address} at {self.timestamp}>"
 
 
+class AuditLog(db.Model):
+    """Proprietor activity trail: who did what, when, and from where."""
+    __tablename__ = "audit_logs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    user_name = db.Column(db.String(120), nullable=False)
+    user_role = db.Column(db.String(50), nullable=False)
+    action = db.Column(db.String(80), nullable=False, index=True)
+    details = db.Column(db.Text, nullable=True)
+    ip_address = db.Column(db.String(45), nullable=True)
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+
+    user = db.relationship(
+        "User",
+        backref=db.backref("audit_logs", lazy="dynamic"),
+        foreign_keys=[user_id],
+    )
+
+    def __repr__(self):
+        return f"<AuditLog {self.action} by {self.user_name} at {self.timestamp}>"
+
+
 # =====================================================================
 # 2. ACADEMIC ENVIRONMENT INFRASTRUCTURE
 # =====================================================================
