@@ -1,7 +1,7 @@
 {# Student identity cell for attendance rolls: photo + full name + ID. #}
 {% set _compact = roll_compact|default(false) %}
 {% set _unmarked = roll_unmarked|default(false) %}
-{% set _photo_px = 32 if _compact else 44 %}
+{% set _photo_px = 36 if _compact else 44 %}
 <div class="att-student{% if _compact %} att-student-compact{% endif %}">
     <img class="att-student-photo"
          src="{{ student.photo_url }}"

@@ -19,7 +19,7 @@ except ImportError:
 
 try:
     from pyzbar.pyzbar import decode as pyzbar_decode
-except ImportError:
+except Exception:
     pyzbar_decode = None
 
 UUID_PATTERN = re.compile(

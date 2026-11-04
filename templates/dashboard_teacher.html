@@ -189,6 +189,19 @@
     font-weight: 600;
     text-align: center;
   }
+  .student-photo-cell {
+    text-align: center;
+    width: 68px;
+  }
+  .grade-student-photo {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #ffffff;
+    box-shadow: 0 0 0 1px #d8dee8, 0 4px 10px rgba(15, 23, 42, 0.08);
+    display: inline-block;
+  }
 
   /* Specialized Input Controls */
   .field-input-text {
@@ -858,6 +871,7 @@
       <thead>
         <tr>
           <th>#</th>
+          <th>Photo</th>
           <th style="text-align: left;">Student Name</th>
           <th>Student ID</th>
           {% if is_exam_period %}
@@ -881,6 +895,16 @@
           {% set letter = (total_score | grade_letter) if total_score is not none else '—' %}
           <tr data-student-id="{{ student.id }}">
             <td class="text-center fw-bold text-secondary">{{ loop.index }}</td>
+            <td class="student-photo-cell">
+              <img class="grade-student-photo"
+                   src="{{ student.photo_url or default_avatar_url }}"
+                   alt="{{ student.full_name }}"
+                   width="44"
+                   height="44"
+                   loading="lazy"
+                   decoding="async"
+                   onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
+            </td>
             <td class="student-name-cell">{{ student.full_name }}</td>
             <td class="student-id-cell">{{ student.student_id }}</td>
             {% if is_exam_period %}

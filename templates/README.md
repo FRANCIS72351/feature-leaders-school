@@ -1,2 +1,0 @@
-# Feature_Leader_School
-# feature-leaders
