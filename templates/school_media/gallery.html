@@ -94,7 +94,7 @@
                 {% endif %}
                 <div class="p-3">
                     <div class="d-flex justify-content-between gap-2 mb-2">
-                        <span class="badge bg-secondary text-capitalize">{{ item.category.replace('_', ' ') }}</span>
+                        <span class="badge bg-secondary text-capitalize">{{ (item.category or 'general').replace('_', ' ') }}</span>
                         <span class="small text-muted text-capitalize">{{ item.media_type }}</span>
                     </div>
                     <h2 class="h6 fw-bold mb-1">{{ item.title }}</h2>

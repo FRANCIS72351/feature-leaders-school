@@ -250,6 +250,17 @@ def static_photo_file_exists(photo_path):
     return False
 
 
+def listed_static_photo_url(photo_path, default_filename=DEFAULT_STUDENT_PHOTO):
+    """Static URL from a stored path without opening files (img onerror covers misses)."""
+    for candidate in _photo_candidate_filenames(photo_path):
+        if candidate.startswith(("http://", "https://", "data:")):
+            return candidate
+        if candidate and not _is_placeholder_photo_name(candidate):
+            return _static_url(candidate)
+    fallback = default_filename or DEFAULT_STUDENT_PHOTO
+    return _static_url(fallback)
+
+
 def resolve_static_photo_url(photo_path, default_filename=DEFAULT_STUDENT_PHOTO):
     """Turn a stored photo path into a working static URL (uploaded file or default)."""
     from flask import current_app, has_app_context
@@ -257,19 +268,13 @@ def resolve_static_photo_url(photo_path, default_filename=DEFAULT_STUDENT_PHOTO)
     if has_app_context() and getattr(current_app, "static_folder", None):
         _ensure_default_avatar_files(current_app.static_folder)
 
-    for candidate in _photo_candidate_filenames(photo_path):
-        if candidate.startswith(("http://", "https://", "data:")):
-            return candidate
-        if _static_file_on_disk(candidate):
-            return _static_url(candidate)
+    if photo_path and str(photo_path).strip() and not _is_placeholder_photo_name(photo_path):
+        return listed_static_photo_url(photo_path, default_filename=default_filename)
 
     fallbacks = []
     for name in (default_filename, DEFAULT_STUDENT_PHOTO, DEFAULT_USER_PHOTO) + DEFAULT_AVATAR_ALIASES:
         if name and name not in fallbacks:
             fallbacks.append(name)
-    for fallback in fallbacks:
-        if _static_file_on_disk(fallback):
-            return _static_url(fallback)
     return _static_url(fallbacks[0] if fallbacks else DEFAULT_STUDENT_PHOTO)
 
 
@@ -875,9 +880,9 @@ class Student(db.Model):
     def photo_url(self):
         """Always return a working avatar URL (student, user, or default)."""
         for source in self._id_photo_sources():
-            if static_photo_file_exists(source):
-                return resolve_static_photo_url(source, default_filename=DEFAULT_STUDENT_PHOTO)
-        return resolve_static_photo_url(None, default_filename=DEFAULT_STUDENT_PHOTO)
+            if source and not _is_placeholder_photo_name(source):
+                return listed_static_photo_url(source, default_filename=DEFAULT_STUDENT_PHOTO)
+        return listed_static_photo_url(None, default_filename=DEFAULT_STUDENT_PHOTO)
 
     @property
     def has_id_photo(self):
@@ -904,11 +909,10 @@ class Student(db.Model):
         filename = (self.signature_filename or "").strip().replace("\\", "/")
         if not filename:
             return None
-        sources = [filename] if "/" in filename else [f"uploads/signatures/{filename}", filename]
-        for source in sources:
-            if static_photo_file_exists(source):
-                return resolve_static_photo_url(source, default_filename=DEFAULT_STUDENT_PHOTO)
-        return None
+        if filename.startswith(("http://", "https://", "data:")):
+            return filename
+        rel = filename if "/" in filename else f"uploads/signatures/{filename}"
+        return _static_url(rel)
 
     @property
     def has_signature(self):

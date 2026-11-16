@@ -10436,102 +10436,23 @@ def school_media_gallery():
     if year_id:
         query = query.filter_by(academic_year_id=year_id)
 
-    items = query.order_by(SchoolMedia.created_at.desc()).all()
+    items = (
+        query.options(joinedload(SchoolMedia.academic_year))
+        .order_by(SchoolMedia.created_at.desc())
+        .all()
+    )
     active_year = get_active_academic_year()
     years = all_academic_years()
-
-    # #region agent log
-    try:
-        import json as _dbg_json
-        import time as _dbg_time
-        _tpl_name = "school_media/gallery.html"
-        _tpl_root = current_app.root_path
-        _tpl_folder = current_app.template_folder or "templates"
-        _tpl_abs = os.path.join(_tpl_root, _tpl_folder, "school_media", "gallery.html")
-        _tpl_dir = os.path.join(_tpl_root, _tpl_folder, "school_media")
-        _templates_dir = os.path.join(_tpl_root, _tpl_folder)
-        _dir_listing = os.listdir(_tpl_dir) if os.path.isdir(_tpl_dir) else []
-        _nearby = [
-            name for name in (os.listdir(_templates_dir) if os.path.isdir(_templates_dir) else [])
-            if "media" in name.lower() or "gallery" in name.lower()
-        ]
-        with open(os.path.join(_tpl_root, "debug-f20398.log"), "a", encoding="utf-8") as _dbg:
-            _dbg.write(_dbg_json.dumps({
-                "sessionId": "f20398",
-                "runId": "pre-fix",
-                "hypothesisId": "A",
-                "location": "app.py:school_media_gallery",
-                "message": "template path check before render",
-                "data": {
-                    "template": _tpl_name,
-                    "abs_path": _tpl_abs,
-                    "file_exists": os.path.isfile(_tpl_abs),
-                    "dir_exists": os.path.isdir(_tpl_dir),
-                    "dir_listing": _dir_listing,
-                    "nearby": _nearby,
-                    "root_path": _tpl_root,
-                    "template_folder": _tpl_folder,
-                    "cwd": os.getcwd(),
-                    "item_count": len(items),
-                },
-                "timestamp": int(_dbg_time.time() * 1000),
-            }) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
-    try:
-        _gallery_response = render_template(
-            "school_media/gallery.html",
-            items=items,
-            active_year=active_year,
-            years=years,
-            selected_category=category,
-            selected_type=media_type,
-            selected_year_id=year_id,
-            youtube_embed_url=_youtube_embed_url,
-        )
-    except Exception as exc:
-        # #region agent log
-        try:
-            import json as _dbg_json
-            import time as _dbg_time
-            with open(os.path.join(current_app.root_path, "debug-f20398.log"), "a", encoding="utf-8") as _dbg:
-                _dbg.write(_dbg_json.dumps({
-                    "sessionId": "f20398",
-                    "runId": "pre-fix",
-                    "hypothesisId": "C",
-                    "location": "app.py:school_media_gallery:render",
-                    "message": "render_template failed",
-                    "data": {
-                        "error_type": type(exc).__name__,
-                        "error": str(exc),
-                        "searchpath": list(getattr(current_app.jinja_loader, "searchpath", [])),
-                    },
-                    "timestamp": int(_dbg_time.time() * 1000),
-                }) + "\n")
-        except Exception:
-            pass
-        # #endregion
-        raise
-    # #region agent log
-    try:
-        import json as _dbg_json
-        import time as _dbg_time
-        with open(os.path.join(current_app.root_path, "debug-f20398.log"), "a", encoding="utf-8") as _dbg:
-            _dbg.write(_dbg_json.dumps({
-                "sessionId": "f20398",
-                "runId": "post-fix",
-                "hypothesisId": "A",
-                "location": "app.py:school_media_gallery:success",
-                "message": "gallery template rendered",
-                "data": {"status": "ok", "item_count": len(items)},
-                "timestamp": int(_dbg_time.time() * 1000),
-            }) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    return _gallery_response
+    return render_template(
+        "school_media/gallery.html",
+        items=items,
+        active_year=active_year,
+        years=years,
+        selected_category=category,
+        selected_type=media_type,
+        selected_year_id=year_id,
+        youtube_embed_url=_youtube_embed_url,
+    )
 
 
 @app.route("/school-media/manage")
@@ -17090,14 +17011,21 @@ def _registrar_counts_for_year(display_year, *, viewing_archived=False):
 
 
 def _build_homeroom_matrix():
-    rows = []
-    for klass in Class.query.order_by(Class.name.asc()).all():
-        homeroom_teacher = db.session.get(Teacher, klass.teacher_id) if klass.teacher_id else None
-        rows.append({
+    klasses = Class.query.order_by(Class.name.asc()).all()
+    teacher_ids = {klass.teacher_id for klass in klasses if klass.teacher_id}
+    teachers = {}
+    if teacher_ids:
+        teachers = {
+            teacher.id: teacher
+            for teacher in Teacher.query.filter(Teacher.id.in_(teacher_ids)).all()
+        }
+    return [
+        {
             'klass': klass,
-            'homeroom_teacher': homeroom_teacher,
-        })
-    return rows
+            'homeroom_teacher': teachers.get(klass.teacher_id),
+        }
+        for klass in klasses
+    ]
 
 
 def _build_registrar_year_lifecycle_status(display_year, active_year):
@@ -17233,7 +17161,7 @@ def _build_registrar_roster_folders(
 
     class_needle = (search_class or '').strip().lower()
     student_needle = (search_student or '').strip().lower()
-    class_rows = Class.query.all()
+    class_rows = list_assignable_registration_classes()
     if class_needle:
         class_rows = [
             klass for klass in class_rows
@@ -17243,15 +17171,43 @@ def _build_registrar_roster_folders(
         ]
     class_rows = sorted(class_rows, key=class_sort_key_from_klass)
     class_ids = {klass.id for klass in class_rows}
+    class_by_id = {klass.id: klass for klass in class_rows}
+    year_id = display_year.id if display_year else None
+    if viewing_archived and display_year:
+        sid_to_cid = _student_class_map_for_display_year(display_year, viewing_archived=True)
+    else:
+        sid_to_cid = {
+            student.id: student.klass_id
+            for student in roster_students
+            if student.klass_id
+        }
+        missing_ids = [
+            student.id for student in roster_students if student.id not in sid_to_cid
+        ]
+        if missing_ids and year_id:
+            for sid, cid, _eid in (
+                db.session.query(Enrollment.student_id, Enrollment.class_id, Enrollment.id)
+                .filter(
+                    Enrollment.academic_year_id == year_id,
+                    Enrollment.student_id.in_(missing_ids),
+                    Enrollment.class_id.isnot(None),
+                )
+                .order_by(Enrollment.id.desc())
+                .all()
+            ):
+                sid_to_cid.setdefault(sid, cid)
+
+    extra_cids = {cid for cid in sid_to_cid.values() if cid and cid not in class_by_id}
+    if extra_cids:
+        for klass in Class.query.filter(Class.id.in_(extra_cids)).all():
+            class_by_id[klass.id] = klass
 
     students_by_class = {klass.id: [] for klass in class_rows}
     unassigned = []
     for student in roster_students:
         if not _student_matches_roster_search(student, student_needle):
             continue
-        klass = _registrar_roster_class_for_student(
-            student, display_year, viewing_archived=viewing_archived,
-        )
+        klass = class_by_id.get(sid_to_cid.get(student.id))
         if klass and klass.id in class_ids:
             students_by_class[klass.id].append(student)
         elif klass and not class_needle:
@@ -17281,7 +17237,7 @@ def _build_registrar_roster_folders(
         if class_id not in class_ids and students_by_class[class_id]
     ]
     for class_id in extra_ids:
-        klass = db.session.get(Class, class_id)
+        klass = class_by_id.get(class_id) or db.session.get(Class, class_id)
         if not klass:
             continue
         students = students_by_class[class_id]
@@ -17312,7 +17268,6 @@ def _build_registrar_roster_folders(
                 open_class_id = folder['id']
                 break
 
-    year_id = display_year.id if display_year else None
     receipt_map = _latest_registration_payments_map(
         [student.id for student in roster_students],
         academic_year_id=year_id,
@@ -17323,8 +17278,6 @@ def _build_registrar_roster_folders(
             student.registration_fee_status = _registration_receipt_meta(payment, student)['fee_status']
         elif parse_currency_amount_optional(getattr(student, 'registration_fees', 0)) > 0:
             student.registration_fee_status = 'Unpaid'
-
-    _refresh_id_card_flags(roster_students, academic_year=display_year, commit=False)
 
     return {
         'roster_folders': folders,
@@ -17360,31 +17313,16 @@ def build_registrar_dashboard_context(form=None, search_class=None):
         needle = search_class.lower()
         class_rows = [klass for klass in class_rows if needle in (klass.name or '').lower()]
 
+    roster_sizes = _roster_sizes_for_display_year(
+        display_year, viewing_archived=viewing_archived,
+    ) if display_year else {}
     classes = []
     for klass in class_rows:
-        student_count = 0
-        if display_year:
-            if viewing_archived:
-                student_count = len(
-                    _principal_students_for_class(
-                        klass, display_year, viewing_archived=True,
-                    )
-                )
-            else:
-                student_count = (
-                    _students_for_display_year(
-                        display_year,
-                        alumni_only=False,
-                        history_mode=False,
-                    )
-                    .filter_by(klass_id=klass.id)
-                    .count()
-                )
         classes.append({
             'id': klass.id,
             'name': klass.name,
             'description': getattr(klass, 'description', None) or klass.stream,
-            'student_count': student_count,
+            'student_count': roster_sizes.get(klass.id, 0),
             'division_label': division_label_for_class(klass),
             'klass': klass,
         })
@@ -17407,6 +17345,10 @@ def build_registrar_dashboard_context(form=None, search_class=None):
         display_year,
         alumni_only=(roster_view == 'alumni'),
         history_mode=history_mode,
+    ).options(
+        joinedload(Student.assigned_class),
+        joinedload(Student.user),
+        joinedload(Student.academic_year),
     )
 
     page = request.args.get('page', 1, type=int)
@@ -17419,7 +17361,7 @@ def build_registrar_dashboard_context(form=None, search_class=None):
     students = students_pagination.items
     year_id = display_year.id if display_year else None
     student_class_labels = {
-        student.id: format_student_class_name(student, year_id) for student in students
+        student.id: _loaded_student_class_label(student) for student in students
     }
     stats = _registrar_counts_for_year(display_year, viewing_archived=viewing_archived)
     selected_year_name = display_year.name if display_year else (
@@ -17434,12 +17376,13 @@ def build_registrar_dashboard_context(form=None, search_class=None):
     if display_year and not viewing_archived and roster_view == 'active':
         pending_registration_students = (
             _students_pending_year_registration(display_year)
+            .options(joinedload(Student.assigned_class))
             .order_by(Student.last_name.asc(), Student.first_name.asc())
             .all()
         )
         for pending_student in pending_registration_students:
-            student_class_labels[pending_student.id] = format_student_class_name(
-                pending_student, year_id,
+            student_class_labels[pending_student.id] = _loaded_student_class_label(
+                pending_student,
             )
 
     roster_folder_ctx = _build_registrar_roster_folders(
@@ -17450,6 +17393,8 @@ def build_registrar_dashboard_context(form=None, search_class=None):
         search_student=search_student,
         open_student_id=request.args.get('open_student_id', type=int),
     )
+
+    registry_till = _registry_till_snapshot(display_year)
 
     prev_display_year, next_display_year = adjacent_academic_years(display_year, years)
     year_nav_extra = {}
@@ -17499,8 +17444,8 @@ def build_registrar_dashboard_context(form=None, search_class=None):
         'next_display_year': next_display_year,
         'prev_year_url': prev_year_url,
         'next_year_url': next_year_url,
-        'registry_till': _registry_till_snapshot(display_year),
-        **_registry_dashboard_report_context(),
+        'registry_till': registry_till,
+        **_registry_dashboard_report_context(till=registry_till),
         'registry_tx_form': None,
         'registry_payment_form': None,
         'class_registration_fees': _class_registration_fees_map(display_year, all_class_rows),
@@ -17508,12 +17453,27 @@ def build_registrar_dashboard_context(form=None, search_class=None):
     }
 
 
+def _loaded_student_class_label(student):
+    """Class label from already-loaded assigned_class (no per-row queries)."""
+    klass = getattr(student, 'assigned_class', None)
+    if klass:
+        label = klass.name or ''
+        if klass.stream:
+            label = f"{label} ({klass.stream})"
+        return label or "Not Assigned"
+    return "Not Assigned"
+
+
 def _class_registration_fees_map(display_year, class_rows):
-    fees = {}
-    if not display_year:
+    fees = {klass.id: money(0) for klass in (class_rows or [])}
+    if not display_year or not fees:
         return fees
-    for klass in class_rows or []:
-        fees[klass.id] = money(get_class_registration_fee(klass.id, display_year.id) or 0)
+    for row in SchoolFee.query.filter_by(
+        academic_year_id=display_year.id,
+        fee_type='registration',
+    ).all():
+        if row.class_id in fees:
+            fees[row.class_id] = money(row.amount or 0)
     return fees
 
 
@@ -17535,10 +17495,11 @@ def _registry_till_snapshot(display_year=None):
         }
 
 
-def _registry_dashboard_report_context():
+def _registry_dashboard_report_context(till=None):
     from registry_desk import fee_kind_label, recent_registry_daily_reports, summarize_registry_till
     try:
-        till = summarize_registry_till()
+        if till is None:
+            till = summarize_registry_till()
         reports = recent_registry_daily_reports(14)
     except Exception:
         logger.exception('Registry daily report panel failed')

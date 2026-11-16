@@ -24,7 +24,7 @@
         <div class="card-body p-4 d-flex flex-column">
           <div class="d-flex flex-wrap gap-2 mb-2">
             <span class="badge bg-light text-dark border font-monospace">
-              <i class="far fa-clock me-1"></i>{{ event.date.strftime('%b %d, %Y') }}
+              <i class="far fa-clock me-1"></i>{{ event.date.strftime('%b %d, %Y') if event.date else 'Date TBA' }}
             </span>
             <span class="badge bg-brand-light text-brand text-capitalize">{{ (event.event_type or 'general').replace('_', ' ') }}</span>
           </div>
