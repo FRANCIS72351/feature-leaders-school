@@ -47,6 +47,7 @@ from id_card_pdf import (
     id_cards_pdf_filename,
     principal_signature_disk_path,
     resolve_id_card_parent_name,
+    resolve_school_logo_path,
 )
 from models import resolve_parent_guardian_name
 
@@ -157,6 +158,9 @@ class IdCardPdfTestCase(unittest.TestCase):
         self._assert_front_and_back_headers(drawn)
         self.assertIn(b'STAFF', drawn)
         self.assertIn(b'F.L.P.A', drawn)
+        self.assertIn(b'FUTURE LEADERS', drawn)
+        self.assertIn(b'PREPARATORY ACADEMY', drawn)
+        self.assertIn(b'MONROVIA, LIBERIA', drawn)
 
     def test_print_batch_front_school_name_back_republic(self):
         from pathlib import Path
@@ -164,7 +168,9 @@ class IdCardPdfTestCase(unittest.TestCase):
         html = Path(__file__).with_name('templates').joinpath('id_cards', 'print_batch.html').read_text(
             encoding='utf-8'
         )
-        self.assertEqual(html.count('class="header-name">{{ front_header_name }}'), 2)
+        self.assertEqual(html.count('class="header-name">{{ front_header_name }}'), 1)
+        self.assertIn('<span>Future Leaders</span>', html)
+        self.assertIn('<span>Preparatory Academy</span>', html)
         self.assertEqual(html.count('class="header-name">{{ back_header_name }}'), 1)
         self.assertNotIn('class="header-name">{{ brand.name }}', html)
         self.assertNotIn('class="header-name">{{ header_name }}', html)
@@ -256,6 +262,52 @@ class IdCardPdfTestCase(unittest.TestCase):
             resolve_id_card_parent_name(student, cards[0]),
             'Test Parent',
         )
+
+    def test_pdf_embeds_header_logo_when_file_exists(self):
+        """Download PDF must draw the school crest, not an empty white header circle."""
+        import os
+        import tempfile
+
+        from PIL import Image
+
+        student = SimpleNamespace(
+            id=1,
+            full_name='Test Student',
+            student_id='FLPA-1001',
+            parent_user=SimpleNamespace(full_name='Test Parent'),
+            parent_phone='0770000000',
+            id_expiration_date=date(2026, 7, 31),
+            official_signature_mark='Student T.',
+            signature_url=None,
+        )
+        cards = [{'student': student, 'class_label': 'Grade 6A', 'qr_code_data_uri': None}]
+        brand = self._school_brand()
+        with tempfile.TemporaryDirectory() as tmp:
+            logo = os.path.join(tmp, 'LOGO.png')
+            Image.new('RGBA', (64, 64), (200, 40, 40, 255)).save(logo, format='PNG')
+            with mock.patch('id_card_pdf.resolve_school_logo_path', side_effect=lambda explicit=None: explicit):
+                with_logo = build_class_id_cards_pdf(
+                    cards,
+                    klass=SimpleNamespace(name='Grade 6A'),
+                    display_year=SimpleNamespace(name='2025-2026'),
+                    brand=brand,
+                    logo_path=logo,
+                ).getvalue()
+                without = build_class_id_cards_pdf(
+                    cards,
+                    klass=SimpleNamespace(name='Grade 6A'),
+                    display_year=SimpleNamespace(name='2025-2026'),
+                    brand=brand,
+                    logo_path=None,
+                ).getvalue()
+        self.assertGreater(with_logo.count(b'/Image'), without.count(b'/Image'))
+
+    def test_resolve_school_logo_path_finds_repo_crest(self):
+        """The download PDF must find a crest even when images/LOGO.png is absent."""
+        path = resolve_school_logo_path()
+        self.assertTrue(path, 'expected a school crest file under static/')
+        with open(path, 'rb') as handle:
+            self.assertEqual(handle.read(8), b'\x89PNG\r\n\x1a\n')
 
     def test_batch_pdf_two_students_missing_photos_still_valid(self):
         """A class PDF must be a complete %PDF with pages even if photos are missing."""
@@ -572,6 +624,27 @@ class IdCardPdfTestCase(unittest.TestCase):
         self.assertIn('min-height: 0 !important', well)
         self.assertIn('overflow: hidden', well)
         self.assertIn('width: 100%', well)
+
+    def test_inline_print_batch_assets_embeds_static_files(self):
+        import os
+        import tempfile
+
+        from id_card_pdf import inline_print_batch_assets
+
+        with tempfile.TemporaryDirectory() as tmp:
+            logo = os.path.join(tmp, 'crest.png')
+            with open(logo, 'wb') as handle:
+                handle.write(b'\x89PNG\r\n\x1a\n' + b'\x00' * 12)
+            html = '<img src="/static/crest.png" alt="crest">'
+            inlined = inline_print_batch_assets(html, tmp)
+        self.assertIn('data:image/png;base64,', inlined)
+        self.assertNotIn('/static/crest.png', inlined)
+
+    def test_html_print_falls_back_when_browser_missing(self):
+        from id_card_pdf import html_print_batch_to_pdf
+
+        with mock.patch('id_card_pdf.find_chromium_executable', return_value=None):
+            self.assertIsNone(html_print_batch_to_pdf('<html></html>'))
 
 
 class StaffSignatureMarkTestCase(unittest.TestCase):

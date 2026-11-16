@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Delete School Event{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="max-width: 640px;">
+  <h1 class="h4 fw-bold mb-2">Remove this event?</h1>
+  <p class="text-muted">This will take <strong>{{ event.title }}</strong> ({{ event.date.strftime('%b %d, %Y') }}) off the school calendar.</p>
+  <form method="post" class="bg-white border rounded-3 p-4 shadow-sm">
+    {{ form.hidden_tag() }}
+    <div class="d-flex gap-2">
+      {{ form.submit(class="btn btn-danger") }}
+      <a href="{{ url_for('admin_events_list') }}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

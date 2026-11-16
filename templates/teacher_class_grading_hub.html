@@ -433,15 +433,6 @@
   </div>
 
   {% if subjects %}
-  <div class="grade-sheet-intro">
-    <strong>{{ selected_subject }} · {{ period_label }}</strong>
-    <ul class="step-list">
-      <li><span class="step-dot">1</span>Enter scores directly in this sheet</li>
-      <li><span class="step-dot">2</span>Save Draft to keep work in progress</li>
-      <li><span class="step-dot">3</span>Publish to submit this period to the VPA for student release</li>
-    </ul>
-  </div>
-
   <div class="status-strip">
     <span class="status-pill subject">Subject: {{ selected_subject }}</span>
     <span class="status-pill period">{{ period_label }}</span>
@@ -566,7 +557,7 @@
                 {% else %}
                 <span class="badge bg-secondary roster-status-pill">Not saved</span>
                 {% endif %}
-                <a href="{{ url_for('report_card', student_id=student.id) }}" class="roster-grade-sheet-link" title="Grade sheet" aria-label="Grade sheet">
+                <a href="{{ url_for('staff_student_grade_sheet', student_id=student.id) }}" class="roster-grade-sheet-link" title="Print grade sheet" aria-label="Print grade sheet">
                   <i class="fas fa-file-alt" aria-hidden="true"></i>
                 </a>
                 </div>

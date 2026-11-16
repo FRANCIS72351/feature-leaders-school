@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{% if item %}Edit School Media{% else %}Publish School Media{% endif %}{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="max-width: 720px;">
+    <h1 class="h4 fw-bold mb-1">{% if item %}Edit media{% else %}Publish school media{% endif %}</h1>
+    <p class="text-muted mb-4">Photos, videos, and downloadable notices for the school community.</p>
+
+    <form method="post" enctype="multipart/form-data" class="bg-white border rounded-3 p-4 shadow-sm">
+        {{ form.hidden_tag() }}
+        <div class="mb-3">
+            {{ form.title.label(class="form-label fw-bold") }}
+            {{ form.title(class="form-control") }}
+        </div>
+        <div class="mb-3">
+            {{ form.description.label(class="form-label fw-bold") }}
+            {{ form.description(class="form-control", rows="3") }}
+        </div>
+        <div class="row g-3">
+            <div class="col-md-6">
+                {{ form.media_type.label(class="form-label fw-bold") }}
+                {{ form.media_type(class="form-select") }}
+            </div>
+            <div class="col-md-6">
+                {{ form.category.label(class="form-label fw-bold") }}
+                {{ form.category(class="form-select") }}
+            </div>
+            <div class="col-md-6">
+                {{ form.academic_year.label(class="form-label fw-bold") }}
+                {{ form.academic_year(class="form-select") }}
+            </div>
+            <div class="col-md-6">
+                {{ form.external_url.label(class="form-label fw-bold") }}
+                {{ form.external_url(class="form-control") }}
+            </div>
+        </div>
+        <div class="mt-3">
+            {{ form.media_file.label(class="form-label fw-bold") }}
+            {{ form.media_file(class="form-control") }}
+            {% if item and item.static_file_path %}
+            <div class="small text-muted mt-1">Current file: {{ item.static_file_path }}</div>
+            {% endif %}
+        </div>
+        <div class="form-check mt-3">
+            {{ form.is_published(class="form-check-input") }}
+            {{ form.is_published.label(class="form-check-label") }}
+        </div>
+        <div class="d-flex gap-2 mt-4">
+            {{ form.submit(class="btn btn-action-primary") }}
+            <a href="{{ url_for('school_media_manage') }}" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

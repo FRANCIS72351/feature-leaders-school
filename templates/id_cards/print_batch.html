@@ -261,10 +261,17 @@
            Mirrors _draw_staff_front() in id_card_pdf.py; keep the two in step. */
         .id-card.front.staff-front { display: flex; flex-direction: column; }
         .staff-front .front-header {
+            height: 11.5mm;
+            align-items: center;
+            padding: 0 3mm;
             background: var(--navy);
             border-bottom: 0.6mm solid var(--gold);
         }
-        .staff-front .front-header .header-name { color: #fff; }
+        .staff-front .front-header .header-name {
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+        }
         .staff-front .header-sub {
             font-size: 4.6pt;
             font-weight: 800;
@@ -313,7 +320,7 @@
             letter-spacing: 0.02em;
             line-height: 1.3;
             text-transform: uppercase;
-            color: var(--muted);
+            color: var(--gold);
         }
         .staff-photo {
             margin: 1.2mm auto 0;
@@ -352,7 +359,7 @@
             font-weight: 800;
             letter-spacing: 0.09em;
             text-transform: uppercase;
-            color: var(--cardinal);
+            color: var(--gold);
             white-space: normal;
             overflow: visible;
             word-break: break-word;
@@ -365,6 +372,7 @@
         .staff-chip {
             display: inline-block;
             margin-top: 1.4mm;
+            margin-bottom: 0;
             padding: 0.9mm 3.2mm;
             border-radius: 999px;
             background: var(--navy);
@@ -376,34 +384,41 @@
             max-width: 100%;
             white-space: nowrap;
             overflow: hidden;
+            position: relative;
+            z-index: 2;
         }
         .staff-sign {
-            margin-top: auto;
-            padding-bottom: 10.2mm; /* clears the footer and its gold rule */
+            margin-top: 3.2mm;
+            padding-bottom: 11mm;
             text-align: center;
             width: 100%;
+            overflow: hidden;
+            position: relative;
+            z-index: 1;
         }
         .staff-sign .mark {
-            font-family: "Great Vibes", "Segoe Script", cursive;
-            font-size: 16pt;
-            line-height: 1.05;
-            color: var(--navy) !important;
-            -webkit-text-fill-color: var(--navy);
+            font-family: "Great Vibes", "Segoe Script", "Segoe Print", cursive;
+            font-size: 17pt;
+            line-height: 1;
+            color: #00245a !important;
+            -webkit-text-fill-color: #00245a;
             white-space: nowrap;
-            overflow: visible;
+            overflow: hidden;
             max-width: 100%;
             display: block;
+            min-height: 7.5mm;
+            text-shadow: 0 0 0.18mm #00245a;
         }
         .staff-sign img {
             display: block;
             margin: 0 auto;
-            height: 14mm;
+            height: 13mm;
             max-width: 100%;
             width: auto;
             object-fit: contain;
             object-position: center bottom;
-            /* Pale blue/grey pen scans become dark navy ink on screen + print */
-            filter: grayscale(1) contrast(1.85) brightness(0.28);
+            /* Pale scans become readable navy ink without crushing the stroke */
+            filter: grayscale(1) contrast(2.35) brightness(0.58);
         }
         .staff-sign .rule {
             margin: 0.5mm auto 0;
@@ -528,20 +543,21 @@
         }
         .student-sign .mark {
             font-family: "Great Vibes", "Segoe Script", cursive;
-            font-size: 11pt;
+            font-size: 12.5pt;
             line-height: 1;
-            color: var(--navy) !important;
-            -webkit-text-fill-color: var(--navy);
+            color: #00245a !important;
+            -webkit-text-fill-color: #00245a;
             white-space: nowrap;
+            overflow: hidden;
         }
         .student-sign img {
             display: block;
             margin: 0 auto;
-            height: 6.8mm;
+            height: 8mm;
             max-width: 100%;
             object-fit: contain;
             object-position: center bottom;
-            filter: grayscale(1) contrast(1.85) brightness(0.28);
+            filter: grayscale(1) contrast(2.35) brightness(0.58);
         }
         .student-sign .rule {
             margin: 0.35mm auto 0;
@@ -668,8 +684,11 @@
 
         @media print {
             .toolbar, .skipped, .no-print-btn, .btn-back, .btn-download, .btn-refresh-ids, .qr-host-warn, .ios-save-hint, .id-flash { display: none !important; }
-            body { background: none; padding: 0; }
-            .id-card { box-shadow: none; border-color: #bbb; }
+            body { background: #e8edf3 !important; padding: 8mm; }
+            .id-card {
+                box-shadow: 0 2px 10px rgba(0, 45, 98, 0.2);
+                border-color: var(--navy) !important;
+            }
             .card-pair { page-break-inside: avoid; }
             .id-grid { max-width: none; }
             .photo-wrap,
@@ -689,9 +708,20 @@
             }
         }
         @page { size: A4; margin: 8mm; }
+        body.export-pdf {
+            background: #fff;
+            padding: 8mm;
+        }
+        body.export-pdf .toolbar,
+        body.export-pdf .ios-save-hint,
+        body.export-pdf .id-flash,
+        body.export-pdf .qr-host-warn,
+        body.export-pdf .skipped {
+            display: none !important;
+        }
     </style>
 </head>
-<body>
+<body{% if pdf_export %} class="export-pdf"{% endif %}>
     {% set brand = school_print_brand %}
     {% set front_header_name = id_card_front_header_name or 'Future Leaders Preparatory Academy' %}
     {% set back_header_name = id_card_back_header_name or 'Republic of Liberia' %}
@@ -711,7 +741,7 @@
             {% endif %}
             <a class="btn-back" href="{{ back_url or url_for('id_cards_folder_hub') }}">Back</a>
             {% if download_url %}
-            <a class="btn-download" href="{{ download_url }}" download="{{ download_filename or 'FLPA_ID_Cards.pdf' }}">
+            <a class="btn-download" href="{{ download_url }}{% if '?' in download_url %}&{% else %}?{% endif %}fresh=1" download="{{ download_filename or 'FLPA_ID_Cards.pdf' }}">
                 Download / Save PDF
             </a>
             {% endif %}
@@ -753,7 +783,10 @@
                 <header class="front-header">
                     <img class="header-logo" src="{{ school_logo_url }}" alt="" decoding="async"{% if loop.index > 2 %} loading="lazy"{% endif %}>
                     <div>
-                        <div class="header-name">{{ front_header_name }}</div>
+                        <div class="header-name">
+                            <span>Future Leaders</span>
+                            <span>Preparatory Academy</span>
+                        </div>
                         <div class="header-sub">(F.L.P.A)</div>
                     </div>
                 </header>
@@ -876,6 +909,8 @@
     <p class="skipped">Skipped (missing photo, class, or student ID): {% for s in skipped %}{{ s.full_name }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
     {% endif %}
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script>
     (function () {
         var host = (location.hostname || '').toLowerCase();
@@ -883,6 +918,7 @@
         var isLoopback = !host || host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
         var isTunnel = /\.devtunnels\.ms$/i.test(host);
         var printBtn = document.getElementById('print-batch-btn');
+        var downloadBtn = document.querySelector('.btn-download');
 
         function whenQrReady(cb, tries) {
             if (window.QRCode && QRCode.toDataURL) {
@@ -943,9 +979,9 @@
                 }
             });
             document.querySelectorAll('.id-card.staff-front .staff-sign .mark').forEach(function (el) {
-                var size = 16;
+                var size = 17;
                 el.style.fontSize = size + 'pt';
-                while (size > 9.0 && el.scrollWidth > el.clientWidth + 1) {
+                while (size > 12.0 && el.scrollWidth > el.clientWidth + 1) {
                     size -= 0.25;
                     el.style.fontSize = size + 'pt';
                 }
@@ -962,8 +998,51 @@
         } else {
             fitStaffCardText();
         }
+        function downloadVisibleCards(filename) {
+            var pair = document.querySelector('.card-pair');
+            var html2canvas = window.html2canvas;
+            var JsPDF = window.jspdf && window.jspdf.jsPDF;
+            if (!pair || !html2canvas || !JsPDF) return Promise.reject();
+            fitStaffCardText();
+            return html2canvas(pair, {
+                scale: 3,
+                useCORS: true,
+                backgroundColor: '#e8edf3',
+                logging: false
+            }).then(function (canvas) {
+                var pdf = new JsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+                var pageW = pdf.internal.pageSize.getWidth();
+                var pageH = pdf.internal.pageSize.getHeight();
+                var drawW = (canvas.width / 3) * 25.4 / 96;
+                var drawH = (canvas.height / 3) * 25.4 / 96;
+                var fit = Math.min((pageW - 16) / drawW, (pageH - 16) / drawH, 1);
+                drawW *= fit;
+                drawH *= fit;
+                pdf.addImage(
+                    canvas.toDataURL('image/png'),
+                    'PNG',
+                    (pageW - drawW) / 2,
+                    (pageH - drawH) / 2,
+                    drawW,
+                    drawH
+                );
+                pdf.save(filename || 'FLPA_ID_Cards.pdf');
+            });
+        }
+
         if (printBtn) {
             printBtn.addEventListener('click', function () { printWhenReady(); });
+        }
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', function (event) {
+                if (!window.html2canvas || !(window.jspdf && window.jspdf.jsPDF)) return;
+                event.preventDefault();
+                var label = downloadBtn.textContent;
+                downloadBtn.textContent = 'Preparing PDF…';
+                downloadVisibleCards(downloadBtn.getAttribute('download') || 'FLPA_ID_Cards.pdf')
+                    .catch(function () { window.location = downloadBtn.href; })
+                    .then(function () { downloadBtn.textContent = label; });
+            });
         }
         if (isTunnel) {
             rewriteQrs();

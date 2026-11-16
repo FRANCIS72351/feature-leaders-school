@@ -17,6 +17,18 @@ DEFAULT_AVATAR_ALIASES = (
     "img/default-avatar.png",
 )
 SCHOOL_LOGO_FILENAME = "images/LOGO.png"
+# Print HTML and ID PDFs share this list. LOGO.png is canonical; the rest exist
+# in this tree when OneDrive has not synced the named crest file.
+SCHOOL_LOGO_FILENAMES = (
+    SCHOOL_LOGO_FILENAME,
+    "images/logo.png",
+    "images/logo1.png",
+    "images/LOGO.PNG",
+    "images/favicon.png",
+    "icons/icon-512.png",
+    "icons/icon-192.png",
+    "icons/apple-touch-icon.png",
+)
 _PHOTO_SEARCH_DIRS = (
     "uploads/photos",
     "uploads/students",
@@ -267,8 +279,8 @@ def default_static_photo_url():
 
 
 def school_logo_static_url():
-    """Always-valid school logo URL (LOGO.png, with lowercase fallback)."""
-    for name in (SCHOOL_LOGO_FILENAME, "images/logo.png", "images/logo1.png"):
+    """Always-valid school logo URL (LOGO.png, then on-disk crest fallbacks)."""
+    for name in SCHOOL_LOGO_FILENAMES:
         if _static_file_on_disk(name):
             return _static_url(name)
     return _static_url(SCHOOL_LOGO_FILENAME)
@@ -1682,7 +1694,15 @@ class StudentPayment(db.Model):
     
     # Payment detail metrics
     amount_paid = db.Column(db.Numeric(10, 2), nullable=False)
-    description = db.Column(db.String(255), nullable=True) 
+    currency = db.Column(db.String(3), nullable=False, default="USD", server_default="USD")
+    description = db.Column(db.String(255), nullable=True)
+
+    # Registry Day Book attribution (school-gate till → business ledger)
+    collected_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    receipt_number = db.Column(db.String(40), nullable=True, index=True)
+    collection_desk = db.Column(db.String(20), nullable=True, default="business")
+    fee_kind = db.Column(db.String(40), nullable=True)
+    handover_id = db.Column(db.Integer, nullable=True, index=True)
     
     # Modernized timezone-aware payment timestamp
     paid_on = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
@@ -1696,9 +1716,52 @@ class StudentPayment(db.Model):
     # =========================================================================
     student = db.relationship("Student", backref=db.backref("payment_records", lazy="dynamic", cascade="all, delete-orphan"))
     academic_year = db.relationship("AcademicYear", backref=db.backref("payment_records", lazy="dynamic"))
+    collected_by = db.relationship("User", foreign_keys=[collected_by_user_id])
+    handover = db.relationship(
+        "RegistryDailyHandover",
+        primaryjoin="StudentPayment.handover_id==RegistryDailyHandover.id",
+        foreign_keys=[handover_id],
+        back_populates="payments",
+    )
   
     def __repr__(self):
         return f"<StudentPayment ID {self.id}: Student ID {self.student_id} | Year ID {self.academic_year_id} | Paid: ${self.amount_paid}>"
+
+class RegistryDailyHandover(db.Model):
+    """End-of-day collection record from Registry to the Business Manager."""
+    __tablename__ = "registry_daily_handovers"
+
+    id = db.Column(db.Integer, primary_key=True)
+    business_date = db.Column(db.Date, nullable=False, unique=True, index=True)
+    academic_year_id = db.Column(db.Integer, db.ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True)
+    opened_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    closed_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    acknowledged_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    status = db.Column(db.String(20), nullable=False, default="open", index=True)
+    receipt_count = db.Column(db.Integer, nullable=False, default=0)
+    total_amount = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    first_receipt_no = db.Column(db.String(40), nullable=True)
+    last_receipt_no = db.Column(db.String(40), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+    business_notes = db.Column(db.Text, nullable=True)
+    submitted_at = db.Column(db.DateTime, nullable=True)
+    acknowledged_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    academic_year = db.relationship("AcademicYear")
+    opened_by = db.relationship("User", foreign_keys=[opened_by_user_id])
+    closed_by = db.relationship("User", foreign_keys=[closed_by_user_id])
+    acknowledged_by = db.relationship("User", foreign_keys=[acknowledged_by_user_id])
+    payments = db.relationship(
+        "StudentPayment",
+        primaryjoin="StudentPayment.handover_id==RegistryDailyHandover.id",
+        foreign_keys="StudentPayment.handover_id",
+        back_populates="handover",
+    )
+
+    def __repr__(self):
+        return f"<RegistryDailyHandover {self.business_date} {self.status}>"
+
 
 class BusinessTransaction(db.Model):
     __tablename__ = "business_transactions"
@@ -1707,6 +1770,7 @@ class BusinessTransaction(db.Model):
     date = db.Column(db.String(20), nullable=False)
     type = db.Column(db.String(20), nullable=False)  # 'income' or 'expense'
     amount = db.Column(db.Numeric(10, 2), nullable=False)
+    currency = db.Column(db.String(3), nullable=False, default="USD", server_default="USD")
     description = db.Column(db.String(250))
     category = db.Column(db.String(120))             # e.g., "Tuition", "Stationery", "Fuel"
     balance_after = db.Column(db.Numeric(10, 2), nullable=True, default=0.0)

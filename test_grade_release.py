@@ -1087,6 +1087,46 @@ class StudentPeriodReleaseTestCase(GradeReleaseAccessTestCase):
         self.assertNotIn(STUDENT_GRADE_HOLD_MESSAGE.encode(), sheet.data)
         self.assertIn(b'Published Grade Sheet', sheet.data)
 
+    def test_vpi_and_proprietor_grade_sheet_is_not_report_card(self):
+        with self.app.app_context():
+            vpi = User(
+                email=f'vpi-{self.token}@test.com',
+                full_name='VPI Reviewer',
+                role='vpi',
+            )
+            vpi.set_password('password')
+            proprietor = User(
+                email=f'prop-{self.token}@test.com',
+                full_name='School Proprietor',
+                role='proprietor',
+            )
+            proprietor.set_password('password')
+            db.session.add_all([vpi, proprietor])
+            db.session.commit()
+            self.created['users'].extend([vpi.id, proprietor.id])
+            vpi_id = vpi.id
+            proprietor_id = proprietor.id
+
+        url = f'/grades/student/{self.student_id}/sheet?academic_year_id={self.year_id}'
+        for user_id, office in (
+            (vpi_id, b'Vice Principal for Instruction'),
+            (proprietor_id, b'Proprietor'),
+        ):
+            self._login(user_id)
+            sheet = self.client.get(url)
+            self.assertEqual(sheet.status_code, 200)
+            html = sheet.get_data(as_text=True)
+            self.assertIn('Official Grade Sheet', html)
+            self.assertIn('not the year-end report card', html)
+            self.assertNotIn('Student Report Card', html)
+            self.assertIn(office.decode(), html)
+            self.assertIn('Period 1', html)
+            self.assertNotIn('Report Card — issued at year end', html)
+
+        self._login(self.student_user_id)
+        denied = self.client.get(url)
+        self.assertEqual(denied.status_code, 403)
+
 
 if __name__ == '__main__':
     unittest.main()

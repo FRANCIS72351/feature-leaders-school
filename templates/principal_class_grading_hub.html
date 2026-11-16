@@ -302,7 +302,7 @@
                                 {% else %}
                                 <span class="badge bg-secondary roster-status-pill">—</span>
                                 {% endif %}
-                                <a href="{{ url_for('report_card', student_id=student.id) }}" class="roster-grade-sheet-link" title="Grade sheet" aria-label="Grade sheet">
+                                <a href="{{ url_for('staff_student_grade_sheet', student_id=student.id) }}" class="roster-grade-sheet-link" title="Print grade sheet" aria-label="Print grade sheet">
                                     <i class="fas fa-file-alt" aria-hidden="true"></i>
                                 </a>
                                 {% if attribution %}
@@ -374,7 +374,7 @@
                             {% else %}
                             <span class="badge bg-secondary roster-status-pill">Pending</span>
                             {% endif %}
-                            <a href="{{ url_for('report_card', student_id=student.id) }}" class="roster-grade-sheet-link" title="Grade sheet" aria-label="Grade sheet">
+                            <a href="{{ url_for('staff_student_grade_sheet', student_id=student.id) }}" class="roster-grade-sheet-link" title="Print grade sheet" aria-label="Print grade sheet">
                                 <i class="fas fa-file-alt" aria-hidden="true"></i>
                             </a>
                             {% if attribution %}

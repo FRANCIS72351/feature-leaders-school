@@ -123,7 +123,10 @@
     {% set receipt_map = registration_receipt_payments|default({}) %}
     {% set receipt_payment = receipt_map.get(student.id) %}
     <div class="student-file-actions">
-        <a href="{{ url_for('report_card', student_id=student.id) }}{% if display_year %}?academic_year_id={{ display_year.id }}{% endif %}" class="btn-folder-print" title="Grade sheet" aria-label="Grade sheet">
+        <a href="{{ url_for('registry_day_book', class_id=student.klass_id, student_id=student.id, academic_year_id=display_year.id if display_year else none) }}" class="btn-folder-print" title="Collect registry fees">
+            <i class="fas fa-hand-holding-dollar" aria-hidden="true"></i> Collect fees
+        </a>
+        <a href="{{ url_for('staff_student_grade_sheet', student_id=student.id, academic_year_id=display_year.id if display_year else none) }}" class="btn-folder-print" title="Print grade sheet" aria-label="Print grade sheet">
             <i class="fas fa-file-alt" aria-hidden="true"></i> Grade sheet
         </a>
         <a href="{{ url_for('transcript', student_id=student.id) }}{% if display_year %}?academic_year_id={{ display_year.id }}{% endif %}" class="btn-folder-print" target="_blank" rel="noopener" title="Official Transcript">

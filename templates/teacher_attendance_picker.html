@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+{% block title %}Class Attendance{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/attendance_roll.css') }}">
+<style>
+  .att-picker-card {
+    height: 100%;
+    padding: 1.1rem 1.2rem;
+  }
+  .att-picker-name {
+    font-weight: 800;
+    color: var(--att-navy);
+    font-size: 1.05rem;
+  }
+  .att-picker-meta {
+    font-size: 0.82rem;
+    color: var(--att-muted);
+  }
+  .att-picker-chip {
+    display: inline-block;
+    background: #fff7f7;
+    color: #9E131A;
+    border: 1px solid rgba(185, 45, 50, 0.18);
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.18rem 0.5rem;
+    border-radius: 999px;
+  }
+  .att-picker-empty {
+    border: 1px dashed var(--att-border);
+    border-radius: 14px;
+    background: var(--att-paper);
+    padding: 2.25rem 1.25rem;
+  }
+</style>
+
+<div class="container-fluid py-4 teacher-attendance-page attendance-roll-shell">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+    <div>
+      <a href="{{ url_for('teacher_dashboard') }}" class="text-blue small text-decoration-none">
+        <i class="bi bi-arrow-left me-1"></i>Teacher Dashboard
+      </a>
+      <h2 class="fw-bold mt-2 mb-1">
+        <i class="bi bi-calendar-check me-2"></i>Class Attendance
+      </h2>
+      <p class="text-blue mb-2 small">Choose a class to open the attendance roll.</p>
+      {% if active_year %}
+      <span class="badge att-session-badge">
+        <i class="bi bi-mortarboard me-1"></i>Current Session: {{ active_year.name }}
+      </span>
+      {% endif %}
+    </div>
+    <form method="GET" action="{{ url_for('teacher_attendance_picker') }}" class="d-flex gap-2 align-items-center att-date-form">
+      <label class="text-blue small mb-0 fw-semibold" for="attDatePicker">Session Date</label>
+      <input type="date" id="attDatePicker" name="date" value="{{ attendance_date }}"
+             class="form-control form-control-sm form-cyber att-date-input" onchange="this.form.submit()">
+    </form>
+  </div>
+
+  {% if class_cards %}
+  <div class="row g-3">
+    {% for card in class_cards %}
+    <div class="col-md-6 col-xl-4">
+      <div class="att-card att-picker-card">
+        <div class="att-picker-name">{{ card.name }}</div>
+        <div class="att-picker-meta mb-2">
+          {% if card.grade_level %}Grade {{ card.grade_level }}{% endif %}
+          {% if card.stream %} · {{ card.stream }}{% endif %}
+          · {{ card.student_count }} student{{ 's' if card.student_count != 1 else '' }}
+        </div>
+        {% if card.role_labels %}
+        <div class="d-flex flex-wrap gap-1 mb-2">
+          {% for label in card.role_labels %}
+          <span class="att-picker-chip">{{ label }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if card.subjects %}
+        <div class="att-picker-meta mb-3">{{ card.subjects|join(', ') }}</div>
+        {% endif %}
+        <a class="btn btn-sm att-quick-btn att-q-present"
+           href="{{ url_for('teacher_class_attendance', class_id=card.id, date=attendance_date) }}">
+          <i class="bi bi-clipboard-check me-1"></i>Open roll
+        </a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="att-picker-empty text-center">
+    <p class="text-blue mb-0">No classes are assigned to this faculty account yet. Ask the principal to allocate a class and subject.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

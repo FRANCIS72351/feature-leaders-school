@@ -1,0 +1,69 @@
+{% from 'macros/money.html' import money, from_row %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Collection Record — {{ handover.business_date }}</title>
+    <style>
+        body { margin:0; padding:24px 16px; background:#f5efe7; font-family:"Segoe UI",system-ui,sans-serif; color:#111; }
+        .bar { max-width:9in; margin:0 auto 12px; display:flex; justify-content:flex-end; gap:8px; }
+        .btn { padding:8px 14px; border-radius:8px; font-weight:700; text-decoration:none; display:inline-block; }
+        .btn-back { background:#fff; border:1px solid #002d62; color:#002d62; }
+        .btn-print { background:#c82828; color:#fff; border:none; cursor:pointer; }
+        .sheet { max-width:9in; margin:0 auto; background:#fff; border:2px solid #002d62; padding:28px 32px; }
+        h1 { margin:0; color:#002d62; font-size:1.25rem; }
+        .kicker { letter-spacing:0.16em; font-size:0.72rem; font-weight:800; color:#c9a227; text-transform:uppercase; }
+        table { width:100%; border-collapse:collapse; margin-top:16px; }
+        th, td { border-bottom:1px solid #eadfc8; padding:8px 6px; text-align:left; font-size:0.9rem; }
+        th { font-size:0.72rem; text-transform:uppercase; letter-spacing:0.06em; color:#002d62; }
+        .tot { font-weight:800; background:#faf6ee; }
+        .sig { display:flex; justify-content:space-between; gap:24px; margin-top:40px; }
+        .line { border-top:1px solid #111; padding-top:6px; width:42%; font-size:0.8rem; }
+        @media print { .bar { display:none !important; } body { background:#fff; padding:0; } }
+    </style>
+</head>
+<body>
+    <div class="bar">
+        <a class="btn btn-back" href="{{ url_for('registry_day_book') }}">Day Book</a>
+        <a class="btn btn-back" href="{{ url_for('business_registry_records') }}">Business inbox</a>
+        <button class="btn btn-print" type="button" onclick="window.print()">Print record</button>
+    </div>
+    <article class="sheet">
+        <div class="kicker">To the Business Manager</div>
+        <h1>Daily Collection Record — Registry Day Book</h1>
+        <p>{{ school_print_brand.name }} · {{ handover.business_date.strftime('%A, %d %B %Y') }} · {{ handover.status|replace('_',' ')|title }}</p>
+        <p>Receipts {{ handover.first_receipt_no or '—' }} through {{ handover.last_receipt_no or '—' }} · {{ handover.receipt_count }} collection(s)</p>
+        <table>
+            <thead>
+                <tr><th>Receipt</th><th>Student</th><th>Kind</th><th>Semester / installment</th><th>Particulars</th><th style="text-align:right;">Amount</th></tr>
+            </thead>
+            <tbody>
+                {% for payment in payments %}
+                <tr>
+                    <td>{{ payment.receipt_number or ('SP-' ~ payment.id) }}</td>
+                    <td>{{ payment.student.full_name if payment.student else '—' }}</td>
+                    <td>{{ fee_kind_label(payment.fee_kind) }}</td>
+                    <td>{% if (payment.fee_kind or 'tuition') in ['tuition', 'school_fees'] %}{{ (payment.term or 1)|billing_period(payment.installment) }}{% else %}—{% endif %}</td>
+                    <td>{{ payment.description }}</td>
+                    <td style="text-align:right;">{{ from_row(payment, payment.amount_paid) }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6">No collections on this date.</td></tr>
+                {% endfor %}
+                <tr class="tot">
+                    <td colspan="5">Total handed to Business Manager</td>
+                    <td style="text-align:right;">{{ total_label or money(handover.total_amount|default(0)) }}</td>
+                </tr>
+            </tbody>
+        </table>
+        {% if handover.notes %}<p><strong>Registry note:</strong> {{ handover.notes }}</p>{% endif %}
+        {% if handover.business_notes %}<p><strong>Business note:</strong> {{ handover.business_notes }}</p>{% endif %}
+        <div class="sig">
+            <div class="line">Registrar / Registry clerk{% if handover.closed_by %}<br>{{ handover.closed_by.full_name }}{% endif %}</div>
+            <div class="line">Business Manager acknowledgement{% if handover.acknowledged_by %}<br>{{ handover.acknowledged_by.full_name }}{% endif %}</div>
+        </div>
+        <p style="font-size:0.75rem;color:#666;margin-top:18px;">Printed by {{ printed_by }} · {{ printed_at.strftime('%d %b %Y %H:%M') if printed_at else '' }}</p>
+    </article>
+</body>
+</html>

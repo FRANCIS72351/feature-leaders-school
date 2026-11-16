@@ -135,8 +135,8 @@
             font-size: 22px;
             font-weight: 700;
             color: var(--flpa-red);
-            letter-spacing: 0.06em;
-            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            text-transform: none;
             margin: 0 0 4px;
             line-height: 1.2;
         }
@@ -416,7 +416,7 @@
                     <img src="{{ school_logo_url }}" alt="FLPA Cardinals logo" onerror="this.onerror=null;this.style.visibility='hidden';">
                 </div>
                 <div class="official-header-center">
-                    <h1 class="official-school-name">{{ brand.name|upper }}</h1>
+                    <h1 class="official-school-name">{{ brand.name }}</h1>
                     <p class="official-address">{{ brand.full_address }}</p>
                     <p class="official-contact">{{ brand.phones }}</p>
                     <p class="official-contact">{{ brand.email_address or brand.email }}</p>

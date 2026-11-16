@@ -1,0 +1,296 @@
+{# Registry cash desk — Liberia two-semester / three-installment school fees. #}
+{% set tx_form = registry_tx_form %}
+{% set pay_form = registry_payment_form %}
+<style>
+    .registry-ledger-desk .ledger-card {
+        background: #fff;
+        border: 1px solid #eadfc8;
+        border-radius: 14px;
+        box-shadow: 0 8px 22px rgba(16, 24, 32, 0.12);
+        overflow: hidden;
+    }
+    .registry-ledger-desk .ledger-card h5 {
+        margin: 0;
+        font-weight: 800;
+    }
+    .registry-ledger-desk .ledger-tx-title { color: #002d62; }
+    .registry-ledger-desk .ledger-pay-title { color: #166534; }
+    .registry-ledger-desk .form-label { font-weight: 600; }
+    .registry-ledger-desk .post-tx {
+        background: #c82828; color: #fff; font-weight: 700; border: none;
+    }
+    .registry-ledger-desk .post-tx:hover { background: #a51f1f; color: #fff; }
+    .registry-ledger-desk .post-pay {
+        background: #16a34a; color: #fff; font-weight: 700; border: none;
+    }
+    .registry-ledger-desk .post-pay:hover { background: #15803d; color: #fff; }
+    #registry-ledger-desk { scroll-margin-top: 110px; }
+    .fee-plan-card { background: #0f1c2e; border-radius: 12px; color: #f8f1e3; }
+    .fee-plan-meta { color: #c9b896; font-size: 0.8rem; }
+    .fee-slot {
+        border: 1px solid rgba(201, 162, 39, 0.28);
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: rgba(255,255,255,0.03);
+    }
+    .fee-slot.is-paid { border-color: #16a34a; background: rgba(22,163,74,0.12); }
+    .fee-slot.is-partial { border-color: #c9a227; background: rgba(201,162,39,0.12); }
+    .fee-slot.is-open { border-color: rgba(255,255,255,0.12); }
+    .fee-slot .slot-label { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: #c9a227; }
+    .fee-slot .slot-status { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; }
+    .fee-slot.is-paid .slot-status { color: #86efac; }
+    .fee-slot.is-partial .slot-status { color: #fde68a; }
+    .fee-slot.is-open .slot-status { color: #9ca3af; }
+</style>
+<div class="registry-ledger-desk mb-4 fade-glide-in delay-1" id="registry-ledger-desk"
+     data-fee-plan-url="{{ url_for('registry_student_fee_plan') }}">
+    <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
+        <div>
+            <div class="small fw-bold text-uppercase" style="letter-spacing:0.16em;color:#c9a227;">Registry cash desk</div>
+            <h3 class="h5 text-white fw-bold mb-1">Collect school fees — Liberia standard</h3>
+            <p class="small mb-0" style="color:#c9b896;">Academic year = First Semester and Second Semester. Each semester is paid in 1st, 2nd, and 3rd installment (or full semester settlement). Receipts stay on today’s Day Book until you send the sheet.</p>
+        </div>
+        <a href="{{ url_for('registry_day_book') }}" class="btn btn-sm" style="background:#c9a227;color:#101820;font-weight:700;">Open Day Book</a>
+    </div>
+    {% if not tx_form or not pay_form %}
+    <div class="alert alert-warning">The cash desk forms could not load. Refresh the page or sign in again as Registry.</div>
+    {% else %}
+    <div class="ledger-card mb-4">
+        <div class="px-4 py-3 border-bottom d-flex flex-wrap justify-content-between gap-2">
+            <h5 class="ledger-pay-title">Collect student school fees</h5>
+            <span class="small text-muted">US$ or L$ · one receipt, one currency</span>
+        </div>
+        <div class="p-4">
+            <form method="post" action="{{ url_for('registrar_dashboard') }}#registry-ledger-desk" id="registrySchoolFeeForm">
+                {{ pay_form.hidden_tag() }}
+                <div class="row g-4">
+                    <div class="col-lg-6">
+                        <div class="mb-3">
+                            <label class="form-label small text-muted">Student</label>
+                            {{ pay_form.student(class_='form-select', id='registryPayStudent') }}
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small text-muted">Academic year</label>
+                            {{ pay_form.academic_year(class_='form-select', id='registryPayYear') }}
+                        </div>
+                        {% if pay_form._fields.get('fee_kind') %}
+                        <div class="mb-3">
+                            <label class="form-label small text-muted">What is being collected</label>
+                            {{ pay_form.fee_kind(class_='form-select', id='registryPayKind') }}
+                        </div>
+                        {% endif %}
+                        <div class="row g-3 mb-3" id="schoolFeePeriodFields">
+                            <div class="col-md-6">
+                                <label class="form-label small text-muted">Semester</label>
+                                {{ pay_form.term(class_='form-select', id='registryPayTerm') }}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small text-muted">Installment</label>
+                                {{ pay_form.installment(class_='form-select', id='registryPayInstallment') }}
+                            </div>
+                        </div>
+                        <div class="row g-3 mb-3">
+                            <div class="{% if pay_form._fields.get('currency') %}col-md-7{% else %}col-12{% endif %}">
+                                <label class="form-label small text-muted">Amount collected</label>
+                                {{ pay_form.amount_paid(class_='form-control form-control-lg', placeholder='0.00', id='registryPayAmount') }}
+                            </div>
+                            {% if pay_form._fields.get('currency') %}
+                            <div class="col-md-5">
+                                <label class="form-label small text-muted">Currency</label>
+                                {{ pay_form.currency(class_='form-select form-select-lg') }}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small text-muted">Counter note (optional)</label>
+                            {{ pay_form.description(class_='form-control', placeholder='Bank slip, guardian name, or other charge detail') }}
+                        </div>
+                        <button type="submit" name="submit_payment" class="btn post-pay w-100 py-2">Collect &amp; print receipt</button>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="fee-plan-card h-100 p-3 p-md-4" id="registryFeePlan">
+                            <div class="d-flex justify-content-between gap-2 mb-3">
+                                <div>
+                                    <div class="small fw-bold text-uppercase" style="letter-spacing:0.12em;color:#c9a227;">Student account</div>
+                                    <div class="fw-bold" id="feePlanName">Select a student</div>
+                                    <div class="fee-plan-meta" id="feePlanMeta">Yearly school fee is collected in three installments for the school year.</div>
+                                </div>
+                                <div class="text-end">
+                                    <div class="fee-plan-meta">Balance</div>
+                                    <div class="fw-bold" id="feePlanBalance">—</div>
+                                </div>
+                            </div>
+                            <div id="feePlanBoard" class="d-flex flex-column gap-3">
+                                <p class="fee-plan-meta mb-0">Choose a student to see First Semester and Second Semester installments.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="row g-4">
+        <div class="col-lg-6">
+            <div class="ledger-card h-100">
+                <div class="px-4 py-3 border-bottom">
+                    <h5 class="ledger-tx-title">Record daily transaction</h5>
+                </div>
+                <div class="p-4">
+                    <form method="post" action="{{ url_for('registrar_dashboard') }}#registry-ledger-desk">
+                        {{ tx_form.hidden_tag() }}
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label small text-muted">Transaction Date</label>
+                                {{ tx_form.date(class_='form-control') }}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small text-muted">Type</label>
+                                {{ tx_form.type(class_='form-select') }}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small text-muted">Amount</label>
+                                {{ tx_form.amount(class_='form-control', placeholder='60,000.00') }}
+                            </div>
+                            {% if tx_form._fields.get('currency') %}
+                            <div class="col-md-6">
+                                <label class="form-label small text-muted">Currency</label>
+                                {{ tx_form.currency(class_='form-select') }}
+                            </div>
+                            {% endif %}
+                            <div class="col-md-6">
+                                <label class="form-label small text-muted">Category</label>
+                                {{ tx_form.category(class_='form-control', placeholder='e.g. Utility, Salary') }}
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label small text-muted">Description</label>
+                                {{ tx_form.description(class_='form-control', rows='2', placeholder='Details...') }}
+                            </div>
+                        </div>
+                        <p class="form-text mb-0 mt-2">Use this for non-student till entries. School fees go in Collect student school fees.</p>
+                        <button type="submit" name="submit_transaction" class="btn post-tx w-100 mt-3">Post Transaction</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+<script>
+(function () {
+    const desk = document.getElementById('registry-ledger-desk');
+    if (!desk) return;
+    const planUrl = desk.getAttribute('data-fee-plan-url');
+    const studentEl = document.getElementById('registryPayStudent');
+    const yearEl = document.getElementById('registryPayYear');
+    const termEl = document.getElementById('registryPayTerm');
+    const instEl = document.getElementById('registryPayInstallment');
+    const amountEl = document.getElementById('registryPayAmount');
+    const kindEl = document.getElementById('registryPayKind');
+    const nameEl = document.getElementById('feePlanName');
+    const metaEl = document.getElementById('feePlanMeta');
+    const balanceEl = document.getElementById('feePlanBalance');
+    const boardEl = document.getElementById('feePlanBoard');
+    const periodFields = document.getElementById('schoolFeePeriodFields');
+    let amountTouched = false;
+    let currentPlan = null;
+
+    function isSchoolFeeKind() {
+        const kind = kindEl ? (kindEl.value || 'tuition') : 'tuition';
+        return kind === 'tuition' || kind === 'school_fees';
+    }
+
+    function syncPeriodFields() {
+        if (!periodFields) return;
+        periodFields.style.display = isSchoolFeeKind() ? '' : 'none';
+        if (boardEl) {
+            boardEl.style.opacity = isSchoolFeeKind() ? '1' : '0.45';
+        }
+    }
+
+    function money(amount) {
+        const value = Number(amount || 0);
+        return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function renderPlan(plan) {
+        currentPlan = plan;
+        if (!plan) return;
+        nameEl.textContent = plan.student_name || 'Student';
+        metaEl.textContent = (plan.class_name ? plan.class_name + ' · ' : '') +
+            'Yearly school fee ' + money(plan.yearly_fee) +
+            ' · Semester ' + money(plan.semester_fee) +
+            ' · Installment ' + money(plan.installment_fee);
+        balanceEl.textContent = money(plan.year_balance);
+        boardEl.innerHTML = '';
+        (plan.semesters || []).forEach(function (semester) {
+            const wrap = document.createElement('div');
+            const heading = document.createElement('div');
+            heading.className = 'd-flex justify-content-between small mb-2';
+            heading.innerHTML = '<strong>' + semester.label + '</strong><span class="fee-plan-meta">Paid ' +
+                money(semester.paid) + ' / ' + money(semester.due) + '</span>';
+            wrap.appendChild(heading);
+            const grid = document.createElement('div');
+            grid.className = 'row g-2 mb-1';
+            (semester.installments || []).forEach(function (slot) {
+                const col = document.createElement('div');
+                col.className = 'col-4';
+                col.innerHTML = '<button type="button" class="fee-slot is-' + slot.status +
+                    ' w-100 text-start" data-term="' + semester.id + '" data-installment="' + slot.id +
+                    '" data-amount="' + slot.balance + '">' +
+                    '<div class="slot-label">' + slot.label + '</div>' +
+                    '<div class="fw-bold">' + money(slot.paid) + '</div>' +
+                    '<div class="slot-status">' + slot.status + (slot.balance > 0 ? ' · due ' + money(slot.balance) : '') + '</div>' +
+                    '</button>';
+                grid.appendChild(col);
+            });
+            wrap.appendChild(grid);
+            boardEl.appendChild(wrap);
+        });
+        boardEl.querySelectorAll('.fee-slot').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                if (termEl) termEl.value = btn.getAttribute('data-term');
+                if (instEl) instEl.value = btn.getAttribute('data-installment');
+                if (amountEl && !amountTouched) {
+                    const due = Number(btn.getAttribute('data-amount') || 0);
+                    if (due > 0) amountEl.value = due.toFixed(2);
+                }
+            });
+        });
+        if (isSchoolFeeKind()) {
+            if (termEl && plan.suggested_term) termEl.value = String(plan.suggested_term);
+            if (instEl && plan.suggested_installment) instEl.value = String(plan.suggested_installment);
+            if (amountEl && !amountTouched && plan.suggested_amount) {
+                amountEl.value = Number(plan.suggested_amount).toFixed(2);
+            }
+        }
+    }
+
+    function loadPlan() {
+        if (!planUrl || !studentEl || !studentEl.value || studentEl.value === '0') {
+            if (nameEl) nameEl.textContent = 'Select a student';
+            return;
+        }
+        const params = new URLSearchParams({
+            student_id: studentEl.value,
+            academic_year_id: yearEl ? yearEl.value : ''
+        });
+        fetch(planUrl + '?' + params.toString(), { headers: { 'Accept': 'application/json' } })
+            .then(function (res) { return res.ok ? res.json() : null; })
+            .then(function (plan) { if (plan && !plan.error) renderPlan(plan); })
+            .catch(function () {});
+    }
+
+    if (amountEl) {
+        amountEl.addEventListener('input', function () { amountTouched = true; });
+    }
+    if (studentEl) studentEl.addEventListener('change', function () { amountTouched = false; loadPlan(); });
+    if (yearEl) yearEl.addEventListener('change', function () { amountTouched = false; loadPlan(); });
+    if (kindEl) kindEl.addEventListener('change', function () {
+        amountTouched = !isSchoolFeeKind();
+        syncPeriodFields();
+        if (isSchoolFeeKind() && currentPlan) renderPlan(currentPlan);
+    });
+    syncPeriodFields();
+    loadPlan();
+})();
+</script>

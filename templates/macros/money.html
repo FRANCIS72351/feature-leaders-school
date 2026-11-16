@@ -1,0 +1,13 @@
+{# Liberia US$ / L$ — works even if the Python school_money filter is not loaded. #}
+{% macro money(amount, currency='USD') -%}
+{%- set code = (currency or 'USD')|string|upper -%}
+{%- if code in ['LRD', 'LD', 'L$', 'LR'] -%}L$ {% else %}US$ {% endif %}{{ "{:,.2f}".format(amount|float) }}
+{%- endmacro %}
+
+{% macro from_row(row, amount) -%}
+{%- set ns = namespace(code='USD') -%}
+{%- if row is not none and row.__mapper__ is defined and row.__mapper__.has_property('currency') -%}
+  {%- set ns.code = row.currency or 'USD' -%}
+{%- endif -%}
+{{- money(amount, ns.code) -}}
+{%- endmacro %}

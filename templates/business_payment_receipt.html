@@ -1,3 +1,4 @@
+{% from 'macros/money.html' import from_row %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -102,6 +103,24 @@
             font-weight: 800;
             color: var(--flpa-red);
         }
+        .paid-for {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 0 0 16px;
+        }
+        .paid-for .box {
+            border: 2px solid var(--flpa-red);
+            border-radius: 10px;
+            padding: 12px 14px;
+            background: #fff7f7;
+        }
+        .paid-for .box .value {
+            font-size: 1.12rem;
+            font-weight: 800;
+            color: var(--ink);
+            display: block;
+        }
         .grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -145,7 +164,7 @@
         }
         @media (max-width: 700px) {
             .sheet { width: 100%; padding: 18px; }
-            .grid { grid-template-columns: 1fr; }
+            .grid, .paid-for { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -172,8 +191,20 @@
 
         <div class="amount-banner">
             <span class="label">Amount paid</span>
-            <div class="paid">${{ "{:,.2f}".format(payment.amount_paid|float) }}</div>
+            <div class="paid">{{ from_row(payment, payment.amount_paid) }}</div>
         </div>
+        {% if show_billing_period %}
+        <div class="paid-for">
+            <div class="box">
+                <span class="label">Term / Semester paid for</span>
+                <span class="value">{{ semester_name or ((payment.term or 1)|semester_label) }}</span>
+            </div>
+            <div class="box">
+                <span class="label">Installment paid for</span>
+                <span class="value">{{ installment_name or ((payment.installment or 1)|installment_label) or '—' }}</span>
+            </div>
+        </div>
+        {% endif %}
 
         <div class="grid">
             <div class="field">
@@ -194,20 +225,18 @@
             </div>
             <div class="field">
                 <span class="label">Amount</span>
-                <span class="value">${{ "{:,.2f}".format(payment.amount_paid|float) }}</span>
-            </div>
-            <div class="field">
-                <span class="label">Term / Installment</span>
-                <span class="value">Term {{ payment.term or '—' }}{% if payment.installment %} · Installment {{ payment.installment }}{% endif %}</span>
+                <span class="value">{{ from_row(payment, payment.amount_paid) }}</span>
             </div>
             <div class="field span-2">
                 <span class="label">Description</span>
                 <span class="value">{{ payment.description or 'Tuition Payment' }}</span>
             </div>
+            {% if show_billing_period %}
             <div class="field">
-                <span class="label">Remaining balance</span>
+                <span class="label">Remaining yearly school bill</span>
                 <span class="value">${{ "{:,.2f}".format(remaining|float) }}</span>
             </div>
+            {% endif %}
             <div class="field">
                 <span class="label">Receipt no.</span>
                 <span class="value">{{ receipt_no }}</span>

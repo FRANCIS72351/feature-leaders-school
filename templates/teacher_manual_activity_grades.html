@@ -63,7 +63,7 @@
             for <strong>{{ selected_subject }}</strong> · {{ period_label }}.
         </div>
         <div class="d-flex flex-wrap gap-2">
-            <a href="{{ url_for('class_grading_hub', class_id=klass.id, subject=selected_subject, period=selected_period, hub_tab='moe') }}"
+            <a href="{{ url_for('teacher_dashboard', grade_class_id=klass.id, grade_subject=selected_subject, grade_period=selected_period) }}#grade-sheet"
                class="btn btn-success btn-sm">
                 <i class="bi bi-megaphone me-1"></i>Review &amp; Publish
             </a>

@@ -153,7 +153,7 @@
                     </div>
                 </div>
                 <div class="vpa-student-actions">
-                    <a class="btn-vpa-link" href="{{ url_for('report_card', student_id=student.id, academic_year_id=display_year.id if display_year else none) }}" target="_blank" rel="noopener">
+                    <a class="btn-vpa-link" href="{{ url_for('staff_student_grade_sheet', student_id=student.id, academic_year_id=display_year.id if display_year else none) }}" target="_blank" rel="noopener">
                         <i class="fas fa-file-alt"></i> Grade sheet
                     </a>
                     <a class="btn-vpa-link" href="{{ url_for('report_card', student_id=student.id, academic_year_id=display_year.id if display_year else none) }}" target="_blank" rel="noopener">

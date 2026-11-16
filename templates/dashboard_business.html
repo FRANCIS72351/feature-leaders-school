@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from 'macros/money.html' import money, from_row %}
 {% block title %}Business Office{% endblock %}
 
 {% block content %}
@@ -170,6 +171,44 @@
         </div>
     </div>
 
+    {% set live = registry_live_till or {} %}
+    {% if live.count or registry_handovers_pending_count %}
+    <div class="biz-card p-3 mb-4" style="border-left:6px solid #c9a227;">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+            <div>
+                <div class="text-uppercase small fw-bold" style="letter-spacing:0.12em;color:#c9a227;">Registry dispatch</div>
+                <div class="fw-bold">Daily collection report · {{ live.date.strftime('%d %b %Y') if live.date else 'Today' }}</div>
+                <div class="small text-muted">
+                    {{ live.count|default(0) }} receipt{{ 's' if live.count != 1 else '' }} · ${{ "{:,.2f}".format(live.total|default(0)) }}
+                    {% if registry_handovers_pending_count %} · {{ registry_handovers_pending_count }} day{{ 's' if registry_handovers_pending_count != 1 else '' }} awaiting acknowledgement (${{ "{:,.2f}".format(registry_awaiting_income_total|default(0)) }} not yet in official income){% endif %}
+                </div>
+            </div>
+            <a href="{{ url_for('business_registry_records') }}" class="btn btn-sm btn-dark">Open registry records</a>
+        </div>
+        {% if registry_live_payments %}
+        <div class="table-responsive">
+            <table class="table table-sm mb-0">
+                <thead>
+                    <tr>
+                        <th>Receipt</th>
+                        <th>Student</th>
+                        <th class="text-end">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for payment in registry_live_payments[:8] %}
+                    <tr>
+                        <td class="fw-semibold">{{ payment.receipt_number or ('SP-' ~ payment.id) }}</td>
+                        <td>{{ payment.student.full_name if payment.student else '—' }}</td>
+                        <td class="text-end">${{ "{:,.2f}".format(payment.amount_paid|float) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
     <div class="biz-card mb-4">
         <div class="d-flex flex-wrap border-bottom">
             <a href="{{ url_for('business_dashboard', tab='tuition', class_id=selected_class_id or '', student_id=selected_student_id or '', **year_param) }}"
@@ -274,7 +313,7 @@
                                 </div>
                             </div>
                             <div class="small mt-2 text-muted">
-                                Yearly ${{ "{:,.2f}".format(s.yearly_fee) }} · Paid ${{ "{:,.2f}".format(s.total_paid) }}
+                                Yearly bill ${{ "{:,.2f}".format(s.yearly_fee) }} · Paid on bill ${{ "{:,.2f}".format(s.yearly_paid|default(s.total_paid)) }}
                             </div>
                             {% if not s.is_registered %}
                             <div class="mt-2 pt-2 border-top" onclick="event.preventDefault(); event.stopPropagation();">
@@ -333,9 +372,15 @@
                             <label class="form-label small text-muted">Student</label>
                             {{ payment_form.student(class_='form-select') }}
                         </div>
-                        <div class="row g-2 mb-3">
+                        {% if payment_form._fields.get('fee_kind') %}
+                        <div class="mb-3">
+                            <label class="form-label small text-muted">What is being collected</label>
+                            {{ payment_form.fee_kind(class_='form-select', id='businessPayKind') }}
+                        </div>
+                        {% endif %}
+                        <div class="row g-2 mb-3" id="businessSchoolFeePeriod">
                             <div class="col-6">
-                                <label class="form-label small text-muted">Term</label>
+                                <label class="form-label small text-muted">Semester</label>
                                 {{ payment_form.term(class_='form-select') }}
                             </div>
                             <div class="col-6">
@@ -343,11 +388,19 @@
                                 {{ payment_form.installment(class_='form-select') }}
                             </div>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label small text-muted">Amount</label>
-                            {{ payment_form.amount_paid(class_='form-control form-control-lg', placeholder='60,000.00') }}
-                            <div class="form-text">Commas are OK — e.g. 60,000</div>
+                        <div class="row g-2 mb-3">
+                            <div class="{% if payment_form._fields.get('currency') %}col-7{% else %}col-12{% endif %}">
+                                <label class="form-label small text-muted">Amount</label>
+                                {{ payment_form.amount_paid(class_='form-control form-control-lg', placeholder='60,000.00') }}
+                            </div>
+                            {% if payment_form._fields.get('currency') %}
+                            <div class="col-5">
+                                <label class="form-label small text-muted">Currency</label>
+                                {{ payment_form.currency(class_='form-select form-select-lg') }}
+                            </div>
+                            {% endif %}
                         </div>
+                        <div class="form-text mb-3">Liberia: US$ or L$. One receipt, one currency. Commas are OK — e.g. 60,000</div>
                         <div class="mb-3">
                             <label class="form-label small text-muted">Description</label>
                             {{ payment_form.description(class_='form-control', placeholder='Tuition Payment') }}
@@ -364,9 +417,12 @@
                             {% for p in selected_student_payments %}
                             <div class="border rounded-3 p-2 small d-flex justify-content-between align-items-start gap-2">
                                 <div>
-                                    <div class="fw-semibold text-success">${{ "{:,.2f}".format(p.amount_paid|float) }}</div>
+                                    <div class="fw-semibold text-success">{{ from_row(p, p.amount_paid) }}</div>
                                     <div class="text-muted">{{ p.paid_on.strftime('%b %d, %Y') if p.paid_on else '—' }}</div>
-                                    <div>{{ p.description or 'Tuition Payment' }}</div>
+                                    {% if (p.fee_kind or 'tuition') in ['tuition', 'school_fees'] %}
+                                    <div>{{ (p.term or 1)|billing_period(p.installment) }}</div>
+                                    {% endif %}
+                                    <div>{{ p.description or 'Payment' }}</div>
                                 </div>
                                 <a class="btn btn-sm btn-outline-danger flex-shrink-0" target="_blank"
                                    href="{{ url_for('print_business_payment_receipt', payment_id=p.id) }}">Print receipt</a>
@@ -391,14 +447,23 @@
                 </div>
                 <div class="col-md-3">
                     <div class="metric-mini">
-                        <div class="small text-muted">Tuition Collected</div>
+                        <div class="small text-muted">Student fees credited</div>
                         <div class="h4 fw-bold text-success mb-0">${{ "{:,.2f}".format(fee_income_total|default(0)) }}</div>
+                        <div class="small text-muted">On student files this year</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-mini" style="border-color:#c9a227;">
+                        <div class="small text-muted">Registry awaiting bursar</div>
+                        <div class="h4 fw-bold mb-0" style="color:#92400e;">${{ "{:,.2f}".format(registry_awaiting_income_total|default(0)) }}</div>
+                        <div class="small text-muted">Counts in Total Income after you acknowledge</div>
                     </div>
                 </div>
                 <div class="col-md-3">
                     <div class="metric-mini">
-                        <div class="small text-muted">Total Income</div>
+                        <div class="small text-muted">Official income</div>
                         <div class="h4 fw-bold text-primary mb-0">${{ "{:,.2f}".format(total_revenue|default(0)) }}</div>
+                        <div class="small text-muted">Books after bursar sign-off</div>
                     </div>
                 </div>
                 <div class="col-md-3">
@@ -560,6 +625,19 @@
 {% endif %}
 {% endfor %}
 {% endif %}
+<script>
+(function () {
+    const kind = document.getElementById('businessPayKind');
+    const period = document.getElementById('businessSchoolFeePeriod');
+    function sync() {
+        if (!kind || !period) return;
+        const value = kind.value || 'tuition';
+        period.style.display = (value === 'tuition' || value === 'school_fees') ? '' : 'none';
+    }
+    if (kind) kind.addEventListener('change', sync);
+    sync();
+})();
+</script>
 {% if user_role == 'principal' %}
 <script>
     // Principal view refreshes periodically so newly posted transactions appear quickly.

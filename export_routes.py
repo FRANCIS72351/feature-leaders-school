@@ -701,10 +701,15 @@ def init_export_routes(app):
         y -= line_h
         pdf.drawString(20, y, f"Academic Year: {getattr(payment.academic_year,'name','')}")
         y -= line_h
-        pdf.drawString(20, y, f"Term: {payment.term}")
-        y -= line_h
-        pdf.drawString(20, y, f"Installment: {payment.installment or ''}")
-        y -= line_h
+        from registry_desk import payment_shows_semester_installment
+        from constants import billing_period_label, installment_label, semester_label
+        if payment_shows_semester_installment(payment):
+            pdf.drawString(20, y, f"Term / Semester paid for: {semester_label(payment.term)}")
+            y -= line_h
+            pdf.drawString(20, y, f"Installment paid for: {installment_label(payment.installment) or '—'}")
+            y -= line_h
+            pdf.drawString(20, y, f"Paid for: {billing_period_label(payment.term, payment.installment)}")
+            y -= line_h
 
         # Amount and totals (formatted)
         pdf.setFont('Helvetica-Bold', 11)

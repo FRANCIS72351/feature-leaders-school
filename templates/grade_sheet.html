@@ -154,6 +154,48 @@
             color: #94a3b8;
             cursor: not-allowed;
         }
+        .command-seal {
+            max-width: 1122px;
+            margin: 0 auto 14px;
+            padding: 12px 16px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            gap: 8px 18px;
+            background: linear-gradient(90deg, #002d62 0%, #0f2744 58%, #7a1d1d 100%);
+            color: #f8f1e3;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(15, 39, 68, 0.18);
+            font-family: 'Cinzel', 'Times New Roman', serif;
+        }
+        .command-seal .seal-kicker {
+            font-size: 0.68rem;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            color: #c5a572;
+            font-weight: 700;
+            width: 100%;
+        }
+        .command-seal strong {
+            font-size: 1.05rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .command-seal .seal-office {
+            font-family: system-ui, sans-serif;
+            font-size: 0.78rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: #fde68a;
+        }
+        .command-seal em {
+            font-family: system-ui, sans-serif;
+            font-style: normal;
+            font-size: 0.78rem;
+            color: #e2e8f0;
+            margin-left: auto;
+        }
 
         /* Landscape sheet: never shrink; scroll the whole canvas if the screen is narrower. */
         .sheet-scroll {
@@ -257,8 +299,8 @@
             font-size: 20px;
             font-weight: 700;
             color: var(--flpa-red);
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            text-transform: none;
             margin: 0 0 2px;
             line-height: 1.15;
         }
@@ -480,6 +522,16 @@
             }
             body { padding: 0 !important; color: #111; }
             .top-bar, .status-banner, .action-bar, .sheet-scope-rail { display: none !important; }
+            .command-seal {
+                margin: 0 0 4mm;
+                padding: 2mm 3mm;
+                border-radius: 0;
+                box-shadow: none;
+                background: #002d62 !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            .command-seal em { margin-left: 0; }
             .sheet-scroll { overflow: visible !important; max-width: none !important; }
             .grade-sheet-card {
                 box-shadow: none !important;
@@ -515,23 +567,38 @@
     ] %}
 
     <div class="top-bar">
-        <a href="{{ url_for('student_dashboard', tab='grades', academic_year_id=display_year.id if display_year else none) }}" class="back-link">
-            <i class="fas fa-arrow-left me-1"></i> Back to Dashboard
+        <a href="{{ sheet_back_url or url_for('student_dashboard', tab='grades', academic_year_id=display_year.id if display_year else none) }}" class="back-link">
+            <i class="fas fa-arrow-left me-1"></i> {{ sheet_back_label|default('Back to Dashboard') }}
         </a>
-        <form method="GET" action="{{ url_for('student_grade_sheet') }}" class="year-form">
+        <form method="GET" action="{% if sheet_self_endpoint %}{{ url_for(sheet_self_endpoint, student_id=student.id) }}{% else %}{{ url_for('student_grade_sheet') }}{% endif %}" class="year-form">
             <label for="academic_year_id">Academic Year</label>
             <select name="academic_year_id" id="academic_year_id" onchange="this.form.submit()">
                 {% for year in past_years %}
                 <option value="{{ year.id }}" {% if display_year and year.id == display_year.id %}selected{% endif %}>{{ year.name }}</option>
                 {% endfor %}
             </select>
+            {% if data.view_period %}<input type="hidden" name="period" value="{{ data.view_period }}">{% endif %}
+            {% if data.semester %}<input type="hidden" name="semester" value="{{ data.semester }}">{% endif %}
         </form>
     </div>
+
+    {% if sheet_office %}
+    <div class="command-seal">
+        <span class="seal-kicker">Academic command copy</span>
+        <strong>Official Grade Sheet</strong>
+        <span class="seal-office">{{ sheet_office }}</span>
+        <em>Period results only — this is not the year-end report card.</em>
+    </div>
+    {% endif %}
 
     {% if has_published %}
     <div class="status-banner published">
         <i class="fas fa-check-circle"></i>
+        {% if sheet_office %}
+        <span><strong>Grade sheet ready to print</strong> — {{ published_count }} subject line{{ 's' if published_count != 1 else '' }} for {{ data.academic_year or 'this year' }}{% if data.scope_label %} ({{ data.scope_label }}){% endif %}.</span>
+        {% else %}
         <span><strong>Published Grade Sheet</strong> — {{ published_count }} official grade record{{ 's' if published_count != 1 else '' }} for {{ data.academic_year or 'this year' }}.</span>
+        {% endif %}
     </div>
     {% if data.awaiting_vpa_note %}
     <div class="status-banner awaiting">
@@ -555,11 +622,27 @@
     {% else %}
     <div class="status-banner empty">
         <i class="fas fa-hourglass-half"></i>
+        {% if sheet_office %}
+        <span>No period grades on file yet for this student in {{ data.academic_year or 'this academic year' }}.</span>
+        {% else %}
         <span>No published grades yet for {{ data.academic_year or 'this academic year' }}. Your teacher will publish period grades when ready. Check <strong>My Grades</strong> for draft standing.</span>
+        {% endif %}
     </div>
     {% endif %}
 
-    {% if approved_periods or released_semesters %}
+    {% if staff_scope_nav %}
+    <div class="sheet-scope-rail">
+        <span class="sheet-scope-label">Period</span>
+        {% for period_num, period_name in grading_periods %}
+        <a class="scope-pill {% if data.view_period == period_num %}active{% endif %}"
+           href="{{ url_for(sheet_self_endpoint, student_id=student.id, academic_year_id=display_year.id if display_year else none, period=period_num) }}">{{ period_name }}</a>
+        {% endfor %}
+        <a class="scope-pill {% if data.semester == 1 %}active{% endif %}"
+           href="{{ url_for(sheet_self_endpoint, student_id=student.id, academic_year_id=display_year.id if display_year else none, semester=1) }}">Semester 1</a>
+        <a class="scope-pill {% if data.semester == 2 %}active{% endif %}"
+           href="{{ url_for(sheet_self_endpoint, student_id=student.id, academic_year_id=display_year.id if display_year else none, semester=2) }}">Semester 2</a>
+    </div>
+    {% elif (approved_periods or released_semesters) and not sheet_office %}
     <div class="sheet-scope-rail">
         <span class="sheet-scope-label">Viewing</span>
         {% for period_num, period_name in grading_periods if period_num in approved_periods %}
@@ -581,12 +664,15 @@
     {% endif %}
 
     <div class="action-bar">
+        {% if not sheet_office %}
         <a class="btn-action outline" href="{{ url_for('student_dashboard', tab='activities', academic_year_id=display_year.id if display_year else none) }}">
             <i class="fas fa-list"></i> Activities Record
         </a>
-        <a class="btn-action outline" href="{{ url_for('student_grade_sheet_pdf', academic_year_id=display_year.id if display_year else none, period=data.view_period, semester=data.semester) }}">
+        {% endif %}
+        <a class="btn-action outline" href="{% if sheet_pdf_endpoint %}{{ url_for(sheet_pdf_endpoint, student_id=student.id, academic_year_id=display_year.id if display_year else none, period=data.view_period, semester=data.semester) }}{% else %}{{ sheet_pdf_url or url_for('student_grade_sheet_pdf', academic_year_id=display_year.id if display_year else none, period=data.view_period, semester=data.semester) }}{% endif %}">
             <i class="fas fa-download"></i> Download PDF
         </a>
+        {% if not sheet_office %}
         {% if report_card_unlocked %}
         <a class="btn-action outline" href="{{ url_for('report_card', student_id=student.id) }}?academic_year_id={{ display_year.id if display_year else '' }}">
             <i class="fas fa-file-invoice"></i> Report Card
@@ -595,6 +681,7 @@
         <span class="btn-action outline locked" title="{{ report_card_blocker_note }}">
             <i class="fas fa-lock"></i> Report Card — issued at year end
         </span>
+        {% endif %}
         {% endif %}
         <button class="btn-action" type="button" onclick="window.print()">
             <i class="fas fa-print"></i> Print
@@ -613,7 +700,7 @@
                     </td>
                     <td class="center-cell">
                         <div class="official-header-center">
-                            <h1 class="official-school-name">{{ brand.name|upper }}</h1>
+                            <h1 class="official-school-name">{{ brand.name }}</h1>
                             <p class="official-address">{{ brand.full_address }}</p>
                             <p class="official-contact">{{ brand.phones }}</p>
                             <p class="official-contact">{{ brand.email_address or brand.email }}</p>

@@ -6,6 +6,18 @@ ROLE_BUSINESS = 'business'
 ROLE_SPONSOR = 'sponsor'
 ROLE_STUDENT = 'student'
 
+# Liberia dual currency — defined first so every importer can see US$ / L$.
+CURRENCY_USD = 'USD'
+CURRENCY_LRD = 'LRD'
+CURRENCY_CHOICES = (
+    ('USD', 'US$ — United States Dollar'),
+    ('LRD', 'L$ — Liberian Dollar'),
+)
+CURRENCY_SYMBOLS = {
+    CURRENCY_USD: 'US$',
+    CURRENCY_LRD: 'L$',
+}
+
 # MoE marking periods: 1, 2, 3, EXAM, 4, 5, 6, FINAL EXAM (IDs 7 and 8 = semester exams)
 GRADING_PERIODS = [
     (1, 'Period 1'),
@@ -75,3 +87,84 @@ PERIOD_COMPONENT_ACTIVITY_TYPES = {
     'classwork': 'Class Work',
     'test': 'Test',
 }
+
+
+def normalize_currency(code):
+    raw = (code or CURRENCY_USD).strip().upper().replace(' ', '')
+    if raw in {CURRENCY_LRD, 'LD', 'L$', 'LD$', 'LR'}:
+        return CURRENCY_LRD
+    return CURRENCY_USD
+
+
+def currency_symbol(code):
+    return CURRENCY_SYMBOLS.get(normalize_currency(code), 'US$')
+
+
+def format_school_money(amount, currency='USD'):
+    """Professional Liberian till notation: US$ 1,000.00 or L$ 185,000.00."""
+    try:
+        value = float(amount or 0)
+    except (TypeError, ValueError):
+        value = 0.0
+    return f"{currency_symbol(currency)} {value:,.2f}"
+
+
+# Liberia private-school billing: two semesters in the year; school fees in three yearly installments.
+SEMESTER_CHOICES = (
+    (1, 'First Semester'),
+    (2, 'Second Semester'),
+)
+INSTALLMENT_FULL = 0
+INSTALLMENT_CHOICES = (
+    (1, '1st Installment'),
+    (2, '2nd Installment'),
+    (3, '3rd Installment'),
+)
+INSTALLMENT_FORM_CHOICES = INSTALLMENT_CHOICES + (
+    (INSTALLMENT_FULL, 'Full year settlement'),
+)
+SCHOOL_FEE_KIND_CHOICES = (
+    ('tuition', 'School fees'),
+    ('registration', 'Registration fee'),
+    ('re_admission', 'Re-admission fee'),
+    ('id_card', 'ID card replacement'),
+    ('documents', 'Documents / certificates'),
+    ('other', 'Other school charge'),
+)
+_SEMESTER_LABELS = dict(SEMESTER_CHOICES)
+_INSTALLMENT_LABELS = dict(INSTALLMENT_FORM_CHOICES)
+
+
+def semester_label(term):
+    try:
+        term = int(term)
+    except (TypeError, ValueError):
+        return 'First Semester'
+    return _SEMESTER_LABELS.get(term, 'First Semester')
+
+
+def installment_label(number):
+    try:
+        number = int(number)
+    except (TypeError, ValueError):
+        return ''
+    return _INSTALLMENT_LABELS.get(number, '')
+
+
+def billing_period_label(term, installment=None):
+    """Official receipt line: First Semester · 2nd Installment (of three for the year)."""
+    heading = semester_label(term)
+    inst = installment_label(installment)
+    return f'{heading} · {inst}' if inst else heading
+
+
+def format_dual_money(totals):
+    """Join USD and LRD buckets for a till or report heading."""
+    parts = []
+    usd = float((totals or {}).get(CURRENCY_USD) or 0)
+    lrd = float((totals or {}).get(CURRENCY_LRD) or 0)
+    if usd or not lrd:
+        parts.append(format_school_money(usd, CURRENCY_USD))
+    if lrd:
+        parts.append(format_school_money(lrd, CURRENCY_LRD))
+    return '  ·  '.join(parts)

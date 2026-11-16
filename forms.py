@@ -2,11 +2,37 @@ from flask_wtf import FlaskForm
 from wtforms import (
     StringField, PasswordField, SubmitField, SelectField,
     FloatField, TextAreaField, DateField, IntegerField,
-    BooleanField, FileField
+    BooleanField, FileField, HiddenField
 )
-from wtforms.validators import DataRequired, Email, Optional, ValidationError, Length, EqualTo
+from wtforms.validators import DataRequired, Email, Optional, ValidationError, Length, EqualTo, InputRequired
 from flask_wtf.file import FileAllowed, FileRequired
 from constants import GRADING_PERIODS
+
+try:
+    from constants import CURRENCY_CHOICES
+except ImportError:
+    CURRENCY_CHOICES = (
+        ('USD', 'US$ — United States Dollar'),
+        ('LRD', 'L$ — Liberian Dollar'),
+    )
+try:
+    from constants import SEMESTER_CHOICES, INSTALLMENT_FORM_CHOICES, SCHOOL_FEE_KIND_CHOICES
+except ImportError:
+    SEMESTER_CHOICES = ((1, 'First Semester'), (2, 'Second Semester'))
+    INSTALLMENT_FORM_CHOICES = (
+        (1, '1st Installment'),
+        (2, '2nd Installment'),
+        (3, '3rd Installment'),
+        (0, 'Full year settlement'),
+    )
+    SCHOOL_FEE_KIND_CHOICES = (
+        ('tuition', 'School fees'),
+        ('registration', 'Registration fee'),
+        ('re_admission', 'Re-admission fee'),
+        ('id_card', 'ID card replacement'),
+        ('documents', 'Documents / certificates'),
+        ('other', 'Other school charge'),
+    )
 from school_divisions import ACADEMIC_LEVEL_CHOICES, GRADE_LEVEL_SELECT_CHOICES
 from utils import parse_currency_amount
 
@@ -252,6 +278,64 @@ class RegisterStudentForm(FlaskForm):
             )
 
 
+class RegistryCollectFeeForm(FlaskForm):
+    student_id = HiddenField()
+    student_code = StringField(
+        "Student ID",
+        validators=[Optional(), Length(max=40)],
+        description="Look up the student at the registry counter.",
+    )
+    fee_kind = SelectField("Fee type", validators=[DataRequired()])
+    currency = SelectField(
+        "Currency",
+        choices=list(CURRENCY_CHOICES),
+        default="USD",
+        validators=[DataRequired()],
+    )
+    amount = CurrencyField(
+        "Amount collected",
+        validators=[DataRequired(), validate_currency],
+    )
+    term = SelectField(
+        "Semester",
+        choices=[(1, "First Semester"), (2, "Second Semester")],
+        coerce=int,
+        default=1,
+        validators=[InputRequired()],
+    )
+    installment = SelectField(
+        "Installment",
+        choices=list(INSTALLMENT_FORM_CHOICES),
+        coerce=int,
+        default=1,
+        validators=[InputRequired()],
+    )
+    receipt_reference = StringField(
+        "Bank / voucher reference",
+        validators=[Optional(), Length(max=80)],
+    )
+    notes = StringField("Counter note", validators=[Optional(), Length(max=160)])
+    submit = SubmitField("Collect fee & print receipt")
+
+
+class RegistryCloseDayForm(FlaskForm):
+    notes = TextAreaField(
+        "Message to the Business Manager",
+        validators=[Optional(), Length(max=2000)],
+        render_kw={"rows": 3, "placeholder": "Cash counted, shortages, or special collections…"},
+    )
+    submit = SubmitField("Send daily record to Business Manager")
+
+
+class RegistryAcknowledgeForm(FlaskForm):
+    business_notes = TextAreaField(
+        "Business Manager note",
+        validators=[Optional(), Length(max=2000)],
+        render_kw={"rows": 2, "placeholder": "Cash received and verified…"},
+    )
+    submit = SubmitField("Acknowledge registry record")
+
+
 class ClassForm(FlaskForm):
     name = StringField("Class Name", validators=[DataRequired()])
     description = TextAreaField("Description", validators=[Optional()])
@@ -298,19 +382,33 @@ class SetFeeForm(FlaskForm):
 class PaymentForm(FlaskForm):
     student = SelectField("Student", coerce=int, validators=[DataRequired()])
     academic_year = SelectField("Academic Year", coerce=int, validators=[DataRequired()])
+    fee_kind = SelectField(
+        "What is being collected",
+        choices=list(SCHOOL_FEE_KIND_CHOICES),
+        default="tuition",
+        validators=[Optional()],
+    )
     term = SelectField(
-        "Term",
-        choices=[(1, "Semester 1"), (2, "Semester 2")],
+        "Semester",
+        choices=list(SEMESTER_CHOICES),
         coerce=int,
-        validators=[DataRequired()]
+        default=1,
+        validators=[InputRequired()]
     )
     installment = SelectField(
         "Installment",
-        choices=[(0, "None / Full Payment"), (1, "1st Installment"), (2, "2nd Installment"), (3, "3rd Installment")],
+        choices=list(INSTALLMENT_FORM_CHOICES),
         coerce=int,
-        validators=[Optional()]
+        default=1,
+        validators=[InputRequired()]
     )
-    description = StringField("Fee Description (e.g. Tuition, Uniform, Graduation)", validators=[Optional()])
+    description = StringField("Counter note (optional)", validators=[Optional()])
+    currency = SelectField(
+        "Currency",
+        choices=list(CURRENCY_CHOICES),
+        default="USD",
+        validators=[DataRequired()],
+    )
     amount_paid = CurrencyField(
         "Amount Paid",
         validators=[DataRequired(), validate_currency],
@@ -338,6 +436,12 @@ class BusinessTransactionForm(FlaskForm):
         validators=[DataRequired()]
     )
     amount = CurrencyField("Amount", validators=[DataRequired(), validate_currency])
+    currency = SelectField(
+        "Currency",
+        choices=list(CURRENCY_CHOICES),
+        default="USD",
+        validators=[DataRequired()],
+    )
     description = TextAreaField("Description", validators=[Optional()])
     category = StringField("Category", validators=[Optional()])
     submit = SubmitField("Save Transaction")

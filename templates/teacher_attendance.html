@@ -29,8 +29,8 @@
             <a href="{{ url_for('manual_activity_grades', class_id=klass.id) }}" class="btn btn-cyber-sm btn-sm">
                 <i class="bi bi-pencil-square me-1"></i>Grade Activities
             </a>
-            <a href="{{ url_for('class_grading_hub', class_id=klass.id) }}" class="btn btn-outline-light btn-sm">
-                <i class="bi bi-mortarboard me-1"></i>Grade Review
+            <a href="{{ url_for('teacher_dashboard', grade_class_id=klass.id) }}#grade-sheet" class="btn btn-outline-light btn-sm">
+                <i class="bi bi-mortarboard me-1"></i>Grades
             </a>
         </div>
     </div>

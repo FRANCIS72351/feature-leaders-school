@@ -4,9 +4,14 @@ from __future__ import annotations
 import base64
 import logging
 import math
+import mimetypes
 import os
 import re
+import subprocess
+import tempfile
+import urllib.request
 from io import BytesIO
+from pathlib import Path
 
 from reportlab.lib.colors import HexColor, white
 from reportlab.lib.pagesizes import A4
@@ -86,6 +91,184 @@ def id_card_footer_fill(is_staff, cardinal=None):
     return NAVY
 
 logger = logging.getLogger(__name__)
+
+_ASSET_URL_RE = re.compile(
+    r'''(?P<attr>src|href)=(?P<quote>['"])(?P<url>[^'"]+)(?P=quote)''',
+    re.IGNORECASE,
+)
+
+
+def find_chromium_executable():
+    """Edge or Chrome on this machine, used to print the on-screen ID HTML to PDF."""
+    explicit = (os.environ.get('ID_CARD_CHROME') or os.environ.get('CHROME_PATH') or '').strip()
+    if explicit and os.path.isfile(explicit):
+        return explicit
+    program_files = os.environ.get('PROGRAMFILES', r'C:\Program Files')
+    program_files_x86 = os.environ.get('PROGRAMFILES(X86)', r'C:\Program Files (x86)')
+    local_app = os.environ.get('LOCALAPPDATA', '')
+    candidates = [
+        os.path.join(program_files, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+        os.path.join(program_files_x86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+        os.path.join(program_files, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+        os.path.join(program_files_x86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+        os.path.join(local_app, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+        os.path.join(local_app, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    ]
+    for path in candidates:
+        if path and os.path.isfile(path):
+            return path
+    return None
+
+
+def _static_path_from_url(url, static_root):
+    raw = (url or '').strip()
+    if not raw or raw.startswith('data:'):
+        return None
+    path = raw.split('?', 1)[0].split('#', 1)[0]
+    marker = '/static/'
+    if marker in path:
+        path = path[path.index(marker) + len(marker):]
+    elif path.startswith('static/'):
+        path = path[len('static/'):]
+    elif path.startswith('http://') or path.startswith('https://') or path.startswith('/'):
+        return None
+    path = path.replace('/', os.sep).lstrip('\\/')
+    full = os.path.normpath(os.path.join(static_root, path))
+    static_root_norm = os.path.normpath(static_root)
+    if full.startswith(static_root_norm) and os.path.isfile(full):
+        return full
+    return None
+
+
+def inline_print_batch_assets(html, static_root):
+    """Embed /static images as data URIs so headless print matches the preview."""
+    if not html or not static_root:
+        return html or ''
+
+    def replace(match):
+        url = match.group('url')
+        path = _static_path_from_url(url, static_root)
+        if not path:
+            return match.group(0)
+        mime = mimetypes.guess_type(path)[0] or 'application/octet-stream'
+        try:
+            with open(path, 'rb') as handle:
+                payload = base64.b64encode(handle.read()).decode('ascii')
+        except OSError:
+            return match.group(0)
+        return f'{match.group("attr")}={match.group("quote")}data:{mime};base64,{payload}{match.group("quote")}'
+
+    return _ASSET_URL_RE.sub(replace, html)
+
+
+_GOOGLE_FONT_LINK_RE = re.compile(
+    r'<link[^>]+href=(?P<quote>[\'"])(?P<url>https://fonts\.googleapis\.com[^\'"]+)(?P=quote)[^>]*>',
+    re.IGNORECASE,
+)
+
+
+def _http_get(url, timeout=12):
+    request = urllib.request.Request(
+        url,
+        headers={'User-Agent': 'Mozilla/5.0 FLPA-ID-Cards'},
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return response.read()
+
+
+def inline_print_batch_fonts(html):
+    """Embed Google Fonts so headless print matches the on-screen template."""
+    if not html:
+        return html or ''
+
+    def replace_link(match):
+        css_url = match.group('url')
+        try:
+            css = _http_get(css_url).decode('utf-8', 'replace')
+        except Exception:
+            logger.warning('Could not fetch ID-card web fonts from %s', css_url, exc_info=True)
+            return match.group(0)
+
+        def replace_font_url(font_match):
+            font_url = font_match.group(1).strip('\'"')
+            if font_url.startswith('//'):
+                font_url = 'https:' + font_url
+            if not font_url.startswith('http'):
+                return font_match.group(0)
+            try:
+                raw = _http_get(font_url)
+            except Exception:
+                return font_match.group(0)
+            mime = 'font/woff2' if 'woff2' in font_url else 'font/ttf'
+            return f'url(data:{mime};base64,{base64.b64encode(raw).decode("ascii")})'
+
+        css = re.sub(r'url\(([^)]+)\)', replace_font_url, css)
+        return f'<style>{css}</style>'
+
+    return _GOOGLE_FONT_LINK_RE.sub(replace_link, html)
+
+
+def html_print_batch_to_pdf(html, *, static_root=None):
+    """Print the live ID-card HTML (same markup as the preview) to a PDF buffer."""
+    chrome = find_chromium_executable()
+    if not chrome:
+        logger.warning('No Edge/Chrome found; ID download will use the drawn PDF fallback')
+        return None
+    document = html or ''
+    if static_root:
+        document = inline_print_batch_assets(document, static_root)
+    document = inline_print_batch_fonts(document)
+    tmp = tempfile.mkdtemp(prefix='flpa_id_cards_')
+    html_path = os.path.join(tmp, 'cards.html')
+    pdf_path = os.path.join(tmp, 'cards.pdf')
+    try:
+        with open(html_path, 'w', encoding='utf-8') as handle:
+            handle.write(document)
+        file_url = Path(html_path).resolve().as_uri()
+        attempts = [
+            ['--headless=new', '--no-pdf-header-footer'],
+            ['--headless', '--print-to-pdf-no-header'],
+        ]
+        last_error = None
+        for extra in attempts:
+            cmd = [
+                chrome,
+                *extra,
+                '--disable-gpu',
+                '--no-first-run',
+                '--no-default-browser-check',
+                '--disable-extensions',
+                f'--print-to-pdf={pdf_path}',
+                '--virtual-time-budget=12000',
+                file_url,
+            ]
+            try:
+                completed = subprocess.run(
+                    cmd, capture_output=True, timeout=45, check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                last_error = exc
+                continue
+            if os.path.isfile(pdf_path) and os.path.getsize(pdf_path) > 20:
+                with open(pdf_path, 'rb') as handle:
+                    payload = handle.read()
+                if payload.startswith(b'%PDF'):
+                    buffer = BytesIO(payload)
+                    buffer.seek(0)
+                    return buffer
+            last_error = completed.stderr or completed.stdout or completed.returncode
+        logger.warning('Headless ID-card print failed: %s', last_error)
+        return None
+    finally:
+        for name in (html_path, pdf_path):
+            try:
+                os.remove(name)
+            except OSError:
+                pass
+        try:
+            os.rmdir(tmp)
+        except OSError:
+            pass
 
 _SIG_FONT = None
 
@@ -229,16 +412,101 @@ def _wrap_text(c, text, font, size, max_width, max_lines=2):
 
 
 def _image_reader(path_or_reader):
+    """Open a raster for ReportLab. Tries the file even when OneDrive hides isfile()."""
     if path_or_reader is None:
         return None
     if isinstance(path_or_reader, ImageReader):
         return path_or_reader
-    if not path_or_reader or not os.path.isfile(str(path_or_reader)):
+    path = str(path_or_reader).strip()
+    if not path:
         return None
     try:
-        return ImageReader(str(path_or_reader))
+        if PILImage is not None:
+            img = PILImage.open(path)
+            img.load()
+            if img.mode not in ('RGB', 'RGBA'):
+                img = img.convert('RGBA') if 'A' in img.getbands() else img.convert('RGB')
+            buf = BytesIO()
+            img.save(buf, format='PNG')
+            buf.seek(0)
+            return ImageReader(buf)
+        return ImageReader(path)
     except Exception:
+        logger.exception('ID card PDF could not load image %s', path)
         return None
+
+
+def _pdf_draw_image(c, reader, x, y, width, height):
+    """Draw a contained image. Older ReportLab rejects anchor=; never swallow silently twice."""
+    if not reader:
+        return False
+    kwargs = dict(
+        image=reader,
+        x=x,
+        y=y,
+        width=width,
+        height=height,
+        preserveAspectRatio=True,
+        mask='auto',
+    )
+    try:
+        c.drawImage(**kwargs, anchor='c')
+        return True
+    except TypeError:
+        pass
+    except Exception:
+        logger.exception('ID card PDF drawImage failed')
+        return False
+    try:
+        c.drawImage(
+            reader, x, y, width=width, height=height,
+            preserveAspectRatio=True, mask='auto',
+        )
+        return True
+    except Exception:
+        logger.exception('ID card PDF drawImage (no anchor) failed')
+        return False
+
+
+def resolve_school_logo_path(explicit=None):
+    """Absolute school crest path for the ID header (same files the print HTML uses)."""
+    if explicit:
+        raw = str(explicit).strip()
+        if raw:
+            try:
+                with open(raw, 'rb') as handle:
+                    if handle.read(8):
+                        return raw
+            except OSError:
+                pass
+    here = os.path.dirname(os.path.abspath(__file__))
+    static_root = os.path.join(here, 'static')
+    relative_names = (
+        'images/LOGO.png',
+        'images/logo.png',
+        'images/logo1.png',
+        'images/LOGO.PNG',
+        'img/LOGO.png',
+        'img/logo.png',
+        'images/favicon.png',
+        'icons/icon-512.png',
+        'icons/icon-192.png',
+        'icons/apple-touch-icon.png',
+    )
+    try:
+        from models import SCHOOL_LOGO_FILENAMES
+        relative_names = tuple(dict.fromkeys(tuple(SCHOOL_LOGO_FILENAMES) + relative_names))
+    except Exception:
+        pass
+    for name in relative_names:
+        path = os.path.join(static_root, name.replace('/', os.sep))
+        try:
+            with open(path, 'rb') as handle:
+                if handle.read(8):
+                    return path
+        except OSError:
+            continue
+    return None
 
 
 def image_reader_from_data_uri(uri):
@@ -253,12 +521,14 @@ def image_reader_from_data_uri(uri):
 
 def navy_tinted_seal_reader(path):
     """Black/white coat-of-arms tinted to FLPA navy (print_batch.html filter)."""
-    if not path or not os.path.isfile(path):
+    if not path:
         return None
     if PILImage is None:
         return _image_reader(path)
     try:
-        img = PILImage.open(path).convert('RGBA')
+        img = PILImage.open(path)
+        img.load()
+        img = img.convert('RGBA')
         pixels = []
         for red, green, blue, alpha in img.getdata():
             if alpha < 8:
@@ -279,10 +549,12 @@ def navy_tinted_seal_reader(path):
 
 
 def faded_logo_reader(path, alpha=0.06):
-    if not path or not os.path.isfile(path) or PILImage is None:
+    if not path or PILImage is None:
         return _image_reader(path)
     try:
-        img = PILImage.open(path).convert('RGBA')
+        img = PILImage.open(path)
+        img.load()
+        img = img.convert('RGBA')
         faded = PILImage.new('RGBA', img.size)
         faded.paste(img, mask=img.split()[-1])
         faded.putalpha(img.split()[-1].point(lambda p: int(p * alpha)))
@@ -303,21 +575,10 @@ def _clip_round_card(c, x, y):
 def _draw_header_logo(c, x, y, size, logo):
     c.setFillColor(white)
     c.circle(x + size / 2.0, y + size / 2.0, size / 2.0, stroke=0, fill=1)
-    if logo:
-        inset = 0.6 * mm
-        try:
-            c.drawImage(
-                logo,
-                x + inset,
-                y + inset,
-                width=size - 2 * inset,
-                height=size - 2 * inset,
-                preserveAspectRatio=True,
-                mask='auto',
-                anchor='c',
-            )
-        except Exception:
-            pass
+    if not logo:
+        return
+    inset = 0.6 * mm
+    _pdf_draw_image(c, logo, x + inset, y + inset, size - 2 * inset, size - 2 * inset)
 
 
 def _draw_sunburst(c, x, y, w, h, cardinal):
@@ -347,12 +608,51 @@ def _draw_sunburst(c, x, y, w, h, cardinal):
 
 
 def _draw_contained_image(c, reader, x, y, w, h):
-    if not reader:
-        return
-    try:
-        c.drawImage(reader, x, y, width=w, height=h, preserveAspectRatio=True, mask='auto', anchor='c')
-    except Exception:
-        pass
+    _pdf_draw_image(c, reader, x, y, w, h)
+
+
+def _keep_main_signature_ink(img):
+    """Keep the pen stroke; drop specks and printed numbers sitting beside it."""
+    width, height = img.size
+    if width * height > 900_000 or width < 2 or height < 2:
+        return img
+    alpha = img.split()[-1]
+    mask = list(alpha.point(lambda value: 255 if value > 36 else 0).getdata())
+    seen = [False] * (width * height)
+    blobs = []
+    for index, on in enumerate(mask):
+        if not on or seen[index]:
+            continue
+        stack = [index]
+        seen[index] = True
+        cells = []
+        while stack:
+            current = stack.pop()
+            cells.append(current)
+            x = current % width
+            y = current // width
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < width and 0 <= ny < height:
+                    neighbor = ny * width + nx
+                    if mask[neighbor] and not seen[neighbor]:
+                        seen[neighbor] = True
+                        stack.append(neighbor)
+        blobs.append(cells)
+    if not blobs:
+        return img
+    blobs.sort(key=len, reverse=True)
+    main = len(blobs[0])
+    keep = set()
+    for cells in blobs:
+        if len(cells) >= max(18, int(main * 0.07)):
+            keep.update(cells)
+    rebuilt = [
+        pixel if idx in keep else (0, 0, 0, 0)
+        for idx, pixel in enumerate(img.getdata())
+    ]
+    img.putdata(rebuilt)
+    return img
 
 
 def _prepare_signature_reader(path_or_reader, ink=(0, 45, 98)):
@@ -371,18 +671,22 @@ def _prepare_signature_reader(path_or_reader, ink=(0, 45, 98)):
     try:
         img = PILImage.open(path).convert('RGBA')
         ink_r, ink_g, ink_b = ink
-        # Turn near-white paper into transparency, then crop to ink.
+        # Keep faint pen strokes; drop paper white. Numbers/stamps are removed
+        # later as tiny disconnected blobs.
         pixels = list(img.getdata())
         cleaned = []
         for r, g, b, a in pixels:
-            if a < 18 or (r > 242 and g > 242 and b > 242):
+            luma = (r * 299 + g * 587 + b * 114) / 1000.0
+            if a < 12 or luma > 250:
                 cleaned.append((0, 0, 0, 0))
-            else:
-                cleaned.append((ink_r, ink_g, ink_b, max(a, 210)))
+                continue
+            strength = int(min(255, max(160, (255.0 - luma) * 1.85 + 70)))
+            cleaned.append((ink_r, ink_g, ink_b, strength))
         img.putdata(cleaned)
+        img = _keep_main_signature_ink(img)
         bbox = img.getbbox()
         if bbox:
-            pad = 3
+            pad = 4
             left, top, right, bottom = bbox
             img = img.crop((
                 max(0, left - pad),
@@ -550,11 +854,31 @@ def resolve_id_card_parent_name(student, card=None):
 # Staff front geometry, in mm from the top of the card. Kept here so the CSS in
 # templates/id_cards/print_batch.html and this canvas stay on the same grid.
 STAFF_RAIL_W_MM = 8.6
-STAFF_HEADER_MM = 13.0
+STAFF_HEADER_MM = 11.5
 STAFF_RAIL_TOP_MM = 13.6
-STAFF_FOOTER_MM = 7.2
-STAFF_PHOTO_TOP_MM = 19.2
+STAFF_FOOTER_MM = 7.6
+STAFF_PHOTO_TOP_MM = 21.2
 STAFF_PHOTO_MM = 22.5
+
+
+def _wrap_named_lines(c, text, font, size, max_width, preferred_breaks):
+    """Wrap a title using a preferred phrase break, then fall back to greedy wrap."""
+    def compact(value):
+        return re.sub(r'\s+', ' ', (value or '').replace(' ,', ',')).strip().upper()
+
+    upper = compact(text)
+    for left, right in preferred_breaks:
+        joined = compact(f'{left} {right}')
+        joined_no_comma = compact(f'{left.rstrip(",")} {right}')
+        if upper in (joined, joined_no_comma) or (
+            upper.startswith(compact(left.rstrip(','))) and upper.endswith(compact(right))
+        ):
+            if (
+                c.stringWidth(left, font, size) <= max_width
+                and c.stringWidth(right, font, size) <= max_width
+            ):
+                return [left, right]
+    return _wrap_text(c, upper, font, size, max_width, 2)
 
 
 def _tracked_width(c, text, font, size, spacing):
@@ -600,25 +924,32 @@ def _draw_staff_front(c, x, y, card, assets):
     c.setFillColor(white)
     c.rect(x, y, CARD_W, CARD_H, stroke=0, fill=1)
 
-    # Header
+    # Compact navy header: white school name, gold (F.L.P.A). Address sits on the body.
     header_y = _from_top(y, 0, STAFF_HEADER_MM)
     header_h = STAFF_HEADER_MM * mm
     c.setFillColor(NAVY)
     c.rect(x, header_y, CARD_W, header_h, stroke=0, fill=1)
-    logo_size = 8.0 * mm
-    _draw_header_logo(c, x + 2.6 * mm, header_y + (header_h - logo_size) / 2.0, logo_size, logo)
-    name_x = x + 2.6 * mm + logo_size + 2.0 * mm
-    name_w = CARD_W - (name_x - x) - 2.4 * mm
-    lines = _wrap_text(c, id_card_header_title(side='front', uppercase=True), 'Helvetica-Bold', 6.0, name_w, 2)
+    logo_size = 8.2 * mm
+    _draw_header_logo(c, x + 3 * mm, header_y + (header_h - logo_size) / 2.0, logo_size, logo)
+    name_x = x + 3 * mm + logo_size + 2.2 * mm
+    name_w = CARD_W - (name_x - x) - 3 * mm
+    lines = _wrap_named_lines(
+        c,
+        id_card_header_title(side='front', uppercase=True),
+        'Helvetica-Bold',
+        6.2,
+        name_w,
+        [('FUTURE LEADERS', 'PREPARATORY ACADEMY')],
+    )
     c.setFillColor(white)
-    c.setFont('Helvetica-Bold', 6.0)
-    text_y = header_y + header_h / 2.0 + (5.0 if len(lines) > 1 else 1.8)
+    c.setFont('Helvetica-Bold', 6.2)
+    text_y = header_y + header_h / 2.0 + (4.6 if len(lines) > 1 else 1.4)
     for line in lines:
         c.drawString(name_x, text_y, line)
-        text_y -= 7.0
+        text_y -= 7.1
     c.setFillColor(GOLD)
     c.setFont('Helvetica-Bold', 4.6)
-    c.drawString(name_x, text_y + 0.6, '(F.L.P.A)')
+    c.drawString(name_x, text_y + 1.2, '(F.L.P.A)')
 
     c.setFillColor(GOLD)
     c.rect(x, _from_top(y, STAFF_HEADER_MM, 0.6), CARD_W, 0.6 * mm, stroke=0, fill=1)
@@ -640,12 +971,19 @@ def _draw_staff_front(c, x, y, card, assets):
     _draw_tracked(c, 'STAFF', 'Helvetica-Bold', 12.5, 2.2, 0, 0)
     c.restoreState()
 
-    # Address, muted small caps across the body column only.
-    addr_lines = _wrap_text(
-        c, (brand.get('full_address') or '').upper(), 'Helvetica-Bold', 4.5, body_w, 2
+    addr_lines = _wrap_named_lines(
+        c,
+        (brand.get('full_address') or '').upper(),
+        'Helvetica-Bold',
+        4.5,
+        body_w,
+        [
+            ('CENTER STREET, SOUTH BEACH,', 'MONROVIA, LIBERIA'),
+            ('CENTER STREET, SOUTH BEACH', 'MONROVIA, LIBERIA'),
+        ],
     )
-    addr_y = _from_top(y, 16.4)
-    c.setFillColor(MUTED)
+    addr_y = _from_top(y, 14.8)
+    c.setFillColor(GOLD)
     c.setFont('Helvetica-Bold', 4.5)
     for line in addr_lines:
         c.drawCentredString(body_left + body_w / 2.0, addr_y, line)
@@ -681,13 +1019,13 @@ def _draw_staff_front(c, x, y, card, assets):
     # Name leads — wrap/shrink so the full name always prints (never ellipsis).
     full_name = getattr(student, 'full_name', None) or '—'
     name_bottom, _name_size, name_lines = _draw_fitted_name(
-        c, full_name, body_left, _from_top(y, 46.2), body_w - 1.2 * mm,
-        base_size=9.0, min_size=4.8,
+        c, full_name, body_left, _from_top(y, 46.4), body_w - 1.2 * mm,
+        base_size=9.5, min_size=4.8,
     )
     position_y = name_bottom - (3.0 if name_lines > 1 else 3.4)
     position = (card.get('position') or 'Staff').upper()
     pos_size = _fit_font_size(c, position, 'Helvetica-Bold', body_w - 4, 5.4, 4.0)
-    c.setFillColor(cardinal)
+    c.setFillColor(GOLD)
     _draw_tracked(c, position, 'Helvetica-Bold', pos_size, 0.5, body_left, position_y)
 
     rule_y = position_y - 2.0
@@ -705,24 +1043,25 @@ def _draw_staff_front(c, x, y, card, assets):
     c.setFont('Helvetica-Bold', chip_font)
     c.drawCentredString(body_left + chip_w / 2.0, chip_y + 1.4 * mm, staff_id)
 
-    # Large signature well — full body width, tall enough to read clearly.
+    # Signature sits in its own band below the ID chip so FLPA-00xx never overlaps it.
     sig_w = body_w
     sig_right = body_right
     sig_left = body_left
-    sig_line_y = y + STAFF_FOOTER_MM * mm + 4.8 * mm
-    sig_top = chip_y - 1.0 * mm
-    sig_h = max(11.0 * mm, min(15.5 * mm, sig_top - sig_line_y - 0.8 * mm))
-    sig_box_y = sig_line_y + 0.8 * mm
+    sig_line_y = y + STAFF_FOOTER_MM * mm + 5.2 * mm
+    sig_top = min(chip_y - 2.6 * mm, sig_line_y + 12.5 * mm)
+    sig_h = max(9.5 * mm, min(13.0 * mm, sig_top - sig_line_y - 0.6 * mm))
+    sig_box_y = sig_line_y + 0.5 * mm
     if signature:
         _draw_contained_image(c, signature, sig_left, sig_box_y, sig_w, sig_h)
     else:
         mark = card.get('signature_mark') or full_name or 'Authorized Staff'
+        mark = re.sub(r'\bFLPA[-\s]?\d+\b', '', mark, flags=re.I).strip() or mark
         sig_text, sig_size = _signature_text_and_size(
-            c, mark, sig_font, sig_w - 1 * mm, base_size=18.0, min_size=10.0,
+            c, mark, sig_font, sig_w - 1 * mm, base_size=16.5, min_size=11.0,
         )
         c.setFillColor(NAVY)
         c.setFont(sig_font, sig_size)
-        c.drawCentredString(body_left + body_w / 2.0, sig_line_y + 4.2 * mm, sig_text)
+        c.drawCentredString(body_left + body_w / 2.0, sig_line_y + 3.4 * mm, sig_text)
     c.setStrokeColor(HexColor('#6b7280'))
     c.setLineWidth(0.4 * mm)
     c.line(sig_left, sig_line_y, sig_right, sig_line_y)
@@ -978,9 +1317,20 @@ def _draw_back(c, x, y, card, assets):
     c.setFont('Helvetica-Bold', 6.2)
     address = (brand.get('full_address') or '').upper()
     addr_w = CARD_W - 8 * mm
-    addr_lines = _wrap_text(c, address, 'Helvetica-Bold', 6.2, addr_w, 2)
+    addr_lines = _wrap_named_lines(
+        c,
+        address,
+        'Helvetica-Bold',
+        6.2,
+        addr_w,
+        [
+            ('CENTER STREET, SOUTH BEACH,', 'MONROVIA, LIBERIA'),
+            ('CENTER STREET, SOUTH BEACH', 'MONROVIA, LIBERIA'),
+        ],
+    )
     addr_y = copy_y - 19
     for line in addr_lines:
+        c.setFillColor(NAVY)
         c.drawCentredString(x + CARD_W / 2.0, addr_y, line)
         addr_y -= 7.4
 
@@ -1068,7 +1418,10 @@ def build_class_id_cards_pdf(
     """Return a BytesIO PDF of ready CR80 ID cards (front + back per student)."""
     brand = brand or {}
     cardinal = _hex_color(brand.get('brand_red'))
+    logo_path = resolve_school_logo_path(logo_path)
     logo = _image_reader(logo_path)
+    if logo is None and logo_path:
+        logger.error('ID card PDF header logo missing after open: %s', logo_path)
     watermark = faded_logo_reader(logo_path)
     seal = navy_tinted_seal_reader(seal_path)
     principal_signature = _prepare_signature_reader(

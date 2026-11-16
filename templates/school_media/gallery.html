@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}School Media — Future Leaders Preparatory Academy{% endblock %}
+
+{% block content %}
+<style>
+    .media-hero { max-width: 1100px; margin: 0 auto 1.5rem; }
+    .media-kicker {
+        color: #c82828; font-size: 0.72rem; font-weight: 800;
+        letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 0.35rem;
+    }
+    .media-card {
+        background: #fff; border: 1px solid rgba(200, 40, 40, 0.12);
+        border-radius: 16px; overflow: hidden; height: 100%;
+        box-shadow: 0 10px 24px rgba(51, 20, 15, 0.06);
+    }
+    .media-thumb {
+        width: 100%; height: 200px; object-fit: cover; background: #f6ede7;
+        display: block;
+    }
+    .media-video { width: 100%; aspect-ratio: 16 / 9; border: 0; background: #101820; }
+    .media-empty { border: 1px dashed #d7c79a; border-radius: 16px; padding: 2.5rem 1.25rem; }
+</style>
+
+<div class="container py-4">
+    <div class="media-hero d-flex flex-column flex-md-row justify-content-between align-items-md-end gap-3">
+        <div>
+            <div class="media-kicker">Academy gallery</div>
+            <h1 class="h3 fw-bold mb-1">School Media</h1>
+            <p class="text-muted mb-0">Photos, videos, entrance notices, and academic year information sheets.</p>
+        </div>
+        {% if can_manage_school_media %}
+        <a href="{{ url_for('school_media_manage') }}" class="btn btn-sm btn-action-primary">
+            <i class="fas fa-folder-open me-1"></i> Manage media
+        </a>
+        {% endif %}
+    </div>
+
+    <form method="get" class="row g-2 align-items-end mb-4">
+        <div class="col-md-3">
+            <label class="form-label small fw-bold mb-1" for="media-category">Category</label>
+            <select class="form-select form-select-sm" id="media-category" name="category">
+                <option value="">All categories</option>
+                <option value="gallery" {% if selected_category == 'gallery' %}selected{% endif %}>School Gallery</option>
+                <option value="advertisement" {% if selected_category == 'advertisement' %}selected{% endif %}>Advertisement</option>
+                <option value="entrance" {% if selected_category == 'entrance' %}selected{% endif %}>Entrance Exam</option>
+                <option value="info_sheet" {% if selected_category == 'info_sheet' %}selected{% endif %}>Info Sheet</option>
+                <option value="general" {% if selected_category == 'general' %}selected{% endif %}>General</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small fw-bold mb-1" for="media-type">Type</label>
+            <select class="form-select form-select-sm" id="media-type" name="type">
+                <option value="">All types</option>
+                <option value="photo" {% if selected_type == 'photo' %}selected{% endif %}>Photo</option>
+                <option value="video" {% if selected_type == 'video' %}selected{% endif %}>Video</option>
+                <option value="document" {% if selected_type == 'document' %}selected{% endif %}>Document</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small fw-bold mb-1" for="media-year">Academic year</label>
+            <select class="form-select form-select-sm" id="media-year" name="year_id">
+                <option value="">All years</option>
+                {% for y in years %}
+                <option value="{{ y.id }}" {% if selected_year_id == y.id %}selected{% endif %}>
+                    {{ y.name }}{% if y.is_active %} (Active){% endif %}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <button type="submit" class="btn btn-sm btn-action-outline-brand">Filter</button>
+            {% if selected_category or selected_type or selected_year_id %}
+            <a href="{{ url_for('school_media_gallery') }}" class="btn btn-sm btn-outline-secondary">Clear</a>
+            {% endif %}
+        </div>
+    </form>
+
+    {% if items %}
+    <div class="row g-4">
+        {% for item in items %}
+        <div class="col-md-6 col-lg-4">
+            <article class="media-card">
+                {% if item.media_type == 'photo' and item.static_file_path %}
+                <img class="media-thumb" src="{{ url_for('static', filename=item.static_file_path) }}" alt="{{ item.title }}">
+                {% elif item.media_type == 'video' %}
+                    {% set embed = youtube_embed_url(item.external_url) if item.external_url else none %}
+                    {% if embed %}
+                    <iframe class="media-video" src="{{ embed }}" title="{{ item.title }}" allowfullscreen></iframe>
+                    {% elif item.static_file_path %}
+                    <video class="media-video" controls preload="metadata">
+                        <source src="{{ url_for('static', filename=item.static_file_path) }}" type="{{ video_mime_type(item.static_file_path) }}">
+                    </video>
+                    {% endif %}
+                {% endif %}
+                <div class="p-3">
+                    <div class="d-flex justify-content-between gap-2 mb-2">
+                        <span class="badge bg-secondary text-capitalize">{{ item.category.replace('_', ' ') }}</span>
+                        <span class="small text-muted text-capitalize">{{ item.media_type }}</span>
+                    </div>
+                    <h2 class="h6 fw-bold mb-1">{{ item.title }}</h2>
+                    {% if item.academic_year %}<div class="small text-muted mb-2">{{ item.academic_year.name }}</div>{% endif %}
+                    {% if item.description %}<p class="small text-muted mb-3">{{ item.description[:160] }}{% if item.description|length > 160 %}…{% endif %}</p>{% endif %}
+                    {% if item.duration_seconds %}
+                    <div class="small text-muted mb-2">Length {{ format_video_duration(item.duration_seconds) }}</div>
+                    {% endif %}
+                    {% if item.media_type == 'document' and item.static_file_path %}
+                    <a class="btn btn-sm btn-action-primary" href="{{ url_for('school_media_download', item_id=item.id) }}">
+                        <i class="fas fa-download me-1"></i> Download
+                    </a>
+                    {% elif item.external_url and item.media_type != 'video' %}
+                    <a class="btn btn-sm btn-action-outline-brand" href="{{ item.external_url }}" target="_blank" rel="noopener">Open link</a>
+                    {% endif %}
+                </div>
+            </article>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="media-empty text-center text-muted">
+        <i class="fas fa-photo-video fa-2x mb-3 d-block"></i>
+        No published school media matches these filters yet.
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

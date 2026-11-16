@@ -1,0 +1,156 @@
+{% extends 'base.html' %}
+{% from 'macros/money.html' import money, from_row %}
+{% block title %}Review daily sheet — Registry{% endblock %}
+
+{% block content %}
+<style>
+    .sheet-proof { background:#f5efe7; min-height:100vh; }
+    .proof-mast {
+        background:#0f2744; color:#fff; border-left:8px solid #c9a227;
+        border-radius:14px; padding:1.3rem 1.5rem;
+    }
+    .proof-card {
+        background:#fffaf5; border:1px solid #eadfc8; border-radius:14px;
+        box-shadow:0 8px 20px rgba(16,24,32,0.06);
+    }
+    .proof-rule { height:4px; background:linear-gradient(90deg,#c82828,#c9a227,#002d62); border-radius:4px 4px 0 0; }
+    .proof-table thead th {
+        font-size:0.72rem; letter-spacing:0.06em; text-transform:uppercase;
+        color:#002d62; border-bottom:2px solid #c9a227;
+    }
+    .chip { display:inline-block; border-radius:999px; padding:0.2rem 0.65rem; font-size:0.72rem; font-weight:800; text-transform:uppercase; }
+    .chip-draft { background:#fef3c7; color:#92400e; }
+    .chip-sent { background:#dcfce7; color:#166534; }
+    .chip-ack { background:#dbeafe; color:#1e40af; }
+    .send-btn { background:#002d62; color:#fff; font-weight:700; border:none; }
+    .send-btn:hover { background:#c82828; color:#fff; }
+</style>
+{% set status = till.status if till else 'open' %}
+<div class="container-fluid sheet-proof py-4 px-md-4">
+    <div class="proof-mast mb-4 d-flex flex-column flex-lg-row justify-content-between gap-3">
+        <div>
+            <div class="small fw-bold text-uppercase" style="letter-spacing:0.18em;color:#c9a227;">Registry clerk desk</div>
+            <h1 class="h3 fw-bold mb-1">Review today’s collection sheet</h1>
+            <p class="mb-0" style="color:#d6e2f0;">Check every receipt, correct a mistype, then send the sheet to the Business Manager. Nothing reaches Business until you send it.</p>
+        </div>
+        <div class="text-lg-end">
+            <div class="small" style="color:#c9a227;">{{ till.date.strftime('%A, %d %B %Y') if till.date else '' }}</div>
+            <div class="fs-3 fw-bold">{{ till.total_label or money(till.total|default(0)) }}</div>
+            <div class="small">{{ till.count|default(0) }} receipt{{ 's' if till.count != 1 else '' }}</div>
+            {% if status == 'open' %}<span class="chip chip-draft mt-2">Draft — not sent</span>
+            {% elif status == 'submitted' %}<span class="chip chip-sent mt-2">Sent to Business</span>
+            {% else %}<span class="chip chip-ack mt-2">Acknowledged</span>{% endif %}
+            <div class="mt-2 d-flex flex-wrap gap-2 justify-content-lg-end">
+                <a class="btn btn-sm btn-outline-light" href="{{ url_for('registry_day_book') }}">Back to Day Book</a>
+                {% if handover %}
+                <a class="btn btn-sm btn-outline-light" href="{{ url_for('print_registry_daily_record', handover_id=handover.id) }}">Print preview</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="proof-card overflow-hidden mb-4">
+        <div class="proof-rule"></div>
+        <div class="p-4">
+            <h2 class="h5 fw-bold" style="color:#002d62;">Receipts on this sheet</h2>
+            {% if till.payments %}
+            <div class="table-responsive">
+                <table class="table proof-table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Receipt</th>
+                            <th>Student</th>
+                            <th>Fee type</th>
+                            <th>Amount</th>
+                            <th>Currency</th>
+                            <th>Correction note</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for payment in till.payments %}
+                        {% if can_edit %}
+                        <form id="line-{{ payment.id }}" method="post">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="sheet_action" value="save_line">
+                            <input type="hidden" name="payment_id" value="{{ payment.id }}">
+                        </form>
+                        {% endif %}
+                        <tr>
+                            <td class="fw-bold">{{ payment.receipt_number or ('SP-' ~ payment.id) }}</td>
+                            <td>
+                                {{ payment.student.full_name if payment.student else '—' }}
+                                <div class="small text-muted">{{ payment.student.student_id if payment.student else '' }}</div>
+                            </td>
+                            {% if can_edit %}
+                            <td>
+                                <select name="fee_kind" class="form-select form-select-sm" form="line-{{ payment.id }}">
+                                    {% for key, label in fee_kind_choices %}
+                                    <option value="{{ key }}" {% if payment.fee_kind == key %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td style="min-width:7rem;">
+                                <input class="form-control form-control-sm" name="amount" form="line-{{ payment.id }}" value="{{ '%.2f'|format(payment.amount_paid|float) }}">
+                            </td>
+                            <td>
+                                <select name="currency" class="form-select form-select-sm" form="line-{{ payment.id }}">
+                                    {% for key, label in currency_choices %}
+                                    <option value="{{ key }}" {% if (payment.currency or 'USD') == key %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td>
+                                <input class="form-control form-control-sm" name="line_note" form="line-{{ payment.id }}" placeholder="Optional correction">
+                            </td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-dark" type="submit" form="line-{{ payment.id }}">Save line</button>
+                            </td>
+                            {% else %}
+                            <td>{{ fee_kind_label(payment.fee_kind) }}</td>
+                            <td>{{ from_row(payment, payment.amount_paid) }}</td>
+                            <td>{{ payment.currency or 'USD' }}</td>
+                            <td class="small text-muted">{{ payment.description }}</td>
+                            <td></td>
+                            {% endif %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted mb-0">No receipts yet. Collect fees in the Day Book, then return here to check the sheet.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="proof-card overflow-hidden">
+        <div class="proof-rule"></div>
+        <div class="p-4">
+            <h2 class="h5 fw-bold" style="color:#002d62;">Send to the Business Manager</h2>
+            {% if can_edit and till.count %}
+            <p class="small text-muted">When the cash and this list match, send the sheet. After you send, today’s till is closed and Business can acknowledge it onto official income.</p>
+            <form method="post">
+                {{ close_form.hidden_tag() }}
+                <input type="hidden" name="sheet_action" value="send">
+                {{ close_form.notes.label(class="form-label small fw-bold") }}
+                {{ close_form.notes(class="form-control mb-3") }}
+                <button class="btn send-btn px-4 py-2" type="submit">Send daily sheet to Business</button>
+            </form>
+            <form method="post" class="mt-3">
+                {{ close_form.hidden_tag() }}
+                <input type="hidden" name="sheet_action" value="save_notes">
+                <button class="btn btn-sm btn-outline-secondary" type="submit">Save note only (keep as draft)</button>
+            </form>
+            {% elif till.dispatched %}
+            <p class="mb-2">This sheet has already been sent. Business will acknowledge it after counting the cash.</p>
+            {% if handover %}
+            <a class="btn btn-outline-dark" href="{{ url_for('print_registry_daily_record', handover_id=handover.id) }}">View sent sheet</a>
+            {% endif %}
+            {% else %}
+            <p class="text-muted mb-0">Collect at least one fee before sending a sheet.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -990,13 +990,18 @@
                   {% elif user_role == "principal" %}
                     <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('principal_dashboard') }}"><i class="fas fa-user-shield fa-sm me-2"></i>General Dashboard</a></li>
                   {% elif user_role == "registrar" %}
+                    <li><h6 class="dropdown-header">Registry Office</h6></li>
                     <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('registrar_dashboard') }}"><i class="fas fa-user-shield fa-sm me-2"></i>Registrar Dashboard</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('registry_day_book') }}"><i class="fas fa-book fa-sm me-2"></i>Registry Day Book</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('register_student') }}"><i class="fas fa-user-plus fa-sm me-2"></i>Register Student</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('id_cards_folder_hub') }}"><i class="fas fa-id-card fa-sm me-2"></i>ID Cards</a></li>
                   {% elif user_role == "dean" %}
                     <li><a class="dropdown-item dropdown-item-custom font-weight-bold text-dark" href="{{ url_for('dean_dashboard') }}"><i class="fas fa-user-shield fa-sm me-2 text-info"></i>Dean Command Center</a></li>
                   {% elif user_role == "teacher" %}
                     <li><a class="dropdown-item dropdown-item-custom font-weight-bold text-dark" href="{{ url_for('teacher_dashboard') }}"><i class="fas fa-chalkboard-teacher fa-sm me-2 text-primary"></i>Teacher Dashboard</a></li>
                   {% elif user_role == "business" %}
                     <li><a class="dropdown-item dropdown-item-custom font-weight-bold text-dark" href="{{ url_for('business_dashboard') }}"><i class="fas fa-coins fa-sm me-2 text-success"></i>Business Office</a></li>
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('business_registry_records') }}"><i class="fas fa-book-open fa-sm me-2"></i>Registry daily records</a></li>
                   {% elif user_role == "admin" %}
                     <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('dashboard') }}"><i class="fas fa-user-shield fa-sm me-2 text-primary"></i>Admin Dashboard</a></li>
                   {% else %}
@@ -1004,6 +1009,9 @@
                   {% endif %}
                   {% if user_role in ["admin", "business"] %}
                     <li><a class="dropdown-item dropdown-item-custom font-weight-bold text-dark" href="{{ url_for('business_dashboard') }}"><i class="fas fa-coins fa-sm me-2 text-success"></i>Business Office</a></li>
+                  {% endif %}
+                  {% if user_role == "admin" %}
+                    <li><a class="dropdown-item dropdown-item-custom" href="{{ url_for('business_registry_records') }}"><i class="fas fa-book-open fa-sm me-2"></i>Registry daily records</a></li>
                   {% endif %}
                   {% if user_role == "teacher" %}
                     {# listed as primary above #}

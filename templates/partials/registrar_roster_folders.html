@@ -785,7 +785,7 @@
                                 {% if student.status and student.status|upper != 'ACTIVE' %}
                                 {% include 'partials/roster_status_pill.html' %}
                                 {% endif %}
-                                <a href="{{ url_for('report_card', student_id=student.id) }}{% if display_year %}?academic_year_id={{ display_year.id }}{% endif %}" class="roster-grade-sheet-link" title="Grade sheet" aria-label="Grade sheet" onclick="event.stopPropagation();">
+                                <a href="{{ url_for('staff_student_grade_sheet', student_id=student.id, academic_year_id=display_year.id if display_year else none) }}" class="roster-grade-sheet-link" title="Print grade sheet" aria-label="Print grade sheet" onclick="event.stopPropagation();">
                                     <i class="fas fa-file-alt" aria-hidden="true"></i>
                                 </a>
                                 <i class="fas fa-chevron-down roster-folder-chevron" aria-hidden="true"></i>
@@ -844,7 +844,7 @@
                             {% if student.status and student.status|upper != 'ACTIVE' %}
                             {% include 'partials/roster_status_pill.html' %}
                             {% endif %}
-                            <a href="{{ url_for('report_card', student_id=student.id) }}{% if display_year %}?academic_year_id={{ display_year.id }}{% endif %}" class="roster-grade-sheet-link" title="Grade sheet" aria-label="Grade sheet" onclick="event.stopPropagation();">
+                            <a href="{{ url_for('staff_student_grade_sheet', student_id=student.id, academic_year_id=display_year.id if display_year else none) }}" class="roster-grade-sheet-link" title="Print grade sheet" aria-label="Print grade sheet" onclick="event.stopPropagation();">
                                 <i class="fas fa-file-alt" aria-hidden="true"></i>
                             </a>
                             <i class="fas fa-chevron-down roster-folder-chevron" aria-hidden="true"></i>

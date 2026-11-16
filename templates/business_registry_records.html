@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% from 'macros/money.html' import money %}
+{% block title %}Registry daily records{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <p class="text-uppercase small fw-bold mb-0" style="letter-spacing:0.12em;color:#c9a227;">Business Office</p>
+            <h1 class="h4 fw-bold mb-1">Registry daily records</h1>
+            <p class="text-muted small mb-0">Registry receipts credit the student immediately. Acknowledge a day’s sheet after you count the cash — that is when the money enters official school income.</p>
+        </div>
+        <a href="{{ url_for('business_dashboard') }}" class="btn btn-outline-secondary btn-sm">Business Office</a>
+    </div>
+    {% if pending_count %}
+    <div class="alert alert-warning">{{ pending_count }} record{{ 's' if pending_count != 1 else '' }} waiting for acknowledgement.</div>
+    {% endif %}
+    <div class="table-responsive bg-white border rounded-3">
+        <table class="table align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th>Receipts</th>
+                    <th class="text-end">Total</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in records %}
+                <tr>
+                    <td class="fw-semibold">{{ row.business_date.strftime('%d %b %Y') }}</td>
+                    <td>{{ row.status|replace('_',' ')|title }}</td>
+                    <td>{{ row.receipt_count }} · {{ row.first_receipt_no or '—' }}{% if row.last_receipt_no and row.last_receipt_no != row.first_receipt_no %} – {{ row.last_receipt_no }}{% endif %}</td>
+                    <td class="text-end">{{ money(row.total_amount|default(0)) }}</td>
+                    <td class="text-end">
+                        <a class="btn btn-sm btn-outline-dark" href="{{ url_for('print_registry_daily_record', handover_id=row.id) }}">View</a>
+                        {% if row.status == 'submitted' %}
+                        <form method="post" action="{{ url_for('acknowledge_registry_daily_record', handover_id=row.id) }}" class="d-inline-flex gap-2 align-items-center">
+                            {{ acknowledge_form.hidden_tag() }}
+                            {{ acknowledge_form.business_notes(class="form-control form-control-sm", placeholder="Optional note") }}
+                            <button class="btn btn-sm btn-success" type="submit">Acknowledge</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="text-muted p-4">No registry daily records yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

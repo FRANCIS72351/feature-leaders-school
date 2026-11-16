@@ -1,3 +1,4 @@
+{% from 'macros/money.html' import from_row %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -185,7 +186,7 @@
 
         <div class="amount-banner">
             <span class="label">Amount paid</span>
-            <div class="paid">${{ "{:,.2f}".format(payment.amount_paid|float) }}</div>
+            <div class="paid">{{ from_row(payment, payment.amount_paid) }}</div>
             {% if fee_status %}
             <span class="status-chip {{ status_key }}">{{ fee_status }}</span>
             {% endif %}
@@ -214,7 +215,7 @@
             </div>
             <div class="field">
                 <span class="label">Amount paid</span>
-                <span class="value">${{ "{:,.2f}".format(payment.amount_paid|float) }}</span>
+                <span class="value">{{ from_row(payment, payment.amount_paid) }}</span>
             </div>
             {% if fee_status == 'Partial' or remaining|float > 0 %}
             <div class="field">

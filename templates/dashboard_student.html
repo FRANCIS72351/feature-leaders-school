@@ -576,24 +576,73 @@
                 {% endif %}
 
                 {% if active_tab == 'account' %}
-                <div class="card border-0 shadow-sm mb-4">
+                <div class="card border-0 shadow-sm mb-4 student-account-card">
                     <div class="card-header bg-white border-bottom py-3">
-                        <h3 class="h6 fw-bold mb-0"><i class="fas fa-wallet text-success me-2"></i>Financial Summary</h3>
+                        <h3 class="h6 fw-bold mb-0"><i class="fas fa-university text-danger me-2"></i>School account</h3>
+                        <p class="small text-muted mb-0 mt-1">School fees and registration reduce the yearly bill. Other charges are recorded here but do not change that balance.</p>
                     </div>
                     <div class="card-body">
                         {% if financials %}
-                        <div class="row g-3">
-                            <div class="col-6 col-md-3"><div class="fin-box"><span>Yearly Fee</span><strong>${{ "{:,.2f}".format(financials.yearly_fee|float) }}</strong></div></div>
-                            <div class="col-6 col-md-3"><div class="fin-box text-success"><span>Paid</span><strong>${{ "{:,.2f}".format(financials.tuition_paid|float) }}</strong></div></div>
-                            <div class="col-6 col-md-3"><div class="fin-box text-danger"><span>Balance</span><strong>${{ "{:,.2f}".format(financials.tuition_balance|float) }}</strong></div></div>
-                            <div class="col-6 col-md-3"><div class="fin-box"><span>Registration</span><strong>${{ "{:,.2f}".format(financials.registration_paid|float) }}</strong></div></div>
+                        <div class="row g-3 mb-4">
+                            <div class="col-6 col-lg-3"><div class="fin-box"><span>Yearly school bill</span><strong>${{ "{:,.2f}".format(financials.yearly_fee|float) }}</strong></div></div>
+                            <div class="col-6 col-lg-3"><div class="fin-box text-success"><span>Paid on yearly bill</span><strong>${{ "{:,.2f}".format(financials.tuition_paid|float) }}</strong></div></div>
+                            <div class="col-6 col-lg-3"><div class="fin-box text-danger"><span>Yearly balance</span><strong>${{ "{:,.2f}".format(financials.tuition_balance|float) }}</strong></div></div>
+                            <div class="col-6 col-lg-3"><div class="fin-box"><span>Other charges</span><strong>${{ "{:,.2f}".format((financials.other_charges_paid|default(financials.utility_paid))|float) }}</strong></div></div>
+                        </div>
+                        <div class="row g-3 mb-2">
+                            <div class="col-md-6"><div class="fin-box"><span>School fees collected</span><strong>${{ "{:,.2f}".format((financials.school_fees_paid|default(0))|float) }}</strong></div></div>
+                            <div class="col-md-6"><div class="fin-box"><span>Registration collected</span><strong>${{ "{:,.2f}".format(financials.registration_paid|float) }}</strong></div></div>
                         </div>
                         {% else %}
                         <p class="text-muted small mb-0">Financial records are not linked to your profile.</p>
                         {% endif %}
                     </div>
                 </div>
-                {% if fees %}
+                {% if school_fee_plan and (school_fee_plan.installments or school_fee_plan.semesters) %}
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-white border-bottom py-3">
+                        <h3 class="h6 fw-bold mb-0">School fees this year</h3>
+                        <p class="small text-muted mb-0 mt-1">The year has First and Second Semester. School fees are collected in three installments for the year. Registration and other charges are not shown here.</p>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-2">
+                            {% for slot in school_fee_plan.installments or school_fee_plan.semesters[0].installments %}
+                            <div class="col-4">
+                                <div class="fin-box h-100 {% if slot.status == 'paid' %}text-success{% elif slot.status == 'partial' %}text-warning{% endif %}">
+                                    <span>{{ slot.label }}</span>
+                                    <strong>${{ "{:,.2f}".format(slot.paid) }}</strong>
+                                    <span>{{ slot.status }}{% if slot.balance > 0 %} · due ${{ "{:,.2f}".format(slot.balance) }}{% endif %}</span>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                {% if charge_rows %}
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-bottom py-3">
+                        <h3 class="h6 fw-bold mb-0">Every payment to the school</h3>
+                    </div>
+                    <ul class="list-group list-group-flush">
+                        {% for row in charge_rows %}
+                        {% set f = row.payment %}
+                        <li class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-start gap-3">
+                                <div>
+                                    <div class="fw-semibold small">{{ row.kind_label }}</div>
+                                    {% if row.show_period %}
+                                    <div class="small" style="color:#002d62;">{{ row.period_label }}</div>
+                                    {% endif %}
+                                    <div class="text-muted style-micro">{{ f.paid_on.strftime('%b %d, %Y') if f.paid_on else '' }}{% if f.receipt_number %} · {{ f.receipt_number }}{% endif %}{% if not row.counts_yearly %} · does not reduce yearly bill{% endif %}</div>
+                                </div>
+                                <span class="badge {% if row.counts_yearly %}bg-success{% else %}bg-secondary{% endif %}">${{ "{:,.2f}".format(f.amount_paid|float) }}</span>
+                            </div>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% elif fees %}
                 <div class="card border-0 shadow-sm">
                     <div class="card-header bg-white border-bottom py-3"><h3 class="h6 fw-bold mb-0">Payment History</h3></div>
                     <ul class="list-group list-group-flush">

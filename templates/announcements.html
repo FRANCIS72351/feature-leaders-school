@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}School Announcements{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-4">
+    <div>
+      <h1 class="h4 fw-bold mb-1"><i class="fas fa-bullhorn me-2" style="color:#c82828;"></i>School Announcements</h1>
+      <p class="text-muted mb-0">Post notices for staff, families, and students. Category is inferred from the title (deadline, warning, fee/payment).</p>
+    </div>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline-secondary">Dashboard</a>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-4">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-bottom py-3">
+          <h2 class="h6 fw-bold mb-0">Post announcement</h2>
+        </div>
+        <div class="card-body">
+          <form method="post">
+            {{ form.hidden_tag() }}
+            <div class="mb-3">
+              {{ form.title.label(class="form-label fw-semibold small") }}
+              {{ form.title(class="form-control", placeholder="Title") }}
+            </div>
+            <div class="mb-3">
+              {{ form.content.label(class="form-label fw-semibold small") }}
+              {{ form.content(class="form-control", rows="6", placeholder="Message") }}
+            </div>
+            <div class="mb-3">
+              {{ form.target_audience.label(class="form-label fw-semibold small") }}
+              {{ form.target_audience(class="form-select") }}
+            </div>
+            {{ form.submit(class="btn btn-action-primary w-100") }}
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-8">
+      {% if items %}
+      <div class="d-flex flex-column gap-3">
+        {% for item in items %}
+        <article class="card border-0 shadow-sm">
+          <div class="card-body p-4">
+            <div class="d-flex flex-wrap gap-2 mb-2">
+              {% if item.category == 'deadline' %}
+              <span class="badge bg-brand text-white">Deadline</span>
+              {% elif item.category == 'warning' %}
+              <span class="badge bg-danger">Alert</span>
+              {% elif item.category == 'business_finance' %}
+              <span class="badge bg-navy text-white">Finance</span>
+              {% else %}
+              <span class="badge bg-brand-light text-brand">General</span>
+              {% endif %}
+              <span class="badge bg-light text-dark border text-uppercase">{{ item.target_role or 'all' }}</span>
+            </div>
+            <h2 class="h5 fw-bold mb-2">{{ item.title }}</h2>
+            <p class="text-muted mb-3" style="white-space: pre-line;">{{ item.content }}</p>
+            <div class="small text-muted border-top pt-2">
+              <i class="fas fa-user-pen me-1"></i>{{ item.author or 'School Office' }}
+              {% if item.formatted_date %}
+              <span class="ms-2"><i class="far fa-clock me-1"></i>{{ item.formatted_date }}</span>
+              {% endif %}
+            </div>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="card border-0 shadow-sm">
+        <div class="card-body text-center text-muted py-5">
+          No announcements have been posted yet.
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -8,8 +8,8 @@
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
             <div>
                 {% if activity.klass %}
-                <a href="{{ url_for('class_grading_hub', class_id=activity.klass_id, subject=activity.subject_name, period=activity.marking_period or 1, hub_tab='activities') }}" class="text-white-50 small text-decoration-none d-inline-block mb-2">
-                    <i class="bi bi-arrow-left me-1"></i>Back to Activity Review
+                <a href="{{ url_for('teacher_dashboard', grade_class_id=activity.klass_id, grade_subject=activity.subject_name, grade_period=activity.marking_period or 1) }}#grade-sheet" class="text-white-50 small text-decoration-none d-inline-block mb-2">
+                    <i class="bi bi-arrow-left me-1"></i>Back to grades
                 </a>
                 {% else %}
                 <a href="{{ url_for('teacher_dashboard', tab='grades') }}" class="text-white-50 small text-decoration-none d-inline-block mb-2">
@@ -32,9 +32,9 @@
             </div>
             <div class="d-flex flex-wrap gap-2">
                 {% if activity.klass %}
-                <a href="{{ url_for('class_grading_hub', class_id=activity.klass_id, subject=activity.subject_name, period=activity.marking_period or 1, hub_tab='moe') }}"
+                <a href="{{ url_for('teacher_dashboard', grade_class_id=activity.klass_id, grade_subject=activity.subject_name, grade_period=activity.marking_period or 1) }}#grade-sheet"
                    class="btn btn-light btn-sm fw-semibold">
-                    <i class="bi bi-grid-3x3-gap me-1"></i>Period Grades
+                    <i class="bi bi-grid-3x3-gap me-1"></i>Period grades
                 </a>
                 {% endif %}
                 {% if activity.file_name %}

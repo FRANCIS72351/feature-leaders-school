@@ -74,6 +74,8 @@ def build_student_financials(student, academic_year=None):
         "tuition_paid": 0.0,
         "tuition_balance": 0.0,
         "utility_paid": 0.0,
+        "other_charges_paid": 0.0,
+        "school_fees_paid": 0.0,
         "registration_paid": 0.0,
         "total_paid": 0.0,
     }

@@ -37,6 +37,7 @@ from app import (
     _id_photo_already_usable_hs,
     _id_photo_needs_background_removal,
     _process_id_card_image_bytes,
+    _student_id_photo_needs_reprocess,
     _subject_bbox,
     _top_corners_near_white,
 )
@@ -838,6 +839,27 @@ class IdPhotoPipelineTestCase(unittest.TestCase):
         self.assertEqual(names[0], 'u2net_human_seg')
         self.assertIn('u2net', names)
 
+    def test_rembg_cutout_runs_on_caller_thread(self):
+        """Windows ONNX often never returns from a timeout daemon thread."""
+        import sys
+
+        from app import _rembg_cutout_rgba
+
+        cutout = Image.new('RGBA', (48, 48), (90, 50, 30, 255))
+        payload = io.BytesIO()
+        cutout.save(payload, format='PNG')
+        png = payload.getvalue()
+        fake_rembg = mock.Mock()
+        fake_rembg.remove.return_value = png
+        with mock.patch('app._get_rembg_session', return_value=object()), mock.patch(
+            'app._run_rembg_with_timeout'
+        ) as timed, mock.patch.dict(sys.modules, {'rembg': fake_rembg}):
+            result = _rembg_cutout_rgba(Image.new('RGB', (48, 48), (40, 120, 210)))
+        timed.assert_not_called()
+        self.assertTrue(fake_rembg.remove.called)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.size, (48, 48))
+
     def test_signatures_are_unchanged_jpeg_quality(self):
         sig = Image.new('RGBA', (400, 120), (0, 0, 0, 0))
         draw = ImageDraw.Draw(sig)
@@ -848,6 +870,91 @@ class IdPhotoPipelineTestCase(unittest.TestCase):
         self.assertEqual(ext, '.png')
         self.assertGreater(len(out), 50)
 
+    def test_finished_head_shoulders_does_not_need_reprocess(self):
+        import tempfile
+        from types import SimpleNamespace
+
+        good = _fit_subject_on_white_square(_standing_student(400, 700, left=110, top=40), 800)
+        with tempfile.TemporaryDirectory() as tmp:
+            photo_dir = os.path.join(tmp, 'uploads', 'id_photos')
+            os.makedirs(photo_dir)
+            path = os.path.join(photo_dir, 'photo_4_ready.jpg')
+            good.save(path, format='JPEG', quality=92)
+            student = SimpleNamespace(id=4, photo=path, photo_filename='photo_4_ready.jpg')
+            student._id_photo_sources = lambda: [path]
+            student.user = None
+            self.assertFalse(_student_id_photo_needs_reprocess(student))
+
+    def test_reprocess_prefers_stored_hs_over_every_original(self):
+        """Do not rembg every original_* when a finished H&S JPEG is already on disk."""
+        import tempfile
+        from types import SimpleNamespace
+
+        from app import _reprocess_student_id_photo
+
+        forehead = Image.new('RGB', (800, 800), (255, 255, 255))
+        draw = ImageDraw.Draw(forehead)
+        draw.ellipse((180, 10, 620, 420), fill=(180, 70, 40))
+        good = _fit_subject_on_white_square(_standing_student(400, 700, left=110, top=40), 800)
+        outdoor = _outdoor_student(960, 1280)
+        with tempfile.TemporaryDirectory() as tmp:
+            photo_dir = os.path.join(tmp, 'uploads', 'id_photos')
+            os.makedirs(photo_dir)
+            stored = os.path.join(photo_dir, 'photo_7_ready.jpg')
+            good.save(stored, format='JPEG', quality=92)
+            originals = []
+            for stamp in ('20260826195114941355', '20260826195114941356', '20260826195114941357'):
+                path = os.path.join(photo_dir, 'original_7_%s.jpeg' % stamp)
+                outdoor.save(path, format='JPEG', quality=92)
+                originals.append(path)
+            student = SimpleNamespace(id=7, photo=stored, photo_filename='photo_7_ready.jpg')
+            student._id_photo_sources = lambda: [stored]
+            student.user = None
+
+            def _bad_crop(img):
+                return forehead.copy()
+
+            with mock.patch('app._process_id_photo', side_effect=_bad_crop) as process:
+                changed = _reprocess_student_id_photo(student)
+            self.assertTrue(changed)
+            self.assertLessEqual(process.call_count, 1)
+            saved = Image.open(os.path.join(photo_dir, student.photo_filename)).convert('RGB')
+            self.assertTrue(_is_navy_shirt(saved.getpixel((400, 640))))
+
+    def test_reprocess_rembg_retry_is_capped(self):
+        import tempfile
+        from types import SimpleNamespace
+
+        from app import _ID_PHOTO_REMBG_RETRY_MAX, _reprocess_student_id_photo
+
+        forehead = Image.new('RGB', (800, 800), (255, 255, 255))
+        draw = ImageDraw.Draw(forehead)
+        draw.ellipse((180, 10, 620, 420), fill=(180, 70, 40))
+        outdoor = _outdoor_student(960, 1280)
+        with tempfile.TemporaryDirectory() as tmp:
+            photo_dir = os.path.join(tmp, 'uploads', 'id_photos')
+            os.makedirs(photo_dir)
+            originals = []
+            for stamp in ('a', 'b', 'c', 'd', 'e'):
+                path = os.path.join(photo_dir, 'original_7_%s.jpeg' % stamp)
+                outdoor.save(path, format='JPEG', quality=92)
+                originals.append(path)
+            student = SimpleNamespace(
+                id=7,
+                photo=originals[0],
+                photo_filename=os.path.basename(originals[0]),
+            )
+            student._id_photo_sources = lambda: originals[:1]
+            student.user = None
+
+            def _bad_crop(img):
+                return forehead.copy()
+
+            with mock.patch('app._process_id_photo', side_effect=_bad_crop) as process:
+                _reprocess_student_id_photo(student)
+            self.assertLessEqual(process.call_count, 1 + _ID_PHOTO_REMBG_RETRY_MAX)
+
 
 if __name__ == '__main__':
     unittest.main()
+

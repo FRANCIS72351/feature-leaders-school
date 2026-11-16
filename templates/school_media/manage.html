@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Manage School Media{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-4">
+        <div>
+            <h1 class="h4 fw-bold mb-1">School Media Desk</h1>
+            <p class="text-muted mb-0">Publish photos, videos, entrance notices, and information sheets.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('school_media_gallery') }}" class="btn btn-sm btn-outline-secondary">Public gallery</a>
+            <a href="{{ url_for('school_media_create') }}" class="btn btn-sm btn-action-primary"><i class="fas fa-plus me-1"></i> New item</a>
+        </div>
+    </div>
+
+    <div class="table-responsive bg-white border rounded-3 shadow-sm">
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Title</th>
+                    <th>Type</th>
+                    <th>Category</th>
+                    <th>Year</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                <tr>
+                    <td>
+                        <strong>{{ item.title }}</strong>
+                        {% if item.description %}<div class="small text-muted">{{ item.description[:90] }}{% if item.description|length > 90 %}…{% endif %}</div>{% endif %}
+                    </td>
+                    <td class="text-capitalize">{{ item.media_type }}</td>
+                    <td class="text-capitalize">{{ item.category.replace('_', ' ') }}</td>
+                    <td>{{ item.academic_year.name if item.academic_year else '—' }}</td>
+                    <td>
+                        {% if item.is_published %}
+                        <span class="badge bg-success">Published</span>
+                        {% else %}
+                        <span class="badge bg-secondary">Draft</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end text-nowrap">
+                        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('school_media_edit', item_id=item.id) }}">Edit</a>
+                        <a class="btn btn-sm btn-outline-danger" href="{{ url_for('school_media_delete', item_id=item.id) }}">Delete</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-4">No school media items yet.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

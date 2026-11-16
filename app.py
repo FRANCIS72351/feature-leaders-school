@@ -3,7 +3,7 @@ from flask import Flask, render_template, redirect, url_for, flash, request, Res
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
-from models import db, User, Student, Teacher, Class, Announcement, Grade, GradeRelease, StudentPeriodRelease, TranscriptRelease, AcademicYear, ClassSubjectTeacher, Room, Suspension, Discipline, StudentPayment, StudentRegistryDocument, StaffDocument, AuditLog, default_static_photo_url, school_logo_static_url, liberia_seal_static_url, principal_signature_static_url, display_font_static_url, resolve_parent_guardian_name
+from models import db, User, Student, Teacher, Class, Announcement, Grade, GradeRelease, StudentPeriodRelease, TranscriptRelease, AcademicYear, ClassSubjectTeacher, Room, Suspension, Discipline, StudentPayment, StudentRegistryDocument, StaffDocument, AuditLog, RegistryDailyHandover, default_static_photo_url, school_logo_static_url, liberia_seal_static_url, principal_signature_static_url, display_font_static_url, resolve_parent_guardian_name
 from itsdangerous import URLSafeTimedSerializer
 import pyotp
 from reportlab.pdfgen import canvas
@@ -24,6 +24,13 @@ from constants import (
     PERIOD_TOTAL_LISTED_MAX,
     PERIOD_TOTAL_EXTRA_CREDIT_MAX,
     period_component_ceiling,
+    CURRENCY_CHOICES,
+    format_dual_money,
+    format_school_money,
+    normalize_currency,
+    semester_label,
+    installment_label,
+    billing_period_label,
 )
 from school_divisions import (
     academic_year_span_key,
@@ -125,7 +132,7 @@ from student_scanner import (
     get_site_base_url,
     site_url_is_loopback,
 )
-from id_card_pdf import build_class_id_cards_pdf, id_card_header_title, id_cards_pdf_filename
+from id_card_pdf import build_class_id_cards_pdf, html_print_batch_to_pdf, id_card_header_title, id_cards_pdf_filename
 import secrets
 try:
     from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
@@ -784,6 +791,7 @@ from forms import (
     EventForm, ConfirmDeleteForm, LeaderForm, EnrollmentForm, PaymentForm, TransactionForm,
     DisciplineForm, SchoolMediaForm, RecordClassroomActivityForm,
     AccountPasswordForm, AccountPhotoForm,
+    RegistryCollectFeeForm, RegistryCloseDayForm, RegistryAcknowledgeForm,
 )
 
 SCHOOL_VIDEO_MAX_DURATION_SEC = int(os.environ.get('SCHOOL_VIDEO_MAX_DURATION_SEC', '180'))
@@ -5521,7 +5529,10 @@ def compile_student_dashboard_context(student, display_year, request_args=None, 
     if isinstance(financials, dict):
         financials = type('StudentFinancials', (), financials)()
     fees = []
+    charge_rows = []
+    school_fee_plan = None
     if student:
+        from registry_desk import present_student_charge
         if hasattr(student, 'payment_records'):
             all_fees = list(student.payment_records.order_by(StudentPayment.paid_on.desc()).all())
         else:
@@ -5530,6 +5541,10 @@ def compile_student_dashboard_context(student, display_year, request_args=None, 
             ).all()
         if display_year:
             fees = [p for p in all_fees if p.academic_year_id == display_year.id]
+        else:
+            fees = all_fees
+        charge_rows = [present_student_charge(p) for p in fees]
+        school_fee_plan = student_school_fee_plan(student, display_year)
 
     grades = []
     if student and display_year:
@@ -5566,6 +5581,8 @@ def compile_student_dashboard_context(student, display_year, request_args=None, 
         'grades': grades,
         'financials': financials,
         'fees': fees,
+        'charge_rows': charge_rows,
+        'school_fee_plan': school_fee_plan,
         'activities': assessments,
         'assessments': assessments,
         'task_assessments': task_assessments,
@@ -5703,12 +5720,75 @@ class InstitutionalManager:
 # -------------------------------------------------------------------
 # Calculate the absolute root folder where app.py resides
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 
 # Inject current directory layout context into the system path for safe module imports
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-app = Flask(__name__)
+from jinja2 import FileSystemLoader, TemplateNotFound as JinjaTemplateNotFound
+from jinja2.loaders import split_template_path
+
+
+class LocalTemplateLoader(FileSystemLoader):
+    """Load templates by opening files, including OneDrive cloud placeholders.
+
+    Stock Jinja uses posixpath + os.path.isfile(), which can miss files that
+    exist as OneDrive reparse points until they are hydrated.
+    """
+
+    def get_source(self, environment, template):
+        pieces = split_template_path(template)
+        filename = None
+        contents = None
+        for searchpath in self.searchpath:
+            candidate = os.path.normpath(os.path.join(searchpath, *pieces))
+            try:
+                with open(candidate, encoding=self.encoding) as handle:
+                    contents = handle.read()
+            except OSError:
+                continue
+            filename = candidate
+            break
+        if filename is None:
+            raise JinjaTemplateNotFound(template)
+        mtime = os.path.getmtime(filename)
+
+        def uptodate():
+            try:
+                return os.path.getmtime(filename) == mtime
+            except OSError:
+                return False
+
+        return contents, filename, uptodate
+
+
+app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
+app.jinja_loader = LocalTemplateLoader(TEMPLATE_DIR)
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.jinja_env.auto_reload = True
+app.jinja_env.cache = None
+
+
+def _school_money_filter(amount, currency='USD'):
+    """US$ / L$ for receipts — registered immediately so dashboards never miss the filter."""
+    try:
+        return format_school_money(amount, currency)
+    except Exception:
+        try:
+            value = float(amount or 0)
+        except (TypeError, ValueError):
+            value = 0.0
+        code = str(currency or 'USD').upper()
+        symbol = 'L$' if code in {'LRD', 'LD', 'L$', 'LR'} else 'US$'
+        return f'{symbol} {value:,.2f}'
+
+
+app.add_template_filter(_school_money_filter, 'school_money')
+app.add_template_filter(semester_label, 'semester_label')
+app.add_template_filter(installment_label, 'installment_label')
+app.add_template_filter(lambda term, installment=None: billing_period_label(term, installment), 'billing_period')
 
 # Security parameters configuration
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'change_this_secret_key')
@@ -5861,17 +5941,10 @@ def get_yearly_fee_for_student(student, academic_year=None):
     return money(0.0)
 
 
-def is_yearly_fee_payment(description):
-    desc = (description or "").strip().lower()
-    if not desc:
-        return True
-
-    non_yearly_keywords = ("uniform", "graduation", "utility", "transport", "bus", "lunch", "book", "activity")
-    if any(keyword in desc for keyword in non_yearly_keywords):
-        return False
-
-    yearly_keywords = ("tuition", "school fee", "yearly", "annual", "registration", "fee", "fees")
-    return any(keyword in desc for keyword in yearly_keywords)
+def is_yearly_fee_payment(description, fee_kind=None):
+    """True only for school fees and registration — never ID, documents, or extras."""
+    from registry_desk import counts_toward_yearly_fee
+    return counts_toward_yearly_fee(fee_kind=fee_kind, description=description)
 
 
 def build_student_financials(student, academic_year=None):
@@ -5882,7 +5955,8 @@ def build_student_financials(student, academic_year=None):
     """
     financials = {
         'yearly_fee': 0.0, 'tuition_paid': 0.0, 'tuition_balance': 0.0,
-        'utility_paid': 0.0, 'registration_paid': 0.0, 'total_paid': 0.0
+        'school_fees_paid': 0.0, 'utility_paid': 0.0, 'other_charges_paid': 0.0,
+        'registration_paid': 0.0, 'total_paid': 0.0
     }
 
     if not student:
@@ -5904,8 +5978,10 @@ def build_student_financials(student, academic_year=None):
 
     # 3. Totals come only from recorded StudentPayment rows — never from
     # student.registration_fees (that field is registrar metadata, not a ledger entry).
+    from registry_desk import CHARGE_REGISTRATION, CHARGE_SCHOOL_FEES, classify_student_payment
     yearly_fee = Decimal(str(get_yearly_fee_for_student(student, academic_year)))
     yearly_paid = Decimal("0")
+    school_fees_paid = Decimal("0")
     other_paid = Decimal("0")
     total_paid = Decimal("0")
     registration_payment_paid = Decimal("0")
@@ -5913,30 +5989,48 @@ def build_student_financials(student, academic_year=None):
     for payment in payments:
         amount = Decimal(str(payment.amount_paid or 0))
         total_paid += amount
-
-        desc = (payment.description or "").lower()
-        if "registration" in desc:
+        bucket = classify_student_payment(payment)
+        if bucket == CHARGE_SCHOOL_FEES:
+            school_fees_paid += amount
+            yearly_paid += amount
+        elif bucket == CHARGE_REGISTRATION:
             registration_payment_paid += amount
-
-        if is_yearly_fee_payment(payment.description):
             yearly_paid += amount
         else:
             other_paid += amount
 
-    # 4. Final aggregation updates
-    registration_paid = registration_payment_paid
     tuition_balance = max(Decimal("0"), yearly_fee - yearly_paid)
 
     financials.update({
         'yearly_fee': money(yearly_fee),
         'tuition_paid': money(yearly_paid),
+        'school_fees_paid': money(school_fees_paid),
         'tuition_balance': money(tuition_balance),
         'utility_paid': money(other_paid),
-        'registration_paid': money(registration_paid),
+        'other_charges_paid': money(other_paid),
+        'registration_paid': money(registration_payment_paid),
         'total_paid': money(total_paid)
     })
     
     return financials
+
+
+def student_school_fee_plan(student, academic_year=None):
+    """Liberia billing card: yearly school fee collected in three installments."""
+    from registry_desk import build_school_fee_plan
+    yearly = get_yearly_fee_for_student(student, academic_year)
+    year_id = academic_year.id if academic_year else None
+    if year_id:
+        payments = StudentPayment.query.filter_by(student_id=student.id, academic_year_id=year_id).all()
+    elif hasattr(student, 'payment_records'):
+        payments = student.payment_records.all()
+    else:
+        payments = StudentPayment.query.filter_by(student_id=student.id).all()
+    plan = build_school_fee_plan(yearly, payments)
+    plan['student_name'] = getattr(student, 'full_name', '') if student else ''
+    plan['student_code'] = getattr(student, 'student_id', '') if student else ''
+    plan['class_name'] = format_student_class_name(student, year_id) if student else ''
+    return plan
 
 
 # -------------------------------------------------------------------
@@ -5976,6 +6070,12 @@ def ensure_legacy_sqlite_schema():
         "student_payments": {
             "installment": "INTEGER",
             "description": "VARCHAR(250)",
+            "collected_by_user_id": "INTEGER",
+            "receipt_number": "VARCHAR(40)",
+            "collection_desk": "VARCHAR(20)",
+            "fee_kind": "VARCHAR(40)",
+            "handover_id": "INTEGER",
+            "currency": "VARCHAR(3) DEFAULT 'USD'",
         },
         "grades": {
             "academic_year_id": "INTEGER",
@@ -6001,6 +6101,7 @@ def ensure_legacy_sqlite_schema():
             "is_deleted": "BOOLEAN DEFAULT 0",
             "deleted_at": "DATETIME",
             "deleted_by_id": "INTEGER",
+            "currency": "VARCHAR(3) DEFAULT 'USD'",
         },
         "academic_years": {
             "current_year": "VARCHAR(20)",
@@ -6369,6 +6470,7 @@ from forms import (
     AnnouncementForm, BusinessTransactionForm, AssignTeacherForm, CreateClassForm,
     EventForm, ConfirmDeleteForm, LeaderForm, EnrollmentForm, PaymentForm, TransactionForm,
     DisciplineForm, RecordClassroomActivityForm, ParentReportGateForm,
+    RegistryCollectFeeForm, RegistryCloseDayForm, RegistryAcknowledgeForm,
 )
 from export_routes import init_export_routes
 #
@@ -6392,6 +6494,20 @@ def marking_period_label_filter(period_num):
 @app.template_filter('subjects_match')
 def subjects_match_filter(left, right):
     return subjects_match(left, right)
+
+
+@app.template_filter('school_money')
+def school_money_filter(amount, currency='USD'):
+    return format_school_money(amount, currency)
+
+
+@app.template_filter('dual_money')
+def dual_money_filter(payments, fallback=0):
+    try:
+        from registry_desk import money_label_for_payments
+        return money_label_for_payments(payments, fallback)
+    except Exception:
+        return _school_money_filter(fallback)
 
 
 @app.template_filter('score_mark_class')
@@ -6849,17 +6965,25 @@ def _render_business_dashboard():
                     flash('Student record not found.', 'danger')
                 else:
                     paid_amount = parse_currency_amount(payment_form.amount_paid.data)
+                    fee_kind, term, installment, particulars, _bucket = _resolved_student_charge(
+                        payment_form.fee_kind.data if getattr(payment_form, 'fee_kind', None) else None,
+                        payment_form.term.data,
+                        payment_form.installment.data,
+                        payment_form.description.data,
+                    )
                     payment = record_student_payment_with_income(
                         student,
                         payment_form.academic_year.data,
-                        payment_form.term.data,
+                        term,
                         paid_amount,
-                        (payment_form.description.data or 'Tuition Payment').strip(),
-                        installment=payment_form.installment.data,
+                        particulars,
+                        installment=installment,
+                        currency=payment_form.currency.data,
+                        fee_kind=fee_kind,
                     )
                     db.session.commit()
                     flash(
-                        f"Payment of ${float(paid_amount):,.2f} recorded for {student.full_name}.",
+                        f"Payment of {format_school_money(paid_amount, payment_form.currency.data)} recorded for {student.full_name}.",
                         'success',
                     )
                     if payment:
@@ -7188,13 +7312,20 @@ def business_class_students(class_id):
             ))
 
         try:
+            fee_kind, term, installment, particulars, _bucket = _resolved_student_charge(
+                request.form.get('fee_kind') or 'tuition',
+                term,
+                installment,
+                description,
+            )
             record_student_payment_with_income(
                 student,
                 payment_year.id,
                 term,
                 amount_paid,
-                description,
+                particulars,
                 installment=installment,
+                fee_kind=fee_kind,
             )
             db.session.commit()
             flash("Payment recorded and posted to business income.", "success")
@@ -7300,142 +7431,37 @@ def grade_entry():
         flash('No classes assigned yet.', 'warning')
         return redirect(url_for('teacher_dashboard'))
     if len(all_classes) == 1:
-        return redirect(url_for('grade_entry_class', class_id=all_classes[0].id))
+        return redirect(_teacher_class_grades_url(all_classes[0].id))
 
     active_year = get_active_academic_year()
     if active_year:
         for klass in all_classes:
             if get_class_students_for_year(klass.id, active_year):
-                return redirect(url_for('grade_entry_class', class_id=klass.id))
+                return redirect(_teacher_class_grades_url(klass.id))
 
-    return redirect(url_for('grade_entry_class', class_id=all_classes[0].id))
+    return redirect(_teacher_class_grades_url(all_classes[0].id))
 
 
 @app.route('/grade-entry/<int:class_id>', methods=['GET'])
 @login_required
 def grade_entry_class(class_id):
-    """
-    MoE-standard grade entry sheet for one class, subject, and marking period.
-    """
+    """Open the teacher's class grade sheet. Extra review UI is not used."""
     if normalize_role(current_user) != 'teacher':
         flash('Access denied.', 'danger')
         return redirect(url_for('login'))
 
     teacher = Teacher.query.filter_by(user_id=current_user.id).first()
-    klass = Class.query.get_or_404(class_id)
+    Class.query.get_or_404(class_id)
 
     if not teacher or not teacher_can_access_class(teacher, current_user, class_id):
         flash('Access mapping violation: You do not possess clearance for this room.', 'danger')
         return redirect(url_for('login'))
 
-    active_year = get_active_academic_year()
-    if not active_year:
-        flash('No active academic year found. Please contact the administrator.', 'danger')
-        return redirect(url_for('teacher_dashboard'))
-
-    subjects = get_assignable_subjects_for_class(teacher, current_user, class_id)
-    selected_subject = (request.args.get('subject') or '').strip()
-    if selected_subject not in subjects:
-        selected_subject = subjects[0] if subjects else ''
-
-    selected_period = request.args.get('period', 1, type=int)
-    if selected_period not in range(1, 9):
-        selected_period = 1
-
-    students = get_class_students_for_year(class_id, active_year)
-
-    grade_rows = {}
-    if selected_subject:
-        existing_grades = Grade.query.filter_by(
-            class_id=class_id,
-            subject=selected_subject,
-            academic_year_id=active_year.id,
-        ).all()
-        for grade in existing_grades:
-            period_num = grade.marking_period or normalize_grade_period(grade.period)
-            if period_num == selected_period and grade.student_id in {s.id for s in students}:
-                grade_rows[grade.student_id] = grade
-
-    period_label = grading_period_label(selected_period)
-    is_semester_exam = selected_period in (7, 8)
-    activity_sheet_items = []
-    activity_submission_map = {}
-
-    if selected_subject and not is_semester_exam:
-        quick_entry_assessment = find_quick_entry_assessment(
-            class_id, selected_subject, selected_period, active_year.id
-        )
-        activity_sheet_items.append({
-            'key': 'quick',
-            'assessment_id': quick_entry_assessment.id if quick_entry_assessment else None,
-            'title': 'Quick Activity',
-            'max_score': (quick_entry_assessment.max_score if quick_entry_assessment and quick_entry_assessment.max_score is not None else 100.0),
-            'is_quick': True,
-        })
-
-        named_activities = [
-            act for act in Assessment.query.filter_by(
-                klass_id=class_id,
-                subject_name=selected_subject,
-                marking_period=selected_period,
-                academic_year_id=active_year.id,
-            ).order_by(Assessment.id.asc()).all()
-            if not is_quick_entry_assessment(act)
-        ]
-        activity_sheet_items.extend([
-            {
-                'key': str(act.id),
-                'assessment_id': act.id,
-                'title': act.title,
-                'max_score': act.max_score or 100.0,
-                'is_quick': False,
-            }
-            for act in named_activities
-        ])
-
-        submission_assessment_ids = [
-            item['assessment_id'] for item in activity_sheet_items if item.get('assessment_id')
-        ]
-        if submission_assessment_ids:
-            submissions = Submission.query.filter(
-                Submission.assessment_id.in_(submission_assessment_ids)
-            ).all()
-            for submission in submissions:
-                activity_submission_map.setdefault(submission.assessment_id, {})[submission.student_id] = submission
-
-    teacher_class_tabs = [
-        {
-            'id': card['id'],
-            'name': card['name'],
-            'grade_level': card['grade_level'],
-            'stream': card.get('stream'),
-            'active': card['id'] == class_id,
-        }
-        for card in get_teacher_class_cards(teacher, current_user)
-    ]
-
-    return render_template(
-        'grade_entry_class.html',
-        klass=klass,
-        students=students,
-        grade_rows=grade_rows,
-        active_year=active_year,
-        subjects=subjects,
-        selected_subject=selected_subject,
-        selected_period=selected_period,
-        period_label=period_label,
-        grading_periods=MOE_GRADING_PERIODS,
-        is_semester_exam=is_semester_exam,
-        teacher_name=teacher.full_name,
-        teacher_class_tabs=teacher_class_tabs,
-        activity_sheet_items=activity_sheet_items,
-        activity_submission_map=activity_submission_map,
-        grade_release=GradeRelease.query.filter_by(
-            academic_year_id=active_year.id,
-            class_id=class_id,
-            period=selected_period,
-        ).first() if active_year else None,
-    )
+    return redirect(_teacher_class_grades_url(
+        class_id,
+        request.args.get('subject'),
+        request.args.get('period', type=int),
+    ))
 
 
 @app.route('/teacher/class/<int:class_id>/period-activity-sheet', methods=['POST'])
@@ -7467,10 +7493,10 @@ def save_period_activity_sheet(class_id):
     publish_to_report = publish_action == 'publish'
     if not subject_name:
         flash('Please select a subject before saving scores.', 'danger')
-        return redirect(url_for('grade_entry_class', class_id=class_id))
+        return redirect(_teacher_class_grades_url(class_id))
     if period not in range(1, 7):
         flash('This activity sheet is available for regular periods only.', 'danger')
-        return redirect(url_for('grade_entry_class', class_id=class_id, subject=subject_name, period=period or 1))
+        return redirect(_teacher_class_grades_url(class_id, subject_name, period or 1))
 
     if role == 'teacher':
         allowed_subjects = get_assignable_subjects_for_class(
@@ -7478,7 +7504,7 @@ def save_period_activity_sheet(class_id):
         )
         if subject_name not in allowed_subjects:
             flash('You are not assigned to teach that subject in this class.', 'danger')
-            return redirect(url_for('grade_entry_class', class_id=class_id))
+            return redirect(_teacher_class_grades_url(class_id))
 
     roster = get_class_students_for_year(class_id, active_year)
     roster_ids = {student.id for student in roster}
@@ -7549,12 +7575,7 @@ def save_period_activity_sheet(class_id):
             flash(msg, 'danger')
         if not saved_count:
             db.session.rollback()
-            return redirect(url_for(
-                'grade_entry_class',
-                class_id=class_id,
-                subject=subject_name,
-                period=period,
-            ))
+            return redirect(_teacher_class_grades_url(class_id, subject_name, period))
 
     published_count = 0
     if publish_to_report:
@@ -7601,12 +7622,7 @@ def save_period_activity_sheet(class_id):
         else:
             flash('No scores entered. Fill in at least one activity field.', 'warning')
 
-    return redirect(url_for(
-        'grade_entry_class',
-        class_id=class_id,
-        subject=subject_name,
-        period=period,
-    ))
+    return redirect(_teacher_class_grades_url(class_id, subject_name, period))
 
 
 def _parse_grade_component_scores(grade):
@@ -7684,19 +7700,20 @@ def _validate_period_component_score(component_key, score_val, student_name, for
     return None
 
 
+def _teacher_class_grades_url(class_id, subject=None, period=None):
+    """One grade-entry surface: the teacher dashboard class sheet."""
+    kwargs = {'grade_class_id': class_id}
+    subject_name = (subject or '').strip()
+    if subject_name:
+        kwargs['grade_subject'] = subject_name
+    if period:
+        kwargs['grade_period'] = period
+    return url_for('teacher_dashboard', **kwargs) + '#grade-sheet'
+
+
 def _redirect_after_save_grades(class_id, subject_name, period):
-    """Stay on the sheet the teacher posted from (dashboard vs grade-entry)."""
+    """Stay on the sheet the teacher posted from."""
     return_to = (request.form.get('return_to') or '').strip()
-    if return_to == 'grading_hub':
-        return redirect(
-            url_for(
-                'class_grading_hub',
-                class_id=class_id,
-                subject=subject_name,
-                period=period,
-                hub_tab='moe',
-            )
-        )
     if return_to == 'manual_activity_grades':
         return redirect(
             url_for(
@@ -7706,23 +7723,7 @@ def _redirect_after_save_grades(class_id, subject_name, period):
                 period=period,
             )
         )
-    if return_to in ('teacher_dashboard', 'teacher_grade_sheet'):
-        return redirect(
-            url_for(
-                'teacher_dashboard',
-                grade_class_id=class_id,
-                grade_subject=subject_name,
-                grade_period=period,
-            )
-        )
-    return redirect(
-        url_for(
-            'grade_entry_class',
-            class_id=class_id,
-            subject=subject_name,
-            period=period,
-        )
-    )
+    return redirect(_teacher_class_grades_url(class_id, subject_name, period))
 
 
 def _resolve_period_weights(form, klass):
@@ -7881,7 +7882,7 @@ def save_grades(class_id):
     active_year = get_active_academic_year()
     if not active_year:
         flash('No active academic year found. Please contact the administrator.', 'danger')
-        return redirect(url_for('grade_entry_class', class_id=class_id))
+        return redirect(_teacher_class_grades_url(class_id))
 
     if teacher_is_viewing_archived_year():
         flash(
@@ -7901,15 +7902,15 @@ def save_grades(class_id):
     publish_to_report = publish_action == 'publish'
     if not subject_name:
         flash('Please select a subject before saving grades.', 'danger')
-        return redirect(url_for('grade_entry_class', class_id=class_id))
+        return redirect(_teacher_class_grades_url(class_id))
     if period not in range(1, 9):
         flash('Invalid marking period selected.', 'danger')
-        return redirect(url_for('grade_entry_class', class_id=class_id, subject=subject_name))
+        return redirect(_teacher_class_grades_url(class_id, subject_name))
 
     allowed_subjects = get_assignable_subjects_for_class(teacher, current_user, class_id)
     if subject_name not in allowed_subjects:
         flash('You are not assigned to teach that subject in this class.', 'danger')
-        return redirect(url_for('grade_entry_class', class_id=class_id))
+        return redirect(_teacher_class_grades_url(class_id))
 
     students = get_class_students_for_year(class_id, active_year)
     period_label = grading_period_label(period)
@@ -8129,13 +8130,13 @@ def publish_period_grades(class_id):
     period = request.form.get('period', type=int)
     if not subject_name or period not in range(1, 9):
         flash('Subject and marking period are required.', 'danger')
-        return redirect(url_for('class_grading_hub', class_id=class_id))
+        return redirect(_teacher_class_grades_url(class_id))
 
     if role == 'teacher':
         allowed_subjects = get_assignable_subjects_for_class(teacher, current_user, class_id)
         if subject_name not in allowed_subjects:
             flash('You are not assigned to teach that subject in this class.', 'danger')
-            return redirect(url_for('class_grading_hub', class_id=class_id))
+            return redirect(_teacher_class_grades_url(class_id))
 
     students = Student.query.filter_by(
         klass_id=class_id, academic_year_id=active_year.id
@@ -8176,15 +8177,7 @@ def publish_period_grades(class_id):
     else:
         flash('No draft grades with scores were found to publish.', 'warning')
 
-    return_to = (request.form.get('return_to') or 'grading_hub').strip()
-    if return_to == 'teacher_dashboard':
-        return redirect(url_for(
-            'teacher_dashboard',
-            tab='grades',
-            grade_class_id=class_id,
-            grade_subject=subject_name,
-            grade_period=period,
-        ))
+    return_to = (request.form.get('return_to') or '').strip()
     if return_to == 'manual_activity_grades':
         return redirect(url_for(
             'manual_activity_grades',
@@ -8192,13 +8185,7 @@ def publish_period_grades(class_id):
             subject=subject_name,
             period=period,
         ))
-    return redirect(url_for(
-        'class_grading_hub',
-        class_id=class_id,
-        subject=subject_name,
-        period=period,
-        hub_tab='moe',
-    ))
+    return redirect(_teacher_class_grades_url(class_id, subject_name, period))
 
 
 @app.route('/download-grades/<int:class_id>')
@@ -8547,7 +8534,7 @@ def format_student_school_level(student):
 def report_card(student_id):
     student = Student.query.get_or_404(student_id)
     
-    staff_roles = {'admin', 'teacher', 'registrar', 'principal', 'vpa', 'vpi', 'dean', 'business'}
+    staff_roles = set(STAFF_INTERNAL_GRADE_ROLES) | {'owner'}
     user_role = (current_user.role or '').lower()
     if user_role == 'student':
         linked_student = get_student_for_user(current_user)
@@ -8601,7 +8588,7 @@ def report_card(student_id):
 def download_report_card(student_id):
     student = Student.query.get_or_404(student_id)
     
-    staff_roles = {'admin', 'teacher', 'registrar', 'principal', 'vpa', 'vpi', 'dean', 'business'}
+    staff_roles = set(STAFF_INTERNAL_GRADE_ROLES) | {'owner'}
     active_year = get_active_academic_year()
     year_id = request.args.get('academic_year_id', type=int) or (active_year.id if active_year else None)
     data = build_report_card_structured_data(student, year_id)
@@ -8691,6 +8678,7 @@ def class_period_grade_sheet(class_id, period):
             if is_senior_high_class(klass)
             else 'vpa_grade_releases'
         ),
+        back_url=None,
     )
 
 
@@ -9433,7 +9421,7 @@ def build_official_grade_sheet_pdf(
             logo = None
 
     center_block = [
-        Paragraph((brand.get('name') or 'Future Leaders Preparatory Academy').upper(), school_style),
+        Paragraph(brand.get('name') or 'Future Leaders Preparatory Academy', school_style),
         Paragraph(brand.get('full_address') or '', contact_style),
         Paragraph(brand.get('phones') or '', contact_style),
         Paragraph(brand.get('email_address') or brand.get('email') or '', contact_style),
@@ -9734,6 +9722,129 @@ def student_grade_sheet_pdf():
         student, year_id, kind='sheet', approved_only=True,
         view_period=view_period, semester=semester,
     )
+
+
+_GRADING_PERIOD_IDS = {num for num, _name in GRADING_PERIODS}
+
+
+def _staff_grade_sheet_allowed(student):
+    if not current_user.is_authenticated or not student:
+        return False
+    role = normalize_role(current_user)
+    if role == 'teacher':
+        teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
+        return bool(teacher_profile and teacher_can_access_student(teacher_profile, current_user, student))
+    return role in STAFF_INTERNAL_GRADE_ROLES
+
+
+def _latest_graded_period(student_id, year_id):
+    if not year_id:
+        return None
+    value = (
+        db.session.query(func.max(Grade.marking_period))
+        .filter(Grade.student_id == student_id, Grade.academic_year_id == year_id)
+        .scalar()
+    )
+    try:
+        period = int(value or 0)
+    except (TypeError, ValueError):
+        return None
+    return period if period in _GRADING_PERIOD_IDS else None
+
+
+def _staff_grade_sheet_scope(student, year_id):
+    """Always a period or semester sheet — never the year-end report-card matrix."""
+    view_period = _requested_marking_period()
+    if view_period in _GRADING_PERIOD_IDS:
+        return view_period, None
+    semester = _requested_semester()
+    if semester in (1, 2):
+        return None, semester
+    doc_state = student_official_documents_state(student, year_id, period=None)
+    latest_approved = doc_state.get('latest_approved_period')
+    if latest_approved in _GRADING_PERIOD_IDS:
+        return latest_approved, None
+    latest = _latest_graded_period(student.id, year_id)
+    return (latest if latest in _GRADING_PERIOD_IDS else 1), None
+
+
+def _staff_student_grade_sheet_payload(student_id, *, as_pdf=False):
+    student = db.session.get(Student, student_id)
+    if not student:
+        abort(404)
+    if not _staff_grade_sheet_allowed(student):
+        abort(403)
+    past_years = all_academic_years()
+    selected_year_id = request.args.get('academic_year_id', type=int)
+    if selected_year_id:
+        display_year = db.session.get(AcademicYear, selected_year_id)
+    else:
+        display_year = get_active_academic_year()
+        if not display_year and past_years:
+            display_year = past_years[0]
+    year_id = display_year.id if display_year else None
+    view_period, semester = _staff_grade_sheet_scope(student, year_id)
+    staff_preview = viewer_can_see_unreleased_official_grades()
+    if as_pdf:
+        return build_official_grade_sheet_pdf(
+            student, year_id, kind='sheet',
+            approved_only=not staff_preview,
+            view_period=view_period, semester=semester,
+        )
+    data = build_report_card_structured_data(
+        student, year_id, approved_only=not staff_preview,
+        view_period=view_period, semester=semester,
+    )
+    doc_state = student_official_documents_state(student, year_id, period=view_period)
+    role = normalize_role(current_user)
+    office_label = {
+        'vpi': 'Vice Principal for Instruction',
+        'vpa': 'Vice Principal for Academics',
+        'principal': 'Principal',
+        'proprietor': 'Proprietor',
+        'owner': 'Proprietor',
+        'dean': 'Dean of Students',
+        'teacher': 'Class teacher',
+        'registrar': 'Registrar',
+        'admin': 'Academic office',
+        'business': 'Business office',
+    }.get(role, 'Academic office')
+    subject_rows = data.get('subjects') or []
+    return render_template(
+        'grade_sheet.html',
+        student=student,
+        display_year=display_year,
+        past_years=past_years,
+        data=data,
+        has_published=bool(subject_rows),
+        published_count=len(subject_rows),
+        approved_periods=doc_state.get('approved_periods') or [],
+        pending_periods=doc_state.get('pending_periods') or [],
+        grading_periods=GRADING_PERIODS,
+        released_semesters=doc_state.get('released_semesters') or [],
+        report_card_unlocked=False,
+        report_card_blocker_note='',
+        school_print_brand=school_print_brand(),
+        sheet_office=office_label,
+        sheet_self_endpoint='staff_student_grade_sheet',
+        sheet_pdf_endpoint='staff_student_grade_sheet_pdf',
+        staff_preview=staff_preview,
+        staff_scope_nav=True,
+        sheet_back_url=url_for(role_home_endpoint()),
+        sheet_back_label='Return to dashboard',
+    )
+
+
+@app.route('/grades/student/<int:student_id>/sheet')
+@login_required
+def staff_student_grade_sheet(student_id):
+    return _staff_student_grade_sheet_payload(student_id, as_pdf=False)
+
+
+@app.route('/grades/student/<int:student_id>/sheet.pdf')
+@login_required
+def staff_student_grade_sheet_pdf(student_id):
+    return _staff_student_grade_sheet_payload(student_id, as_pdf=True)
 
 
 @app.route('/update-tuition/<int:student_id>', methods=['POST'])
@@ -10329,16 +10440,98 @@ def school_media_gallery():
     active_year = get_active_academic_year()
     years = all_academic_years()
 
-    return render_template(
-        "school_media/gallery.html",
-        items=items,
-        active_year=active_year,
-        years=years,
-        selected_category=category,
-        selected_type=media_type,
-        selected_year_id=year_id,
-        youtube_embed_url=_youtube_embed_url,
-    )
+    # #region agent log
+    try:
+        import json as _dbg_json
+        import time as _dbg_time
+        _tpl_name = "school_media/gallery.html"
+        _tpl_root = current_app.root_path
+        _tpl_folder = current_app.template_folder or "templates"
+        _tpl_abs = os.path.join(_tpl_root, _tpl_folder, "school_media", "gallery.html")
+        _tpl_dir = os.path.join(_tpl_root, _tpl_folder, "school_media")
+        _templates_dir = os.path.join(_tpl_root, _tpl_folder)
+        _dir_listing = os.listdir(_tpl_dir) if os.path.isdir(_tpl_dir) else []
+        _nearby = [
+            name for name in (os.listdir(_templates_dir) if os.path.isdir(_templates_dir) else [])
+            if "media" in name.lower() or "gallery" in name.lower()
+        ]
+        with open(os.path.join(_tpl_root, "debug-f20398.log"), "a", encoding="utf-8") as _dbg:
+            _dbg.write(_dbg_json.dumps({
+                "sessionId": "f20398",
+                "runId": "pre-fix",
+                "hypothesisId": "A",
+                "location": "app.py:school_media_gallery",
+                "message": "template path check before render",
+                "data": {
+                    "template": _tpl_name,
+                    "abs_path": _tpl_abs,
+                    "file_exists": os.path.isfile(_tpl_abs),
+                    "dir_exists": os.path.isdir(_tpl_dir),
+                    "dir_listing": _dir_listing,
+                    "nearby": _nearby,
+                    "root_path": _tpl_root,
+                    "template_folder": _tpl_folder,
+                    "cwd": os.getcwd(),
+                    "item_count": len(items),
+                },
+                "timestamp": int(_dbg_time.time() * 1000),
+            }) + "\n")
+    except Exception:
+        pass
+    # #endregion
+
+    try:
+        _gallery_response = render_template(
+            "school_media/gallery.html",
+            items=items,
+            active_year=active_year,
+            years=years,
+            selected_category=category,
+            selected_type=media_type,
+            selected_year_id=year_id,
+            youtube_embed_url=_youtube_embed_url,
+        )
+    except Exception as exc:
+        # #region agent log
+        try:
+            import json as _dbg_json
+            import time as _dbg_time
+            with open(os.path.join(current_app.root_path, "debug-f20398.log"), "a", encoding="utf-8") as _dbg:
+                _dbg.write(_dbg_json.dumps({
+                    "sessionId": "f20398",
+                    "runId": "pre-fix",
+                    "hypothesisId": "C",
+                    "location": "app.py:school_media_gallery:render",
+                    "message": "render_template failed",
+                    "data": {
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                        "searchpath": list(getattr(current_app.jinja_loader, "searchpath", [])),
+                    },
+                    "timestamp": int(_dbg_time.time() * 1000),
+                }) + "\n")
+        except Exception:
+            pass
+        # #endregion
+        raise
+    # #region agent log
+    try:
+        import json as _dbg_json
+        import time as _dbg_time
+        with open(os.path.join(current_app.root_path, "debug-f20398.log"), "a", encoding="utf-8") as _dbg:
+            _dbg.write(_dbg_json.dumps({
+                "sessionId": "f20398",
+                "runId": "post-fix",
+                "hypothesisId": "A",
+                "location": "app.py:school_media_gallery:success",
+                "message": "gallery template rendered",
+                "data": {"status": "ok", "item_count": len(items)},
+                "timestamp": int(_dbg_time.time() * 1000),
+            }) + "\n")
+    except Exception:
+        pass
+    # #endregion
+    return _gallery_response
 
 
 @app.route("/school-media/manage")
@@ -11425,17 +11618,6 @@ def teacher_dashboard():
                     grade_published_count += 1
             grade_pending_count = max(grade_student_count - grade_graded_count, 0)
 
-        requested_tab = request.args.get('tab')
-        if requested_tab == 'grades' and grade_class_id:
-            return redirect(
-                url_for(
-                    'grade_entry_class',
-                    class_id=grade_class_id,
-                    subject=grade_subject or None,
-                    period=grade_period,
-                )
-            )
-
         active_tab = request.args.get('tab')
         if not active_tab:
             if request.args.get('activity_class_id', type=int):
@@ -12251,17 +12433,13 @@ def attendance_class_day_detail(class_id, date_str):
 @app.route('/teacher/class/<int:class_id>/grading', methods=['GET'])
 @login_required
 def class_grading_hub(class_id):
-    """Legacy grading hub endpoint.
-
-    Professional workflow policy: send teachers directly to the official
-    report-card style entry sheet.
-    """
+    """Send teachers to the dashboard class grade sheet."""
     if normalize_role(current_user) != 'teacher':
         flash('Access denied.', 'danger')
         return redirect(url_for('login'))
 
     teacher = Teacher.query.filter_by(user_id=current_user.id).first()
-    klass = Class.query.get_or_404(class_id)
+    Class.query.get_or_404(class_id)
     if not teacher or not teacher_can_access_class(teacher, current_user, class_id):
         flash('You are not assigned to this class.', 'danger')
         return redirect(url_for('teacher_dashboard'))
@@ -12280,14 +12458,7 @@ def class_grading_hub(class_id):
     if selected_period not in range(1, 9):
         selected_period = 1
 
-    return redirect(
-        url_for(
-            'grade_entry_class',
-            class_id=class_id,
-            subject=selected_subject,
-            period=selected_period,
-        )
-    )
+    return redirect(_teacher_class_grades_url(class_id, selected_subject, selected_period))
 
 
 @app.route('/teacher/sponsor/<int:class_id>', methods=['GET'])
@@ -15135,18 +15306,18 @@ def build_student_financials_business_summary(student, academic_year):
         academic_year_id=academic_year.id
     ).all()
 
-    # Distinguish transaction types via their ledger audit descriptions
-    registration_paid = sum(
-        Decimal(str(p.amount_paid)) for p in payments 
-        if "registration" in (p.description or "").lower()
-    )
-    
-    tuition_paid = sum(
-        Decimal(str(p.amount_paid)) for p in payments 
-        if "tuition" in (p.description or "").lower()
-    )
-
-    total_collected = sum(Decimal(str(p.amount_paid)) for p in payments)
+    from registry_desk import CHARGE_REGISTRATION, CHARGE_SCHOOL_FEES, classify_student_payment
+    registration_paid = Decimal('0.00')
+    tuition_paid = Decimal('0.00')
+    total_collected = Decimal('0.00')
+    for payment in payments:
+        amount = Decimal(str(payment.amount_paid or 0))
+        total_collected += amount
+        bucket = classify_student_payment(payment)
+        if bucket == CHARGE_REGISTRATION:
+            registration_paid += amount
+        elif bucket == CHARGE_SCHOOL_FEES:
+            tuition_paid += amount
 
     return {
         "tuition_paid": tuition_paid,
@@ -15258,12 +15429,19 @@ def _registration_receipt_meta(payment, student):
         'remaining': remaining,
         'fee_status': fee_status,
         'receipt_reference': receipt_reference,
-        'receipt_no': 'SP-{}'.format(payment.id) if payment else '—',
+        'receipt_no': (
+            getattr(payment, 'receipt_number', None)
+            or ('SP-{}'.format(payment.id) if payment else '—')
+        ),
     }
 
 
 def _is_registration_fee_payment(payment):
-    return 'registration' in ((payment.description or '') if payment else '').lower()
+    if not payment:
+        return False
+    if (getattr(payment, 'fee_kind', None) or '') == 'registration':
+        return True
+    return 'registration' in ((payment.description or '')).lower()
 
 
 def _render_registrar_registration_receipt(payment):
@@ -15345,6 +15523,10 @@ def sync_registration_fee_ledger(
                     income_tx.amount = fee_amount
             if payment_status or receipt_reference:
                 existing_reg_payment.description = description
+            if not getattr(existing_reg_payment, 'receipt_number', None):
+                existing_reg_payment.receipt_number = _next_registry_receipt_if_needed()
+            existing_reg_payment.collection_desk = existing_reg_payment.collection_desk or 'registry'
+            existing_reg_payment.fee_kind = existing_reg_payment.fee_kind or 'registration'
         return existing_reg_payment
 
     return record_student_payment_with_income(
@@ -15354,7 +15536,129 @@ def sync_registration_fee_ledger(
         amount_paid=fee_amount,
         description=description,
         installment=1,
+        collected_by_user_id=getattr(current_user, 'id', None) if has_request_context() else None,
+        receipt_number=_next_registry_receipt_if_needed(),
+        collection_desk='registry',
+        fee_kind='registration',
     )
+
+
+def _next_registry_receipt_if_needed():
+    from registry_desk import next_registry_receipt_number
+    try:
+        return next_registry_receipt_number()
+    except Exception:
+        return None
+
+
+def _student_payment_income_marker(payment_id):
+    return f"[SP-{payment_id}]"
+
+
+def _payment_is_registry_till(payment=None, collection_desk=None, receipt_number=None, description=None):
+    desk = (collection_desk if collection_desk is not None else getattr(payment, 'collection_desk', None) or '')
+    receipt = (receipt_number if receipt_number is not None else getattr(payment, 'receipt_number', None) or '')
+    desc = (description if description is not None else getattr(payment, 'description', None) or '')
+    desk = str(desk).strip().lower()
+    receipt = str(receipt)
+    desc = str(desc).strip().lower()
+    return desk == 'registry' or receipt.startswith('REG-') or desc.startswith('registry day book')
+
+
+def find_income_transaction_for_payment(payment_id):
+    marker = _student_payment_income_marker(payment_id)
+    return BusinessTransaction.query.filter(
+        BusinessTransaction.description.like(f"%{marker}%"),
+        BusinessTransaction.is_deleted.is_(False),
+    ).first()
+
+
+def post_income_for_student_payment(student, payment):
+    """Post one student receipt onto the official Business income ledger. Idempotent."""
+    if not payment:
+        return None, False
+    existing = find_income_transaction_for_payment(payment.id)
+    if existing:
+        return existing, False
+    amount = parse_currency_amount_optional(payment.amount_paid)
+    if amount <= 0 or not student:
+        return None, False
+    academic_year = db.session.get(AcademicYear, payment.academic_year_id) if payment.academic_year_id else None
+    paid_at = payment.paid_on or datetime.now(timezone.utc)
+    if hasattr(paid_at, 'strftime'):
+        date_label = paid_at.strftime("%Y-%m-%d")
+    else:
+        date_label = str(paid_at)[:10]
+    prev_balance = get_running_business_balance()
+    income_tx = BusinessTransaction(
+        date=date_label,
+        type="income",
+        amount=amount,
+        category=categorize_fee_payment(payment.description),
+        description=(
+            f"{_student_payment_income_marker(payment.id)} Fee payment from {student.full_name} "
+            f"({student.student_id}): {payment.description or 'Student Fee'}"
+        ),
+        balance_after=parse_currency_amount_optional(prev_balance) + amount,
+        academic_year=academic_year.name if academic_year else None,
+        currency=normalize_currency(getattr(payment, 'currency', None)),
+    )
+    db.session.add(income_tx)
+    db.session.flush()
+    return income_tx, True
+
+
+def pending_registry_bursar_payment_ids():
+    """Registry receipts on a daily sheet that Business has not acknowledged yet."""
+    try:
+        from registry_desk import HANDOVER_SUBMITTED, _registry_desk_filter
+    except Exception:
+        logger.exception('Registry desk helpers could not load; Business dashboard will continue.')
+        return []
+    rows = (
+        db.session.query(StudentPayment.id, RegistryDailyHandover.status)
+        .outerjoin(RegistryDailyHandover, StudentPayment.handover_id == RegistryDailyHandover.id)
+        .filter(_registry_desk_filter())
+        .all()
+    )
+    return [payment_id for payment_id, status in rows if status == HANDOVER_SUBMITTED]
+
+
+def recognize_registry_handover_income(handover):
+    """When the bursar signs the daily sheet, cash is booked as official school income."""
+    from registry_desk import registry_takings_query
+    if not handover:
+        return 0, 0.0
+    payments = list(handover.payments or [])
+    if not payments:
+        payments = registry_takings_query(handover.business_date).all()
+    posted = 0
+    total = Decimal('0')
+    for payment in payments:
+        student = db.session.get(Student, payment.student_id)
+        _tx, created = post_income_for_student_payment(student, payment)
+        if created:
+            posted += 1
+            total += Decimal(str(payment.amount_paid or 0))
+    return posted, float(total)
+
+
+def _resolved_student_charge(fee_kind, term=None, installment=None, extra=None):
+    """Keep semester/installment only on school fees; default other charges cleanly."""
+    from registry_desk import (
+        classify_student_payment,
+        fee_kind_label,
+        normalize_charge_period,
+        payment_shows_semester_installment,
+    )
+    kind = (fee_kind or 'tuition').strip() or 'tuition'
+    note = (extra or '').strip()
+    term_n, inst_n = normalize_charge_period(kind, term, installment, note)
+    if payment_shows_semester_installment(fee_kind=kind):
+        particulars = note or billing_period_label(term_n, inst_n)
+    else:
+        particulars = note or fee_kind_label(kind)
+    return kind, term_n, inst_n, particulars, classify_student_payment(fee_kind=kind, description=note)
 
 
 def record_student_payment_with_income(
@@ -15366,19 +15670,23 @@ def record_student_payment_with_income(
     *,
     installment=None,
     paid_on=None,
+    collected_by_user_id=None,
+    receipt_number=None,
+    collection_desk=None,
+    fee_kind=None,
+    handover_id=None,
+    currency=None,
 ):
     """
-    Record a student fee and mirror it as business income in one atomic ledger cycle.
-    Returns the StudentPayment row, or None when amount is zero/invalid.
+    Record a student fee. Business-office collections hit official income immediately.
+    Registry till collections credit the student at once, but official income waits
+    until the Business Manager acknowledges that day's cash sheet.
     """
     amount = parse_currency_amount_optional(amount_paid)
     if amount <= 0 or not student:
         return None
 
-    academic_year = db.session.get(AcademicYear, academic_year_id) if academic_year_id else None
-    year_name = academic_year.name if academic_year else None
     payment_description = (description or "Tuition Payment").strip()
-    category = categorize_fee_payment(payment_description)
     paid_at = paid_on or datetime.now(timezone.utc)
 
     payment = StudentPayment(
@@ -15387,29 +15695,30 @@ def record_student_payment_with_income(
         term=term,
         installment=installment,
         amount_paid=amount,
+        currency=normalize_currency(currency),
         description=payment_description,
         paid_on=paid_at,
+        collected_by_user_id=collected_by_user_id,
+        receipt_number=receipt_number,
+        collection_desk=collection_desk,
+        fee_kind=fee_kind,
+        handover_id=handover_id,
     )
     db.session.add(payment)
     db.session.flush()
-
-    student_name = student.full_name
-    marker = f"[SP-{payment.id}]"
-    prev_balance = get_running_business_balance()
-    income_tx = BusinessTransaction(
-        date=paid_at.strftime("%Y-%m-%d"),
-        type="income",
-        amount=amount,
-        category=category,
-        description=(
-            f"{marker} Fee payment from {student_name} "
-            f"({student.student_id}): {payment_description}"
-        ),
-        balance_after=parse_currency_amount_optional(prev_balance) + amount,
-        academic_year=year_name,
-    )
-    db.session.add(income_tx)
     maybe_activate_registration_from_payment(student, payment_description)
+
+    if _payment_is_registry_till(payment):
+        try:
+            from registry_desk import refresh_registry_draft
+            clerk_id = collected_by_user_id
+            if clerk_id is None and has_request_context() and getattr(current_user, 'is_authenticated', False):
+                clerk_id = current_user.id
+            refresh_registry_draft(paid_at, academic_year_id, clerk_id)
+        except Exception:
+            logger.exception('Could not refresh the registry clerk draft.')
+    else:
+        post_income_for_student_payment(student, payment)
     return payment
 
 
@@ -15424,6 +15733,11 @@ def backfill_student_payments_to_income_ledger():
         ).first()
         if existing:
             continue
+        if _payment_is_registry_till(payment):
+            handover = getattr(payment, 'handover', None)
+            from registry_desk import HANDOVER_ACKNOWLEDGED
+            if not handover or handover.status != HANDOVER_ACKNOWLEDGED:
+                continue
 
         student = db.session.get(Student, payment.student_id)
         if not student:
@@ -15448,6 +15762,7 @@ def backfill_student_payments_to_income_ledger():
             ),
             balance_after=parse_currency_amount_optional(prev_balance) + amount,
             academic_year=academic_year.name if academic_year else None,
+            currency=normalize_currency(getattr(payment, 'currency', None)),
         )
         db.session.add(income_tx)
         created += 1
@@ -15458,13 +15773,22 @@ def backfill_student_payments_to_income_ledger():
 
 
 def sum_business_ledger(tx_type, active_year=None):
-    """Sum business ledger amounts, optionally scoped to the active academic year."""
+    """Sum official books. Registry till cash is excluded until the daily sheet is acknowledged."""
     query = db.session.query(func.sum(BusinessTransaction.amount)).filter(
         BusinessTransaction.type == tx_type,
         BusinessTransaction.is_deleted.is_(False),
     )
     if active_year:
         query = query.filter(BusinessTransaction.academic_year == active_year.name)
+    if tx_type == 'income':
+        pending_ids = pending_registry_bursar_payment_ids()
+        if pending_ids:
+            query = query.filter(
+                ~or_(*[
+                    BusinessTransaction.description.like(f"%{_student_payment_income_marker(pid)}%")
+                    for pid in pending_ids
+                ])
+            )
     return money(query.scalar() or 0)
 
 
@@ -15499,6 +15823,12 @@ def populate_business_payment_form(
             payment_form.description.data = "Tuition Payment"
         if payment_form.term.data is None:
             payment_form.term.data = 1
+        if getattr(payment_form, 'installment', None) is not None and payment_form.installment.data in (None, ''):
+            payment_form.installment.data = 1
+        if getattr(payment_form, 'fee_kind', None) is not None and not payment_form.fee_kind.data:
+            payment_form.fee_kind.data = 'tuition'
+        if not payment_form.currency.data:
+            payment_form.currency.data = 'USD'
 
 
 def build_business_class_roster(klass_id, active_year, *, viewing_archived=False):
@@ -15518,7 +15848,9 @@ def build_business_class_roster(klass_id, active_year, *, viewing_archived=False
             "full_name": student.full_name,
             "student_id": student.student_id,
             "yearly_fee": money(financials["yearly_fee"]),
+            "yearly_paid": money(financials["tuition_paid"]),
             "total_paid": money(financials["total_paid"]),
+            "other_charges_paid": money(financials.get("other_charges_paid") or financials.get("utility_paid") or 0),
             "balance": money(financials["tuition_balance"]),
             "tuition_cleared": student.tuition_cleared,
             "is_registered": student.is_registered,
@@ -15783,6 +16115,48 @@ def build_business_dashboard_context(
         "selected_year": selected_year_name,
         "display_year": display_year,
         "viewing_archived": viewing_archived,
+        **_business_registry_inbox_context(),
+    }
+
+
+def _business_registry_inbox_context():
+    from account_lifecycle import summarize_daily_collections
+    from registry_desk import pending_registry_handovers, HANDOVER_SUBMITTED
+    try:
+        daily = summarize_daily_collections()
+    except Exception:
+        daily = {'date': datetime.now().date(), 'count': 0, 'total': 0.0, 'payments': []}
+    try:
+        records = pending_registry_handovers()
+    except Exception:
+        records = []
+    pending = [row for row in records if row.status == HANDOVER_SUBMITTED]
+    live = None
+    live_payments = []
+    try:
+        from registry_desk import summarize_registry_till
+        live = summarize_registry_till()
+        if live.get('dispatched'):
+            live_payments = live.get('payments') or []
+        else:
+            live_payments = []
+            live = dict(live or {})
+            live['count'] = 0
+            live['total'] = 0
+    except Exception:
+        logger.exception('Business registry live till failed')
+    return {
+        'daily_collections_date': daily.get('date'),
+        'daily_collections_count': daily.get('count') or 0,
+        'daily_collections_total': daily.get('total') or 0,
+        'registry_handovers': records,
+        'registry_handovers_pending': pending,
+        'registry_handovers_pending_count': len(pending),
+        'registry_live_till': live,
+        'registry_live_payments': live_payments,
+        'registry_awaiting_income_total': money(sum(
+            parse_currency_amount_optional(row.total_amount) for row in pending
+        )),
     }
 
 
@@ -17125,8 +17499,230 @@ def build_registrar_dashboard_context(form=None, search_class=None):
         'next_display_year': next_display_year,
         'prev_year_url': prev_year_url,
         'next_year_url': next_year_url,
+        'registry_till': _registry_till_snapshot(display_year),
+        **_registry_dashboard_report_context(),
+        'registry_tx_form': None,
+        'registry_payment_form': None,
+        'class_registration_fees': _class_registration_fees_map(display_year, all_class_rows),
         **roster_folder_ctx,
     }
+
+
+def _class_registration_fees_map(display_year, class_rows):
+    fees = {}
+    if not display_year:
+        return fees
+    for klass in class_rows or []:
+        fees[klass.id] = money(get_class_registration_fee(klass.id, display_year.id) or 0)
+    return fees
+
+
+def _registry_till_snapshot(display_year=None):
+    from registry_desk import summarize_registry_till
+    try:
+        return summarize_registry_till(academic_year_id=None)
+    except Exception:
+        logger.exception('Registry till snapshot failed')
+        return {
+            'date': datetime.now().date(),
+            'payments': [],
+            'count': 0,
+            'total': 0.0,
+            'status': 'open',
+            'can_collect': True,
+            'dispatched': False,
+            'handover': None,
+        }
+
+
+def _registry_dashboard_report_context():
+    from registry_desk import fee_kind_label, recent_registry_daily_reports, summarize_registry_till
+    try:
+        till = summarize_registry_till()
+        reports = recent_registry_daily_reports(14)
+    except Exception:
+        logger.exception('Registry daily report panel failed')
+        till = {
+            'date': datetime.now().date(),
+            'payments': [],
+            'count': 0,
+            'total': 0.0,
+            'status': 'open',
+            'handover': None,
+            'dispatched': False,
+        }
+        reports = []
+    return {
+        'registry_daily_report': till,
+        'registry_recent_reports': reports,
+        'fee_kind_label': fee_kind_label,
+    }
+
+
+def _registry_ledger_form_context(display_year):
+    try:
+        tx_form, payment_form = _registry_ledger_forms(display_year)
+        return {'registry_tx_form': tx_form, 'registry_payment_form': payment_form}
+    except Exception:
+        current_app.logger.exception('Registry cash desk forms failed to build')
+        return {'registry_tx_form': None, 'registry_payment_form': None}
+
+
+def _registry_ledger_forms(display_year):
+    """Daily transaction + student payment forms for the Registry cash desk."""
+    tx_form = TransactionForm()
+    payment_form = PaymentForm()
+    try:
+        from registry_desk import FEE_KIND_CHOICES as _fee_kinds
+        if getattr(payment_form, 'fee_kind', None) is not None:
+            payment_form.fee_kind.choices = list(_fee_kinds)
+    except Exception:
+        pass
+    years = all_academic_years()
+    payment_form.academic_year.choices = [(y.id, y.name) for y in years] or [(0, 'No year')]
+    year_obj = display_year or get_active_academic_year()
+    if request.method == 'GET':
+        if not tx_form.date.data:
+            tx_form.date.data = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        if getattr(tx_form, 'currency', None) is not None and not tx_form.currency.data:
+            tx_form.currency.data = 'USD'
+        if getattr(payment_form, 'currency', None) is not None and not payment_form.currency.data:
+            payment_form.currency.data = 'USD'
+        if year_obj:
+            payment_form.academic_year.data = year_obj.id
+        if payment_form.term.data is None:
+            payment_form.term.data = 1
+        if getattr(payment_form, 'installment', None) is not None and payment_form.installment.data in (None, ''):
+            payment_form.installment.data = 1
+        if getattr(payment_form, 'fee_kind', None) is not None and not payment_form.fee_kind.data:
+            payment_form.fee_kind.data = 'tuition'
+    payment_year = year_obj
+    posted_year_id = request.form.get('academic_year', type=int) if request.method == 'POST' else None
+    if posted_year_id:
+        payment_year = db.session.get(AcademicYear, posted_year_id) or year_obj
+    elif payment_form.academic_year.data:
+        payment_year = db.session.get(AcademicYear, payment_form.academic_year.data) or year_obj
+    payment_form.student.choices = [
+        (s.id, f"{s.first_name} {s.last_name} ({s.student_id})")
+        for s in list_payment_students_for_year(payment_year)
+    ] or [(0, 'No registered students')]
+    return tx_form, payment_form
+
+
+def _handle_registry_ledger_post(display_year):
+    """Registry performs daily income/expense posting and student collections."""
+    from utils import parse_currency_amount
+    from registry_desk import (
+        COLLECTION_DESK_REGISTRY,
+        next_registry_receipt_number,
+        registry_payment_description,
+        summarize_registry_till,
+    )
+
+    tx_form, payment_form = _registry_ledger_forms(display_year)
+    year_name = display_year.name if display_year else (get_active_academic_year().name if get_active_academic_year() else '')
+
+    if 'submit_transaction' in request.form:
+        if tx_form.validate_on_submit():
+            try:
+                last_tx = BusinessTransaction.query.filter_by(is_deleted=False).order_by(BusinessTransaction.id.desc()).first()
+                prev_balance = last_tx.balance_after if last_tx and last_tx.balance_after else 0.0
+                amount = parse_currency_amount(tx_form.amount.data)
+                prev_balance_decimal = parse_currency_amount_optional(prev_balance)
+                new_balance = (
+                    prev_balance_decimal + amount
+                    if tx_form.type.data == 'income'
+                    else prev_balance_decimal - amount
+                )
+                note = (tx_form.description.data or '').strip()
+                description = f'Registry desk — {note}' if note else 'Registry desk transaction'
+                currency = 'USD'
+                if getattr(tx_form, 'currency', None) is not None:
+                    currency = normalize_currency(tx_form.currency.data)
+                new_tx = BusinessTransaction(
+                    date=tx_form.date.data,
+                    type=tx_form.type.data,
+                    amount=amount,
+                    currency=currency,
+                    category=(tx_form.category.data or 'Registry').strip() or 'Registry',
+                    description=description[:250],
+                    balance_after=new_balance,
+                    academic_year=year_name,
+                )
+                db.session.add(new_tx)
+                db.session.commit()
+                flash(
+                    f'Daily {(tx_form.type.data or "transaction")} posted from Registry: '
+                    f'{format_school_money(amount, currency)}.',
+                    'success',
+                )
+            except Exception as exc:
+                db.session.rollback()
+                logger.exception('Registry daily transaction failed')
+                flash(f'Could not post the daily transaction: {exc}', 'danger')
+        else:
+            for field, errors in tx_form.errors.items():
+                for err in errors:
+                    flash(f'{field}: {err}', 'danger')
+        return redirect(url_for('registrar_dashboard') + '#registry-ledger-desk')
+
+    if 'submit_payment' in request.form:
+        till = summarize_registry_till()
+        if not till.get('can_collect'):
+            flash('Today’s sheet is already sent to Business. Collecting is closed until tomorrow.', 'warning')
+            return redirect(url_for('registry_daily_sheet'))
+        if payment_form.validate_on_submit():
+            try:
+                student = db.session.get(Student, payment_form.student.data)
+                if not student:
+                    flash('Student record not found.', 'danger')
+                    return redirect(url_for('registrar_dashboard') + '#registry-ledger-desk')
+                amount = parse_currency_amount(payment_form.amount_paid.data)
+                year_id = payment_form.academic_year.data or (display_year.id if display_year else None)
+                if not year_id:
+                    flash('Set an academic year before collecting fees.', 'danger')
+                    return redirect(url_for('registrar_dashboard') + '#registry-ledger-desk')
+                fee_kind, term, installment, _particulars, _bucket = _resolved_student_charge(
+                    (getattr(payment_form, 'fee_kind', None) and payment_form.fee_kind.data) or 'tuition',
+                    payment_form.term.data,
+                    payment_form.installment.data,
+                    payment_form.description.data,
+                )
+                note = (payment_form.description.data or '').strip()
+                receipt_no = next_registry_receipt_number()
+                currency = 'USD'
+                if getattr(payment_form, 'currency', None) is not None:
+                    currency = payment_form.currency.data
+                payment = record_student_payment_with_income(
+                    student,
+                    year_id,
+                    term=term,
+                    amount_paid=amount,
+                    description=registry_payment_description(
+                        fee_kind, extra=note, term=term, installment=installment,
+                    ),
+                    installment=installment,
+                    collected_by_user_id=current_user.id,
+                    receipt_number=receipt_no,
+                    collection_desk=COLLECTION_DESK_REGISTRY,
+                    fee_kind=fee_kind,
+                    currency=currency,
+                )
+                db.session.commit()
+                flash(f'Fee collected. Official receipt {receipt_no} is ready to print.', 'success')
+                if payment:
+                    return redirect(url_for('print_registry_receipt', payment_id=payment.id))
+            except Exception as exc:
+                db.session.rollback()
+                logger.exception('Registry student payment failed')
+                flash(f'Could not record the student payment: {exc}', 'danger')
+        else:
+            for field, errors in payment_form.errors.items():
+                for err in errors:
+                    flash(f'{field}: {err}', 'danger')
+        return redirect(url_for('registrar_dashboard') + '#registry-ledger-desk')
+
+    return redirect(url_for('registrar_dashboard'))
 
 
 def persist_student_guardian_name(student, form=None, raw=None):
@@ -17324,6 +17920,12 @@ def register_student():
     form = RegisterStudentForm()
     context = build_registrar_dashboard_context(form=form)
 
+    if request.method == 'POST' and (
+        'submit_transaction' in request.form or 'submit_payment' in request.form
+    ):
+        flash('Collect fees in the Registry Day Book.', 'info')
+        return redirect(url_for('registry_day_book'))
+
     # 4. Handle POST requests: Process form submissions
     if request.method == 'POST':
         _prepare_register_student_form(form, display_year=context.get('display_year'))
@@ -17485,6 +18087,707 @@ def register_student():
     return render_template('dashboard_registrar.html', **context)
 
 
+def _require_registry_day_book():
+    if canonical_role(current_user) not in {"admin", "principal", "registrar"}:
+        flash("Unauthorized access.", "danger")
+        return redirect(url_for('login'))
+    return None
+
+
+@app.route('/registrar/student-fee-plan', methods=['GET'], endpoint='registry_student_fee_plan')
+@login_required
+def registry_student_fee_plan_view():
+    denied = _require_registry_day_book()
+    if denied:
+        return denied
+    student_id = request.args.get('student_id', type=int)
+    year_id = request.args.get('academic_year_id', type=int)
+    student = db.session.get(Student, student_id) if student_id else None
+    if not student:
+        return jsonify({'error': 'Select a registered student.'}), 404
+    year = db.session.get(AcademicYear, year_id) if year_id else get_active_academic_year()
+    return jsonify(student_school_fee_plan(student, year))
+
+
+def _build_registry_fee_cabinet(display_year, *, viewing_archived=False):
+    """Class → registered student → specific fee, matching Business Collect Tuition."""
+    search_class = (request.args.get('search_class') or '').strip()
+    search_student = (request.args.get('search_student') or '').strip()
+    selected_class_id = request.args.get('class_id', type=int) or request.form.get('class_id', type=int)
+    selected_student_id = request.args.get('student_id', type=int) or request.form.get('student_id', type=int)
+
+    class_rows = []
+    for klass in list_assignable_registration_classes():
+        if search_class and search_class.lower() not in (klass.name or '').lower():
+            continue
+        students = get_class_students_for_year(
+            klass.id, display_year, viewing_archived=viewing_archived,
+        ) if display_year else []
+        class_rows.append({
+            'id': klass.id,
+            'klass': klass,
+            'name': klass.name,
+            'division_label': division_label_for_class(klass),
+            'student_count': len(students),
+            'registered_count': sum(1 for student in students if student.is_registered),
+        })
+
+    roster = []
+    selected_student = None
+    selected_summary = None
+    registration_fee = 0.0
+    if selected_class_id and display_year:
+        registration_fee = money(get_class_registration_fee(selected_class_id, display_year.id) or 0)
+        needle = search_student.lower()
+        for student in get_class_students_for_year(
+            selected_class_id, display_year, viewing_archived=viewing_archived,
+        ):
+            if needle and needle not in (student.full_name or '').lower() and needle not in str(student.student_id or '').lower():
+                continue
+            financials = build_student_financials(student, display_year)
+            row = {
+                'id': student.id,
+                'full_name': student.full_name,
+                'student_id': student.student_id,
+                'is_registered': bool(student.is_registered),
+                'registration_paid': money(financials.get('registration_paid') or 0),
+                'total_paid': money(financials.get('total_paid') or 0),
+            }
+            roster.append(row)
+            if student.id == selected_student_id:
+                selected_student = student
+                selected_summary = row
+    if selected_student_id and not selected_student:
+        selected_student = db.session.get(Student, selected_student_id)
+
+    selected_payments = []
+    if selected_student_id and display_year:
+        selected_payments = (
+            StudentPayment.query.filter_by(
+                student_id=selected_student_id,
+                academic_year_id=display_year.id,
+            )
+            .order_by(StudentPayment.paid_on.desc(), StudentPayment.id.desc())
+            .limit(8)
+            .all()
+        )
+
+    return {
+        'search_class': search_class,
+        'search_student': search_student,
+        'selected_class_id': selected_class_id,
+        'selected_student_id': selected_student_id,
+        'selected_student': selected_student,
+        'selected_student_summary': selected_summary,
+        'selected_student_payments': selected_payments,
+        'fee_class_rows': class_rows,
+        'fee_classes_by_division': group_items_by_class(class_rows, lambda row: row.get('klass')),
+        'fee_class_roster': roster,
+        'registration_fee_due': registration_fee,
+        'school_fee_plan': (
+            student_school_fee_plan(selected_student, display_year)
+            if selected_student else None
+        ),
+    }
+
+
+def _require_business_registry_inbox():
+    if canonical_role(current_user) not in {"admin", "principal", "business", "vpi"}:
+        flash("Unauthorized access.", "danger")
+        return redirect(url_for('login'))
+    return None
+
+
+@app.route('/registrar/day-book', methods=['GET', 'POST'], endpoint='registry_day_book')
+@login_required
+def registry_day_book():
+    """Registry counter: collect fees, print receipts, send the daily record to Business."""
+    denied = _require_registry_day_book()
+    if denied:
+        return denied
+    from registry_desk import (
+        COLLECTION_DESK_REGISTRY,
+        FEE_KIND_CHOICES,
+        fee_kind_label,
+        next_registry_receipt_number,
+        registry_payment_description,
+        summarize_registry_till,
+        close_registry_day,
+        HANDOVER_OPEN,
+    )
+    from utils import parse_currency_amount
+
+    display_year, _active, years, viewing_archived = resolve_dashboard_academic_year(
+        session_key=REGISTRAR_YEAR_SESSION_KEY,
+    )
+    cabinet = _build_registry_fee_cabinet(display_year, viewing_archived=viewing_archived)
+    collect_form = RegistryCollectFeeForm()
+    collect_form.fee_kind.choices = list(FEE_KIND_CHOICES)
+    collect_form.currency.choices = list(CURRENCY_CHOICES)
+    close_form = RegistryCloseDayForm()
+    till = summarize_registry_till()
+    if request.method == 'GET' and cabinet.get('selected_student'):
+        collect_form.student_id.data = str(cabinet['selected_student'].id)
+        collect_form.student_code.data = cabinet['selected_student'].student_id
+        if cabinet.get('registration_fee_due') and not collect_form.amount.data:
+            collect_form.fee_kind.data = collect_form.fee_kind.data or 'registration'
+            if collect_form.fee_kind.data == 'registration':
+                collect_form.amount.data = f"{cabinet['registration_fee_due']:.2f}"
+
+    if request.method == 'POST' and request.form.get('day_book_action') == 'close':
+        if not till.get('can_collect'):
+            flash('This Day Book is for a previous school day and cannot take new collections.', 'warning')
+            return redirect(url_for('registry_day_book'))
+        if close_form.validate_on_submit() or close_form.notes.data is not None:
+            handover, closed = close_registry_day(
+                till['date'],
+                getattr(display_year, 'id', None),
+                current_user.id,
+                notes=close_form.notes.data,
+            )
+            if not closed or not handover:
+                flash('Check today’s receipts, then send the sheet from Review & send.', 'warning')
+                return redirect(url_for('registry_daily_sheet'))
+            db.session.commit()
+            log_activity(
+                'REGISTRY_DAY_BOOK_CLOSED',
+                f'Daily record {handover.business_date} sent to Business Manager '
+                f'({handover.receipt_count} receipts, {till.get("total_label") or format_school_money(handover.total_amount)}).',
+                commit=True,
+            )
+            flash('Daily collection sheet sent to the Business Manager.', 'success')
+            return redirect(url_for('print_registry_daily_record', handover_id=handover.id))
+        flash('Could not close the Day Book. Check the form and try again.', 'danger')
+
+    if request.method == 'POST' and request.form.get('day_book_action') != 'close':
+        if not till.get('can_collect'):
+            flash('Today’s sheet is already sent to Business. Collecting is closed until tomorrow.', 'warning')
+            return redirect(url_for('registry_daily_sheet'))
+        collect_form.fee_kind.choices = list(FEE_KIND_CHOICES)
+        collect_form.currency.choices = list(CURRENCY_CHOICES)
+        if collect_form.validate_on_submit() or request.form.get('student_id') or collect_form.student_code.data:
+            student = None
+            student_pk = request.form.get('student_id', type=int)
+            if student_pk:
+                student = db.session.get(Student, student_pk)
+            if not student:
+                student = find_student_by_student_id(collect_form.student_code.data)
+            if not student:
+                flash('Pick a student from the class list, or enter a registry ID.', 'danger')
+            else:
+                try:
+                    amount = parse_currency_amount(collect_form.amount.data)
+                except ValueError as exc:
+                    flash(str(exc), 'danger')
+                    amount = 0
+                year_id = getattr(display_year, 'id', None) or student.academic_year_id
+                if amount > 0 and year_id:
+                    receipt_no = next_registry_receipt_number()
+                    fee_kind, term, installment, _particulars, _bucket = _resolved_student_charge(
+                        collect_form.fee_kind.data,
+                        collect_form.term.data,
+                        collect_form.installment.data,
+                        collect_form.notes.data,
+                    )
+                    payment = record_student_payment_with_income(
+                        student,
+                        year_id,
+                        term=term,
+                        amount_paid=amount,
+                        description=registry_payment_description(
+                            fee_kind,
+                            extra=collect_form.notes.data,
+                            receipt_reference=collect_form.receipt_reference.data,
+                            term=term,
+                            installment=installment,
+                        ),
+                        installment=installment,
+                        collected_by_user_id=current_user.id,
+                        receipt_number=receipt_no,
+                        collection_desk=COLLECTION_DESK_REGISTRY,
+                        fee_kind=fee_kind,
+                        currency=collect_form.currency.data,
+                    )
+                    db.session.commit()
+                    log_activity(
+                        'REGISTRY_FEE_COLLECTED',
+                        f'{receipt_no} {student.full_name} {format_school_money(amount, collect_form.currency.data)} ({fee_kind_label(fee_kind)}).',
+                        commit=True,
+                    )
+                    flash(f'Fee collected. Official receipt {receipt_no} is ready to print.', 'success')
+                    return redirect(url_for('print_registry_receipt', payment_id=payment.id))
+                if not year_id:
+                    flash('Set an academic year before collecting fees.', 'danger')
+        else:
+            flash('Pick a class and student, then enter the fee type and amount collected.', 'danger')
+
+    till = summarize_registry_till()
+    cabinet = _build_registry_fee_cabinet(display_year, viewing_archived=viewing_archived)
+    return render_template(
+        'registrar_day_book.html',
+        collect_form=collect_form,
+        close_form=close_form,
+        till=till,
+        display_year=display_year,
+        years=years,
+        viewing_archived=viewing_archived,
+        fee_kind_label=fee_kind_label,
+        format_student_class_name=format_student_class_name,
+        money=money,
+        **cabinet,
+    )
+
+
+@app.route('/registrar/day-book/sheet', methods=['GET', 'POST'], endpoint='registry_daily_sheet')
+@login_required
+def registry_daily_sheet():
+    """Clerk proofing desk: preview, correct, then send the day's sheet to Business."""
+    denied = _require_registry_day_book()
+    if denied:
+        return denied
+    from registry_desk import (
+        FEE_KIND_CHOICES,
+        HANDOVER_OPEN,
+        fee_kind_label,
+        refresh_registry_draft,
+        registry_payment_description,
+        submit_registry_daily_report,
+        summarize_registry_till,
+    )
+    from utils import parse_currency_amount
+
+    display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
+    till = summarize_registry_till()
+    handover = till.get('handover') or refresh_registry_draft(
+        till['date'], getattr(display_year, 'id', None), current_user.id,
+    )
+    till = summarize_registry_till()
+    close_form = RegistryCloseDayForm()
+    if handover and request.method == 'GET' and handover.notes:
+        close_form.notes.data = handover.notes
+
+    if request.method == 'POST':
+        action = (request.form.get('sheet_action') or '').strip()
+        draft = till.get('handover')
+        if not draft or draft.status != HANDOVER_OPEN:
+            flash('This sheet is already sent. Corrections must be made before sending.', 'warning')
+            return redirect(url_for('registry_daily_sheet'))
+
+        if action == 'save_line':
+            payment = StudentPayment.query.get_or_404(request.form.get('payment_id', type=int))
+            if payment.handover_id not in (None, draft.id):
+                flash('That receipt is not on today’s draft sheet.', 'danger')
+                return redirect(url_for('registry_daily_sheet'))
+            fee_kind = (request.form.get('fee_kind') or payment.fee_kind or 'other').strip()
+            allowed = {key for key, _label in FEE_KIND_CHOICES}
+            if fee_kind not in allowed:
+                fee_kind = payment.fee_kind or 'other'
+            try:
+                amount = parse_currency_amount(request.form.get('amount'))
+            except ValueError as exc:
+                flash(str(exc), 'danger')
+                return redirect(url_for('registry_daily_sheet'))
+            if amount <= 0:
+                flash('Amount must be greater than zero.', 'danger')
+                return redirect(url_for('registry_daily_sheet'))
+            line_note = (request.form.get('line_note') or '').strip()
+            payment.fee_kind = fee_kind
+            payment.amount_paid = amount
+            payment.currency = normalize_currency(request.form.get('currency') or payment.currency)
+            payment.description = registry_payment_description(fee_kind, extra=line_note)
+            refresh_registry_draft(till['date'], getattr(display_year, 'id', None), current_user.id)
+            db.session.commit()
+            log_activity(
+                'REGISTRY_SHEET_LINE_EDITED',
+                f'Corrected {payment.receipt_number or payment.id} to {fee_kind_label(fee_kind)} {format_school_money(amount, payment.currency)}.',
+                commit=True,
+            )
+            flash(f'Receipt {payment.receipt_number or payment.id} updated on the draft sheet.', 'success')
+            return redirect(url_for('registry_daily_sheet'))
+
+        if action == 'save_notes':
+            draft.notes = (close_form.notes.data or '').strip() or None
+            db.session.commit()
+            flash('Clerk note saved on the draft sheet.', 'success')
+            return redirect(url_for('registry_daily_sheet'))
+
+        if action == 'send':
+            handover, sent = submit_registry_daily_report(
+                till['date'],
+                getattr(display_year, 'id', None),
+                current_user.id,
+                notes=close_form.notes.data,
+            )
+            db.session.commit()
+            if not sent or not handover:
+                flash('Add at least one receipt, check the lines, then send.', 'warning')
+                return redirect(url_for('registry_daily_sheet'))
+            log_activity(
+                'REGISTRY_DAY_BOOK_CLOSED',
+                f'Daily sheet {handover.business_date} sent to Business Manager '
+                f'({handover.receipt_count} receipts, {till.get("total_label") or format_school_money(handover.total_amount)}).',
+                commit=True,
+            )
+            flash('Daily sheet sent to the Business Manager. Collecting for today is now closed.', 'success')
+            return redirect(url_for('print_registry_daily_record', handover_id=handover.id))
+
+    return render_template(
+        'registry_daily_sheet.html',
+        till=till,
+        handover=till.get('handover'),
+        close_form=close_form,
+        display_year=display_year,
+        fee_kind_choices=FEE_KIND_CHOICES,
+        currency_choices=CURRENCY_CHOICES,
+        fee_kind_label=fee_kind_label,
+        format_student_class_name=format_student_class_name,
+        money=money,
+        can_edit=bool(till.get('is_draft') and till.get('can_collect')),
+    )
+
+
+@app.route('/registrar/day-book/receipts/<int:payment_id>', methods=['GET'], endpoint='print_registry_receipt')
+@login_required
+def print_registry_receipt(payment_id):
+    denied = _require_registry_day_book()
+    if denied:
+        return denied
+    from registry_desk import fee_kind_label, payment_shows_semester_installment
+    payment = StudentPayment.query.get_or_404(payment_id)
+    student = db.session.get(Student, payment.student_id)
+    year = db.session.get(AcademicYear, payment.academic_year_id)
+    clerk = None
+    if payment.collected_by_user_id:
+        clerk = db.session.get(User, payment.collected_by_user_id)
+    return render_template(
+        'registry_official_receipt.html',
+        payment=payment,
+        student=student,
+        display_year=year,
+        class_label=format_student_class_name(student, payment.academic_year_id) if student else '—',
+        collected_by=(clerk.full_name if clerk else None) or current_user.full_name,
+        fee_kind_label=fee_kind_label(payment.fee_kind),
+        semester_name=semester_label(payment.term),
+        installment_name=installment_label(payment.installment) or '—',
+        billing_period=billing_period_label(payment.term, payment.installment),
+        show_billing_period=payment_shows_semester_installment(payment),
+        receipt_no=payment.receipt_number or f'SP-{payment.id}',
+        default_avatar_url=default_static_photo_url(),
+    )
+
+
+@app.route('/registrar/day-book/record/<int:handover_id>', methods=['GET'], endpoint='print_registry_daily_record')
+@login_required
+def print_registry_daily_record(handover_id):
+    if canonical_role(current_user) not in {"admin", "principal", "registrar", "business", "vpi"}:
+        flash("Unauthorized access.", "danger")
+        return redirect(url_for('login'))
+    from registry_desk import fee_kind_label, registry_takings_query
+    handover = RegistryDailyHandover.query.get_or_404(handover_id)
+    payments = list(handover.payments) if handover.payments else registry_takings_query(handover.business_date).all()
+    from registry_desk import money_label_for_payments
+    return render_template(
+        'registry_daily_record.html',
+        handover=handover,
+        payments=payments,
+        total_label=money_label_for_payments(payments, handover.total_amount),
+        fee_kind_label=fee_kind_label,
+        format_student_class_name=format_student_class_name,
+        money=money,
+        printed_by=current_user.full_name,
+        printed_at=datetime.now(timezone.utc),
+    )
+
+
+@app.route('/business/registry-records', methods=['GET'], endpoint='business_registry_records')
+@login_required
+def business_registry_records():
+    denied = _require_business_registry_inbox()
+    if denied:
+        return denied
+    from registry_desk import pending_registry_handovers, HANDOVER_SUBMITTED
+    acknowledge_form = RegistryAcknowledgeForm()
+    records = pending_registry_handovers()
+    return render_template(
+        'business_registry_records.html',
+        records=records,
+        pending_count=sum(1 for row in records if row.status == HANDOVER_SUBMITTED),
+        acknowledge_form=acknowledge_form,
+        money=money,
+    )
+
+
+@app.route(
+    '/business/registry-records/<int:handover_id>/acknowledge',
+    methods=['POST'],
+    endpoint='acknowledge_registry_daily_record',
+)
+@login_required
+def acknowledge_registry_daily_record(handover_id):
+    denied = _require_business_registry_inbox()
+    if denied:
+        return denied
+    from registry_desk import HANDOVER_ACKNOWLEDGED, HANDOVER_SUBMITTED, money_label_for_payments
+    handover = RegistryDailyHandover.query.get_or_404(handover_id)
+    form = RegistryAcknowledgeForm()
+    if handover.status != HANDOVER_SUBMITTED:
+        flash('That daily record is already acknowledged or still open at Registry.', 'warning')
+        return redirect(url_for('business_registry_records'))
+    posted_count, posted_total = recognize_registry_handover_income(handover)
+    handover.status = HANDOVER_ACKNOWLEDGED
+    handover.acknowledged_by_user_id = current_user.id
+    handover.acknowledged_at = datetime.now(timezone.utc)
+    if form.validate_on_submit():
+        handover.business_notes = (form.business_notes.data or '').strip() or None
+    db.session.commit()
+    posted_label = money_label_for_payments(handover.payments, posted_total)
+    log_activity(
+        'REGISTRY_DAY_BOOK_ACKNOWLEDGED',
+        f'Business acknowledged registry record for {handover.business_date} '
+        f'and posted {posted_label} to official income.',
+        commit=True,
+    )
+    if posted_total:
+        flash(
+            f'Daily record acknowledged. {posted_label} from {posted_count} '
+            f'receipt(s) is now on official school income.',
+            'success',
+        )
+    else:
+        flash(
+            f'Registry daily record for {handover.business_date.strftime("%d %b %Y")} acknowledged. '
+            f'That cash now counts in Total Income.',
+            'success',
+        )
+    return redirect(url_for('business_registry_records'))
+
+
+def _build_registry_period_print_cabinet(display_year, *, open_class_id=None):
+    """Released period print desk: class roster sheets and per-student period sheets."""
+    if not display_year:
+        return {
+            'folders': [],
+            'folders_by_division': [],
+            'open_class_id': None,
+            'released_count': 0,
+        }
+    year_id = display_year.id
+    approved_pairs = {
+        (row.class_id, row.period)
+        for row in GradeRelease.query.filter_by(
+            academic_year_id=year_id,
+            status=GradeRelease.STATUS_APPROVED,
+        ).all()
+    }
+    student_pairs = {
+        (row.student_id, row.period)
+        for row in StudentPeriodRelease.query.filter_by(
+            academic_year_id=year_id,
+            status=StudentPeriodRelease.STATUS_APPROVED,
+        ).all()
+    }
+    folders = []
+    released_count = 0
+    for klass in list_assignable_registration_classes():
+        students = get_class_students_for_year(klass.id, display_year)
+        period_slots = []
+        for period, label in GRADING_PERIODS:
+            released = (klass.id, period) in approved_pairs
+            if released:
+                released_count += 1
+            period_slots.append({
+                'period': period,
+                'label': label,
+                'released': released,
+            })
+        student_rows = []
+        for student in students:
+            slots = []
+            for period, label in GRADING_PERIODS:
+                released = (
+                    (klass.id, period) in approved_pairs
+                    or (student.id, period) in student_pairs
+                )
+                slots.append({
+                    'period': period,
+                    'label': label,
+                    'released': released,
+                })
+            student_rows.append({'student': student, 'periods': slots})
+        folders.append({
+            'klass': klass,
+            'name': klass.name,
+            'division_label': division_label_for_class(klass),
+            'student_count': len(students),
+            'period_slots': period_slots,
+            'students': student_rows,
+            'has_released': any(slot['released'] for slot in period_slots),
+        })
+    return {
+        'folders': folders,
+        'folders_by_division': group_items_by_class(folders, lambda folder: folder.get('klass')),
+        'open_class_id': open_class_id,
+        'released_count': released_count,
+    }
+
+
+@app.route('/registrar/period-sheets', methods=['GET'], endpoint='registry_period_sheets')
+@login_required
+def registry_period_sheets():
+    """Registry print desk for released class and student period grade sheets."""
+    denied = _require_registry_day_book()
+    if denied:
+        return denied
+    display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
+        session_key=REGISTRAR_YEAR_SESSION_KEY,
+    )
+    cabinet = _build_registry_period_print_cabinet(
+        display_year,
+        open_class_id=request.args.get('open_class_id', type=int),
+    )
+    return render_template(
+        'registrar_period_sheets.html',
+        display_year=display_year,
+        active_year=active_year,
+        years=years,
+        viewing_archived=viewing_archived,
+        **cabinet,
+    )
+
+
+@app.route(
+    '/registrar/period-sheets/class/<int:class_id>/<int:period>',
+    methods=['GET'],
+    endpoint='registry_class_period_sheet',
+)
+@login_required
+def registry_class_period_sheet(class_id, period):
+    """Print the official class roster for one released marking period."""
+    denied = _require_registry_day_book()
+    if denied:
+        return denied
+    if period not in range(1, 9):
+        flash('Unknown marking period.', 'danger')
+        return redirect(url_for('registry_period_sheets'))
+    display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
+    year_id = request.args.get('academic_year_id', type=int) or (display_year.id if display_year else None)
+    if not year_id:
+        flash('No academic year is selected.', 'danger')
+        return redirect(url_for('registry_period_sheets'))
+    if not is_grade_package_approved(year_id, class_id, period):
+        flash(
+            'Registry may print this class sheet only after the period grades are released.',
+            'warning',
+        )
+        return redirect(url_for('registry_period_sheets', academic_year_id=year_id, open_class_id=class_id))
+    klass = Class.query.get_or_404(class_id)
+    data = build_class_period_grade_sheet_data(class_id, period, year_id, approved_only=True)
+    if not data.get('klass'):
+        flash('No roster found for that class and academic year.', 'danger')
+        return redirect(url_for('registry_period_sheets', academic_year_id=year_id))
+    return render_template(
+        'class_period_grade_sheet.html',
+        data=data,
+        klass=klass,
+        period=period,
+        display_year=data.get('display_year'),
+        school_print_brand=school_print_brand(),
+        can_review=False,
+        back_endpoint='registry_period_sheets',
+        back_url=url_for('registry_period_sheets', academic_year_id=year_id, open_class_id=class_id),
+    )
+
+
+@app.route(
+    '/registrar/period-sheets/student/<int:student_id>',
+    methods=['GET'],
+    endpoint='registry_student_period_sheet',
+)
+@login_required
+def registry_student_period_sheet(student_id):
+    """Print one student's released period grade sheet."""
+    denied = _require_registry_day_book()
+    if denied:
+        return denied
+    period = _requested_marking_period()
+    if period not in range(1, 9):
+        flash('Choose a released marking period to print.', 'warning')
+        return redirect(url_for('registry_period_sheets'))
+    student = Student.query.get_or_404(student_id)
+    display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
+    year_id = request.args.get('academic_year_id', type=int) or (display_year.id if display_year else None)
+    class_id = get_student_class_id(student, year_id)
+    if not is_student_period_released(year_id, student.id, period, class_id):
+        flash(
+            'That period has not been released for this student yet.',
+            'warning',
+        )
+        return redirect(url_for(
+            'registry_period_sheets',
+            academic_year_id=year_id,
+            open_class_id=class_id,
+        ))
+    data = build_report_card_structured_data(
+        student, year_id, approved_only=True, view_period=period,
+    )
+    year = db.session.get(AcademicYear, year_id) if year_id else display_year
+    return render_template(
+        'grade_sheet.html',
+        student=student,
+        data=data,
+        display_year=year,
+        past_years=[],
+        has_published=True,
+        published_count=1,
+        approved_periods=[period],
+        pending_periods=[],
+        grading_periods=GRADING_PERIODS,
+        released_semesters=[],
+        report_card_unlocked=False,
+        report_card_blocker_note=None,
+        school_print_brand=school_print_brand(),
+        sheet_office='registry',
+        sheet_back_url=url_for(
+            'registry_period_sheets',
+            academic_year_id=year_id,
+            open_class_id=class_id,
+        ),
+        sheet_back_label='Back to period print desk',
+        sheet_pdf_url=url_for(
+            'registry_student_period_sheet_pdf',
+            student_id=student.id,
+            academic_year_id=year_id,
+            period=period,
+        ),
+    )
+
+
+@app.route(
+    '/registrar/period-sheets/student/<int:student_id>/pdf',
+    methods=['GET'],
+    endpoint='registry_student_period_sheet_pdf',
+)
+@login_required
+def registry_student_period_sheet_pdf(student_id):
+    denied = _require_registry_day_book()
+    if denied:
+        return denied
+    period = _requested_marking_period()
+    if period not in range(1, 9):
+        flash('Choose a released marking period to download.', 'warning')
+        return redirect(url_for('registry_period_sheets'))
+    student = Student.query.get_or_404(student_id)
+    display_year, *_rest = resolve_dashboard_academic_year(session_key=REGISTRAR_YEAR_SESSION_KEY)
+    year_id = request.args.get('academic_year_id', type=int) or (display_year.id if display_year else None)
+    class_id = get_student_class_id(student, year_id)
+    if not is_student_period_released(year_id, student.id, period, class_id):
+        flash('That period has not been released for this student yet.', 'warning')
+        return redirect(url_for('registry_period_sheets', academic_year_id=year_id, open_class_id=class_id))
+    return build_official_grade_sheet_pdf(
+        student, year_id, kind='sheet', approved_only=True, view_period=period,
+    )
+
+
 @app.route('/registrar/students/<int:student_id>/print', methods=['GET'], endpoint='print_registrar_student')
 @login_required
 def print_registrar_student(student_id):
@@ -17578,12 +18881,14 @@ def print_business_payment_receipt(payment_id):
     access = _require_business_dashboard_access()
     if access:
         return access
+    from registry_desk import payment_shows_semester_installment
     payment = StudentPayment.query.get_or_404(payment_id)
     if _is_registration_fee_payment(payment):
         return _render_registrar_registration_receipt(payment)
     student = db.session.get(Student, payment.student_id)
     year = db.session.get(AcademicYear, payment.academic_year_id)
     financials = build_student_financials(student, year) if student and year else {}
+    show_period = payment_shows_semester_installment(payment)
     return render_template(
         'business_payment_receipt.html',
         payment=payment,
@@ -17592,6 +18897,10 @@ def print_business_payment_receipt(payment_id):
         class_label=format_student_class_name(student, payment.academic_year_id) if student else '—',
         collected_by=current_user.full_name or current_user.email,
         remaining=financials.get('tuition_balance', 0),
+        semester_name=semester_label(payment.term) if show_period else '',
+        installment_name=installment_label(payment.installment) if show_period else '',
+        billing_period=billing_period_label(payment.term, payment.installment) if show_period else '',
+        show_billing_period=show_period,
         receipt_no='SP-{}'.format(payment.id),
     )
 
@@ -17619,9 +18928,11 @@ _REMBG_LOAD_THREAD = None
 _REMBG_LOAD_BOX = []
 _REMBG_LOCK = None
 _REMBG_LOAD_TIMEOUT_SECONDS = 120  # wait once on Save ID; preload starts this at boot
-_REMBG_CUTOUT_TIMEOUT_SECONDS = 90  # warm session; fail the save rather than store outdoor
+_REMBG_CUTOUT_TIMEOUT_SECONDS = 90  # unused for inference; kept for print-path kwargs
+_REMBG_INFER_MAX_SIDE = 768  # u2net is 320px internally; 1800px PNGs stall CPU ONNX
 _PRINT_REMBG_TIMEOUT_SECONDS = 12  # print/PDF must not wait on rembg for a class
 _PRINT_REMBG_MAX_PHOTOS = 2  # at most two outdoor rembg attempts per print/PDF request
+_ID_PHOTO_REMBG_RETRY_MAX = 1  # extra camera originals after the first rembg (never walk every original_*)
 _U2NET_MIN_BYTES = 150 * 1024 * 1024  # complete u2net / u2net_human_seg is ~176MB
 _ID_PHOTO_ALPHA_CLEAR = 40  # fully transparent; never hard-cut interior dark skin
 _ID_PHOTO_ALPHA_OPAQUE = 180  # at/above this, keep the person fully
@@ -17699,8 +19010,10 @@ def _id_photo_resample():
     return getattr(getattr(Image, 'Resampling', Image), 'LANCZOS', Image.LANCZOS)
 
 
-def _downscale_id_photo(img, max_side=1800):
+def _downscale_id_photo(img, max_side=None):
     """Keep rembg/crop work at print-enough resolution without huge originals."""
+    if max_side is None:
+        max_side = _REMBG_INFER_MAX_SIDE
     width, height = img.size
     longest = max(width, height)
     if longest <= max_side:
@@ -17869,7 +19182,7 @@ def _harvest_rembg_load_box():
 
 def _load_rembg_session_sync():
     """Blocking ONNX session create. Prefer u2net_human_seg for outdoor people."""
-    os.environ.setdefault('OMP_NUM_THREADS', '1')
+    os.environ.setdefault('OMP_NUM_THREADS', '4')
     import onnxruntime  # noqa: F401  # rembg sys.exits if this backend cannot load
     from rembg import new_session
     model_names = _preferred_rembg_model_names() or ('u2net_human_seg',)
@@ -17881,17 +19194,34 @@ def _load_rembg_session_sync():
             except TypeError:
                 session = new_session(name)
             logger.info('ID photo rembg loaded model %s.', name)
+            _warmup_rembg_session(session)
             return session
         except Exception as exc:
             last_error = exc
             logger.warning('ID photo rembg could not load %s (%s).', name, exc)
             continue
     try:
-        return new_session()
+        session = new_session()
+        _warmup_rembg_session(session)
+        return session
     except Exception:
         if last_error is not None:
             raise last_error
         raise
+
+
+def _warmup_rembg_session(session):
+    """Run one tiny cutout so the first Save ID is not a 90s cold inference."""
+    if session is None or Image is None:
+        return
+    try:
+        from rembg import remove
+        buf = BytesIO()
+        Image.new('RGB', (64, 64), (90, 90, 90)).save(buf, format='PNG')
+        remove(buf.getvalue(), session=session)
+        logger.info('ID photo rembg warmup complete.')
+    except (Exception, SystemExit) as exc:
+        logger.warning('ID photo rembg warmup failed (%s); first photo may be slow.', exc)
 
 
 def _start_rembg_session_load():
@@ -18135,27 +19465,27 @@ def _rembg_cutout_rgba(img, disable_on_fail=True, timeout=None, *, load_session=
         logger.warning('ID photo rembg import failed during cutout; will retry on the next photo.')
         return None
 
+    # Infer on this Waitress worker. A timeout daemon thread around ONNX Runtime
+    # often never finishes on Windows, so Save ID always hit "timeout after 90s".
     source = img.convert('RGB') if img.mode not in ('RGB', 'RGBA') else img
+    work = _downscale_id_photo(source, max_side=_REMBG_INFER_MAX_SIDE)
     incoming = BytesIO()
-    source.save(incoming, format='PNG')
+    work.save(incoming, format='PNG')
     payload = incoming.getvalue()
-
-    def _cut():
-        cutout = remove(payload, session=session)
-        return Image.open(BytesIO(cutout)).convert('RGBA')
-
-    cutout_timeout = _REMBG_CUTOUT_TIMEOUT_SECONDS if timeout is None else timeout
-    with _rembg_lock():
-        status, value = _run_rembg_with_timeout(_cut, cutout_timeout)
-    if status == 'ok' and value is not None:
-        return value
-    logger.warning(
-        'ID photo rembg cutout failed (%s) after %ss; session kept for retry. disable_on_fail=%s',
-        status,
-        cutout_timeout,
-        disable_on_fail,
-    )
-    return None
+    try:
+        with _rembg_lock():
+            cutout = remove(payload, session=session)
+        rgba = Image.open(BytesIO(cutout)).convert('RGBA')
+    except (Exception, SystemExit):
+        logger.warning(
+            'ID photo rembg cutout failed; session kept for retry. disable_on_fail=%s',
+            disable_on_fail,
+            exc_info=True,
+        )
+        return None
+    if rgba.size != source.size:
+        rgba = rgba.resize(source.size, _id_photo_resample())
+    return rgba
 
 
 def _floodfill_studio_backdrop(img):
@@ -18994,6 +20324,8 @@ def _cache_busted_photo_url(student, disk_path=None):
 
 def _write_processed_id_photo_jpeg(student, img):
     """Write a NEW 800×800 JPEG under id_photos (new timestamp) and point student.photo at it."""
+    if img is None or student is None:
+        return False
     buffer = BytesIO()
     _save_id_photo_jpeg(img, buffer)
     payload = buffer.getvalue()
@@ -19261,6 +20593,102 @@ def _id_photo_looks_unusable_id_crop(img):
     return _edge_columns_uniformly_white(img) or _lower_third_side_columns_white(img)
 
 
+def _id_photo_crop_needs_another_source(img):
+    """True when this 800×800 result should not be printed — try another file."""
+    if img is None:
+        return True
+    return _id_photo_is_face_only_square(img) or _id_photo_looks_unusable_id_crop(img)
+
+
+def _student_id_photo_needs_reprocess(student):
+    """True when Save ID should recrop: outdoor, face-zoom, or leftover gutters.
+
+    Already-finished white head-and-shoulders JPEGs are left alone so Save ID
+    (signature / expiry only) does not re-run rembg on every original_*.
+    """
+    if not student:
+        return False
+    path = _existing_processed_id_photo_path(student) or _student_id_photo_disk_path(student)
+    if not path:
+        return False
+    try:
+        img = _open_id_photo_for_process(path)
+    except Exception:
+        logger.exception('ID photo could not inspect %s for reprocess', path)
+        return True
+    if _id_photo_needs_background_removal(img):
+        return True
+    if _id_photo_is_face_only_square(img) or _id_photo_looks_unusable_id_crop(img):
+        return True
+    return not _id_photo_already_usable_hs(img)
+
+
+def _reuse_stored_head_shoulders_jpeg(student, skip_path=None):
+    """Return a finished H&S JPEG already on disk, without rembg."""
+    skip = os.path.normcase(os.path.abspath(skip_path)) if skip_path else None
+    for alt in _gather_id_photo_recrop_paths(student):
+        if skip and os.path.normcase(os.path.abspath(alt)) == skip:
+            continue
+        if _id_photo_path_is_face_only(alt):
+            continue
+        if not _is_processed_id_photo_path(alt) or _is_id_photo_original_filename(alt):
+            continue
+        try:
+            src = _open_id_photo_for_process(alt)
+            if not _id_photo_already_usable_hs(src):
+                continue
+            retry = _finish_id_portrait(src.convert('RGB'))
+        except Exception:
+            logger.exception('ID photo H&S fallback failed for %s', alt)
+            continue
+        if _id_photo_is_face_only_square(retry):
+            continue
+        logger.info(
+            'ID photo using stored head-and-shoulders JPEG %s for student %s',
+            alt,
+            getattr(student, 'id', None),
+        )
+        return retry
+    return None
+
+
+def _retry_id_photo_from_camera_originals(student, skip_path, limit=_ID_PHOTO_REMBG_RETRY_MAX):
+    """Rembg at most `limit` extra camera originals. Never walk the full original_* history."""
+    skip = os.path.normcase(os.path.abspath(skip_path)) if skip_path else None
+    tried = 0
+    for alt in _gather_id_photo_recrop_paths(student):
+        if tried >= max(0, int(limit)):
+            break
+        if skip and os.path.normcase(os.path.abspath(alt)) == skip:
+            continue
+        if _id_photo_path_is_face_only(alt):
+            continue
+        if _is_processed_id_photo_path(alt) and not _is_id_photo_original_filename(alt):
+            continue
+        try:
+            src = _open_id_photo_for_process(alt)
+            if _id_photo_is_processed_square(src) and _top_corners_near_white(src):
+                continue
+        except Exception:
+            logger.exception('ID photo original retry could not open %s', alt)
+            continue
+        logger.warning(
+            'ID photo crop still has gutters/face-zoom; retrying from original %s for student %s',
+            alt,
+            getattr(student, 'id', None),
+        )
+        tried += 1
+        try:
+            retry = _process_id_photo(src)
+        except Exception:
+            logger.exception('ID photo original retry failed for %s', alt)
+            continue
+        if _id_photo_crop_needs_another_source(retry):
+            continue
+        return retry
+    return None
+
+
 def _open_id_photo_for_process(path):
     img = Image.open(path)
     if ImageOps is not None:
@@ -19315,7 +20743,7 @@ def _reprocess_student_id_photo(student):
             )
             out = _process_id_photo(img)
     except ValueError:
-        logger.exception(
+        logger.warning(
             'ID photo recrop rembg failed for student %s; leaving current JPEG (not saving outdoor crop)',
             getattr(student, 'id', None),
         )
@@ -19347,59 +20775,16 @@ def _reprocess_student_id_photo(student):
                 'ID photo gutter refit failed for student %s',
                 getattr(student, 'id', None),
             )
-    if out is not None and (
-        _id_photo_looks_unusable_id_crop(out) or _id_photo_is_face_only_square(out)
-    ):
-        source_is_camera = not (
-            _id_photo_is_processed_square(img) and _top_corners_near_white(img)
-        )
-        for alt in _gather_id_photo_recrop_paths(student):
-            if alt == path or _id_photo_path_is_face_only(alt):
-                continue
-            if source_is_camera and _is_processed_id_photo_path(alt) and not _is_id_photo_original_filename(alt):
-                continue
-            logger.warning(
-                'ID photo crop still has gutters/face-zoom; retrying from original %s for student %s',
-                alt,
-                getattr(student, 'id', None),
-            )
-            try:
-                src = _open_id_photo_for_process(alt)
-                if _id_photo_is_processed_square(src) and _top_corners_near_white(src):
-                    continue
-                retry = _process_id_photo(src)
-            except Exception:
-                logger.exception('ID photo original retry failed for %s', alt)
-                continue
-            if _id_photo_is_face_only_square(retry) or _id_photo_looks_unusable_id_crop(retry):
-                continue
+    if _id_photo_crop_needs_another_source(out):
+        stored = _reuse_stored_head_shoulders_jpeg(student, skip_path=path)
+        if stored is not None:
+            out = stored
+    if _id_photo_crop_needs_another_source(out):
+        retry = _retry_id_photo_from_camera_originals(student, skip_path=path)
+        if retry is not None:
             out = retry
-            break
-    if out is not None and (
-        _id_photo_looks_unusable_id_crop(out) or _id_photo_is_face_only_square(out)
-    ):
-        for alt in _gather_id_photo_recrop_paths(student):
-            if alt == path or _id_photo_path_is_face_only(alt):
-                continue
-            if not _is_processed_id_photo_path(alt) or _is_id_photo_original_filename(alt):
-                continue
-            try:
-                src = _open_id_photo_for_process(alt)
-                if not _id_photo_already_usable_hs(src):
-                    continue
-                retry = _finish_id_portrait(src.convert('RGB'))
-            except Exception:
-                logger.exception('ID photo H&S fallback failed for %s', alt)
-                continue
-            if _id_photo_is_face_only_square(retry):
-                continue
-            logger.warning(
-                'ID photo using stored head-and-shoulders JPEG %s for student %s',
-                alt,
-                getattr(student, 'id', None),
-            )
-            out = retry
-            break
+    if out is None:
+        return False
     return _write_processed_id_photo_jpeg(student, out)
 
 
@@ -19668,21 +21053,25 @@ def _resolve_static_abs_path(relative_path):
                 continue
             seen.add(full)
             try:
-                if os.path.isfile(full) and _looks_like_raster_image(full):
+                if _looks_like_raster_image(full):
                     return full
+                with open(full, 'rb') as handle:
+                    if len(handle.read(16)) >= 8:
+                        return full
             except (OSError, ValueError):
                 continue
     return None
 
 
 def _school_logo_disk_path():
-    from models import SCHOOL_LOGO_FILENAME
+    from models import SCHOOL_LOGO_FILENAMES
+    from id_card_pdf import resolve_school_logo_path
 
-    for name in (SCHOOL_LOGO_FILENAME, 'images/logo.png', 'images/logo1.png'):
+    for name in SCHOOL_LOGO_FILENAMES:
         path = _resolve_static_abs_path(name)
         if path:
             return path
-    return None
+    return resolve_school_logo_path()
 
 
 def _liberia_seal_disk_path():
@@ -19800,6 +21189,24 @@ def _stream_id_cards_pdf(klass, display_year, ready_cards, *, single=False):
         except Exception:
             logger.exception('ID PDF photo path commit failed')
             db.session.rollback()
+    filename = id_cards_pdf_filename(klass, display_year, single=single)
+    html_buffer = _id_cards_html_pdf_buffer(
+        ready_cards,
+        klass=klass,
+        display_year=display_year,
+        skipped=[],
+        printed_at=datetime.now(timezone.utc),
+        printed_by=getattr(current_user, 'full_name', None) or getattr(current_user, 'email', ''),
+        liberia_seal_url=liberia_seal_static_url(),
+        qr_localhost_warning=False,
+        back_url=None,
+        download_url=None,
+        download_filename=filename,
+        refresh_photos_url=None,
+        pdf_export=True,
+    )
+    if html_buffer is not None:
+        return _id_cards_pdf_attachment_response(html_buffer, filename)
     try:
         buffer = build_class_id_cards_pdf(
             ready_cards,
@@ -19811,13 +21218,14 @@ def _stream_id_cards_pdf(klass, display_year, ready_cards, *, single=False):
             principal_signature_path=_principal_signature_disk_path(),
         )
     except Exception:
-        logger.exception('ID card PDF folder failed; retrying a complete PDF without logos')
+        logger.exception('ID card PDF folder failed; retrying a complete PDF, keeping the school crest')
         try:
             buffer = build_class_id_cards_pdf(
                 ready_cards,
                 klass=klass,
                 display_year=display_year,
                 brand=school_print_brand(),
+                logo_path=_school_logo_disk_path(),
             )
         except Exception:
             logger.exception('ID card PDF fallback failed')
@@ -19828,7 +21236,6 @@ def _stream_id_cards_pdf(klass, display_year, ready_cards, *, single=False):
             if klass:
                 return redirect(url_for('print_class_id_cards', class_id=klass.id))
             return redirect(url_for('id_cards_folder_hub'))
-    filename = id_cards_pdf_filename(klass, display_year, single=single)
     return _id_cards_pdf_attachment_response(buffer, filename)
 
 
@@ -19858,9 +21265,29 @@ def _id_cards_pdf_attachment_response(buffer, filename):
     response.headers['Content-Disposition'] = f'attachment; filename="{safe_name}"'
     response.headers['Content-Length'] = str(len(payload))
     response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
     response.headers.pop('Accept-Ranges', None)
     response.direct_passthrough = False
     return response
+
+
+def _id_cards_html_pdf_buffer(cards, **template_kwargs):
+    """Print the same HTML the office sees, so download matches the generated card."""
+    try:
+        template_kwargs.setdefault('pdf_export', True)
+        html = render_template(
+            'id_cards/print_batch.html',
+            cards=cards,
+            **template_kwargs,
+        )
+        return html_print_batch_to_pdf(
+            html,
+            static_root=os.path.join(BASE_DIR, 'static'),
+        )
+    except Exception:
+        logger.exception('HTML ID-card print failed; using drawn PDF fallback')
+        return None
 
 
 def _id_cards_none_ready_response(klass, *, from_download=False):
@@ -20019,7 +21446,7 @@ def setup_student_id_card(student_id):
                 student.photo = rel_path
                 student.photo_filename = filename
                 photo_saved = True
-        if not photo_saved and student.has_id_photo:
+        if not photo_saved and student.has_id_photo and _student_id_photo_needs_reprocess(student):
             _reprocess_student_id_photo(student)
         if signature and (signature.filename or '').strip():
             saved = _save_id_card_image(signature, 'signatures', student.id, 'signature')
@@ -20381,7 +21808,10 @@ def _staff_signature_mark(user):
     if suffix:
         bare = suffix.strip('.')
         pieces.append(bare.upper() if bare.lower() in _SIGNATURE_NUMERALS else f'{bare.capitalize()}.')
-    return ' '.join(piece for piece in pieces if piece) or 'Authorized Staff'
+    mark = ' '.join(piece for piece in pieces if piece) or 'Authorized Staff'
+    mark = re.sub(r'\bFLPA[-\s]?\d+\b', '', mark, flags=re.I)
+    mark = re.sub(r'\s+', ' ', mark).strip()
+    return mark or 'Authorized Staff'
 
 
 STAFF_ID_PHOTO_SUBDIR = 'staff_id_photos'
@@ -20596,6 +22026,29 @@ def _staff_id_cards(display_year=None):
 
 
 def _stream_staff_id_cards_pdf(cards):
+    filename = 'FLPA_Staff_ID_Cards.pdf'
+    if len(cards) == 1:
+        person = cards[0].get('student')
+        ident = getattr(person, 'id', None) or 'card'
+        filename = f'FLPA_Staff_ID_{ident}.pdf'
+    html_buffer = _id_cards_html_pdf_buffer(
+        cards,
+        klass=None,
+        display_year=None,
+        skipped=[],
+        scope_label=getattr(cards[0].get('student'), 'full_name', None) if cards else None,
+        printed_at=datetime.now(timezone.utc),
+        printed_by=getattr(current_user, 'full_name', None) or getattr(current_user, 'email', ''),
+        liberia_seal_url=liberia_seal_static_url(),
+        qr_localhost_warning=False,
+        back_url=None,
+        download_url=None,
+        download_filename=filename,
+        refresh_photos_url=None,
+        pdf_export=True,
+    )
+    if html_buffer is not None:
+        return _id_cards_pdf_attachment_response(html_buffer, filename)
     try:
         buffer = build_class_id_cards_pdf(
             cards,
@@ -20605,9 +22058,13 @@ def _stream_staff_id_cards_pdf(cards):
             principal_signature_path=_principal_signature_disk_path(),
         )
     except Exception:
-        logger.exception('Staff ID card PDF failed; retrying without logos')
-        buffer = build_class_id_cards_pdf(cards, brand=school_print_brand())
-    return _id_cards_pdf_attachment_response(buffer, 'FLPA_Staff_ID_Cards.pdf')
+        logger.exception('Staff ID card PDF failed; retrying without seals/photos, keeping the school crest')
+        buffer = build_class_id_cards_pdf(
+            cards,
+            brand=school_print_brand(),
+            logo_path=_school_logo_disk_path(),
+        )
+    return _id_cards_pdf_attachment_response(buffer, filename)
 
 
 @app.route('/id-cards/staff', methods=['GET'], endpoint='staff_id_cards_folder')
@@ -21899,6 +23356,12 @@ def business_management():
             payment_form.academic_year.data = prefill_year_id
         elif active_year:
             payment_form.academic_year.data = active_year.id
+        if not form.date.data:
+            form.date.data = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        if not form.currency.data:
+            form.currency.data = 'USD'
+        if not payment_form.currency.data:
+            payment_form.currency.data = 'USD'
 
     default_year_name = active_year.name if active_year else (all_years[0].name if all_years else '')
     selected_year = request.args.get('year', default_year_name)
@@ -21939,6 +23402,7 @@ def business_management():
                     date=form.date.data,
                     type=form.type.data,
                     amount=amount,
+                    currency=normalize_currency(form.currency.data),
                     category=form.category.data,
                     description=form.description.data,
                     balance_after=new_balance,  # ✨ Aligned column setup
@@ -21967,13 +23431,21 @@ def business_management():
                     flash("Student extraction entity record not found.", "danger")
                     return redirect(url_for('business_management', year=selected_year))
 
+                fee_kind, term, installment, particulars, _bucket = _resolved_student_charge(
+                    payment_form.fee_kind.data if getattr(payment_form, 'fee_kind', None) else None,
+                    payment_form.term.data,
+                    payment_form.installment.data,
+                    payment_description,
+                )
                 record_student_payment_with_income(
                     student,
                     payment_form.academic_year.data,
-                    payment_form.term.data,
+                    term,
                     parse_currency_amount(payment_form.amount_paid.data),
-                    payment_description,
-                    installment=payment_form.installment.data,
+                    particulars,
+                    installment=installment,
+                    currency=payment_form.currency.data,
+                    fee_kind=fee_kind,
                 )
                 db.session.commit()
                 flash('Student payment recorded and posted to business income.', 'success')
@@ -22052,6 +23524,20 @@ def business_management():
         academic_year=selected_year, 
         is_deleted=False
     ).order_by(BusinessTransaction.date.desc()).all()
+
+    income_buckets = {'USD': 0.0, 'LRD': 0.0}
+    expense_buckets = {'USD': 0.0, 'LRD': 0.0}
+    for tx in transactions:
+        code = normalize_currency(getattr(tx, 'currency', None))
+        value = float(tx.amount or 0)
+        if (tx.type or '').lower() == 'income':
+            income_buckets[code] = income_buckets.get(code, 0.0) + value
+        else:
+            expense_buckets[code] = expense_buckets.get(code, 0.0) + value
+    net_buckets = {
+        'USD': income_buckets.get('USD', 0.0) - expense_buckets.get('USD', 0.0),
+        'LRD': income_buckets.get('LRD', 0.0) - expense_buckets.get('LRD', 0.0),
+    }
     
     return render_template(
         'business_management.html',
@@ -22060,6 +23546,9 @@ def business_management():
         payment_form=payment_form,
         income_total=income_total,
         expense_total=expense_total,
+        income_total_label=format_dual_money(income_buckets),
+        expense_total_label=format_dual_money(expense_buckets),
+        net_total_label=format_dual_money(net_buckets),
         class_search_results=class_analytics,
         search_results=search_results,
         transactions=transactions,
@@ -22090,8 +23579,18 @@ def daily_expense_report():
         type='expense',
         is_deleted=False
     ).all()
-    total = sum(e.amount for e in expenses)
-    return render_template('daily_expense_report.html', expenses=expenses, total=total, date=today)
+    total = sum(float(e.amount or 0) for e in expenses)
+    expense_buckets = {'USD': 0.0, 'LRD': 0.0}
+    for row in expenses:
+        code = normalize_currency(getattr(row, 'currency', None))
+        expense_buckets[code] = expense_buckets.get(code, 0.0) + float(row.amount or 0)
+    return render_template(
+        'daily_expense_report.html',
+        expenses=expenses,
+        total=total,
+        total_label=format_dual_money(expense_buckets),
+        date=today,
+    )
 
 @app.route('/business-overview')
 @login_required
@@ -22100,17 +23599,33 @@ def business_overview():
     if blocked:
         return blocked
 
-    income_total = db.session.query(func.sum(BusinessTransaction.amount)).filter(BusinessTransaction.type == "income", BusinessTransaction.is_deleted == False).scalar() or 0
-    expense_total = db.session.query(func.sum(BusinessTransaction.amount)).filter(BusinessTransaction.type == "expense", BusinessTransaction.is_deleted == False).scalar() or 0
-    net_total = income_total - expense_total
-
     recent_transactions = BusinessTransaction.query.filter_by(is_deleted=False).order_by(BusinessTransaction.date.desc()).limit(5).all()
+    income_buckets = {'USD': 0.0, 'LRD': 0.0}
+    expense_buckets = {'USD': 0.0, 'LRD': 0.0}
+    all_tx = BusinessTransaction.query.filter_by(is_deleted=False).all()
+    for tx in all_tx:
+        code = normalize_currency(getattr(tx, 'currency', None))
+        value = float(tx.amount or 0)
+        if (tx.type or '').lower() == 'income':
+            income_buckets[code] = income_buckets.get(code, 0.0) + value
+        else:
+            expense_buckets[code] = expense_buckets.get(code, 0.0) + value
+    net_buckets = {
+        'USD': income_buckets.get('USD', 0.0) - expense_buckets.get('USD', 0.0),
+        'LRD': income_buckets.get('LRD', 0.0) - expense_buckets.get('LRD', 0.0),
+    }
+    income_total = income_buckets['USD'] + income_buckets['LRD']
+    expense_total = expense_buckets['USD'] + expense_buckets['LRD']
+    net_total = income_total - expense_total
 
     return render_template(
         'business_overview.html',
         income_total=income_total,
         expense_total=expense_total,
         net_total=net_total,
+        income_total_label=format_dual_money(income_buckets),
+        expense_total_label=format_dual_money(expense_buckets),
+        net_total_label=format_dual_money(net_buckets),
         recent_transactions=recent_transactions
     )
 
@@ -24135,11 +25650,12 @@ def _vpa_fee_snapshots(students, display_year, class_map=None):
     student_ids = [student.id for student in students]
     paid_by_student = defaultdict(float)
     if year_id and student_ids:
-        for student_id, description, amount in (
+        for student_id, description, amount, fee_kind in (
             db.session.query(
                 StudentPayment.student_id,
                 StudentPayment.description,
                 StudentPayment.amount_paid,
+                StudentPayment.fee_kind,
             )
             .filter(
                 StudentPayment.academic_year_id == year_id,
@@ -24147,7 +25663,7 @@ def _vpa_fee_snapshots(students, display_year, class_map=None):
             )
             .all()
         ):
-            if is_yearly_fee_payment(description):
+            if is_yearly_fee_payment(description, fee_kind):
                 paid_by_student[student_id] += float(amount or 0)
 
     classes_by_id = {klass.id: klass for klass in Class.query.all()}
@@ -25759,9 +27275,9 @@ with app.app_context():
             synced = backfill_student_payments_to_income_ledger()
             if synced:
                 print(f"Business ledger sync: posted {synced} historical student fee payment(s) as income.")
-        print("Database ready. Year indexes on. Set RUN_BOOT_REPAIRS=1 only to run a full data-repair pass.")
+        print("Database ready. Year indexes on. Set RUN_BOOT_REPAIRS=1 only to run a full data-repair pass.", flush=True)
     except Exception as db_err:
-        print(f"Warning: table auto-generation bypass encountered: {db_err}")
+        print(f"Warning: table auto-generation bypass encountered: {db_err}", flush=True)
 
 if __name__ == '__main__':
     _start_rembg_session_preload()
@@ -25772,12 +27288,12 @@ if __name__ == '__main__':
     channel_timeout = env_int('WAITRESS_CHANNEL_TIMEOUT', 480, minimum=30, maximum=600)
     backlog = env_int('WAITRESS_BACKLOG', 256, minimum=16, maximum=2048)
     
-    print("\n" + "=" * 50)
-    print(f"  Server active on port {port} ({threads} Waitress threads)")
-    print(f"  > Local Access:   http://localhost:{port}")
-    print(f"  > Loopback IP:    http://127.0.0.1:{port}")
-    print(f"  > Network Bind:   http://0.0.0.0:{port}")
-    print("=" * 50 + "\n")
+    print("\n" + "=" * 50, flush=True)
+    print(f"  Server active on port {port} ({threads} Waitress threads)", flush=True)
+    print(f"  > Local Access:   http://localhost:{port}", flush=True)
+    print(f"  > Loopback IP:    http://127.0.0.1:{port}", flush=True)
+    print(f"  > Network Bind:   http://0.0.0.0:{port}", flush=True)
+    print("=" * 50 + "\n", flush=True)
     
     try:
         from waitress import serve

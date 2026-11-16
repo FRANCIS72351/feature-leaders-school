@@ -1,0 +1,190 @@
+{% extends 'base.html' %}
+{% block title %}Period Grade Sheets — Registry{% endblock %}
+
+{% block content %}
+<style>
+    .pps-shell { background: #eef2f7; min-height: 100vh; }
+    .pps-masthead {
+        background: #0f2744;
+        color: #fff;
+        border-radius: 16px;
+        padding: 1.4rem 1.55rem;
+        box-shadow: 0 14px 30px rgba(15, 39, 68, 0.22);
+        position: relative;
+        overflow: hidden;
+    }
+    .pps-masthead::after {
+        content: "";
+        position: absolute;
+        right: -40px; top: -40px;
+        width: 160px; height: 160px;
+        border: 14px solid rgba(200, 40, 40, 0.18);
+        border-radius: 50%;
+    }
+    .pps-kicker {
+        letter-spacing: 0.2em;
+        font-size: 0.7rem;
+        font-weight: 800;
+        color: #f4c95d;
+        text-transform: uppercase;
+        margin-bottom: 0.3rem;
+    }
+    .pps-card {
+        background: #fff;
+        border: 1px solid #d7deea;
+        border-radius: 14px;
+        box-shadow: 0 8px 20px rgba(15, 39, 68, 0.06);
+    }
+    .pps-class {
+        border: 1px solid #d7deea;
+        border-radius: 12px;
+        overflow: hidden;
+        background: #fff;
+    }
+    .pps-class[open] { border-color: #0f2744; }
+    .pps-class summary {
+        list-style: none;
+        cursor: pointer;
+        padding: 0.9rem 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        background: #f7f9fc;
+    }
+    .pps-class summary::-webkit-details-marker { display: none; }
+    .pps-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        border-radius: 999px;
+        padding: 0.18rem 0.65rem;
+        font-size: 0.72rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    .pps-ready { background: #dcfce7; color: #166534; }
+    .pps-hold { background: #f3f4f6; color: #6b7280; }
+    .pps-print {
+        background: #c82828;
+        color: #fff;
+        font-weight: 700;
+        border: none;
+        border-radius: 8px;
+        padding: 0.28rem 0.7rem;
+        font-size: 0.78rem;
+        text-decoration: none;
+        display: inline-block;
+    }
+    .pps-print:hover { color: #fff; background: #a51f1f; }
+    .pps-muted { color: #9ca3af; font-size: 0.78rem; font-weight: 700; }
+    .pps-table { width: 100%; border-collapse: collapse; }
+    .pps-table th {
+        font-size: 0.68rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #0f2744;
+        border-bottom: 2px solid #c82828;
+        padding: 0.45rem;
+        text-align: left;
+    }
+    .pps-table td { padding: 0.5rem 0.45rem; border-bottom: 1px solid #eef2f7; vertical-align: middle; }
+</style>
+{% set year_param = {'academic_year_id': display_year.id} if display_year else {} %}
+<div class="container-fluid pps-shell py-4 px-md-4">
+    <div class="pps-masthead mb-4 d-flex flex-column flex-lg-row justify-content-between gap-3">
+        <div>
+            <div class="pps-kicker">FLPA Registry Office · Official copies</div>
+            <h1 class="h3 fw-bold mb-1">Period Grade Sheets</h1>
+            <p class="mb-0" style="color:#d6e2f0;">Print a class roster or a student sheet for a marking period only after Academic Affairs has released that period.</p>
+        </div>
+        <div class="text-lg-end">
+            {% if years %}
+            <div class="mb-2 d-flex justify-content-lg-end">
+                {% set switch_endpoint = 'registry_period_sheets' %}
+                {% include 'partials/academic_year_switcher.html' %}
+            </div>
+            {% endif %}
+            <div class="small text-uppercase" style="color:#f4c95d; letter-spacing:0.08em;">{{ display_year.name if display_year else 'No session' }}</div>
+            <div class="fs-5 fw-bold">{{ released_count }} class period{{ 's' if released_count != 1 else '' }} released</div>
+            <a href="{{ url_for('registrar_dashboard', **year_param) }}" class="btn btn-sm btn-outline-light mt-2">Back to registrar dashboard</a>
+        </div>
+    </div>
+
+    <div class="pps-card p-3 p-md-4">
+        {% if folders_by_division %}
+            {% for group in folders_by_division %}
+            <div class="small fw-bold text-uppercase mb-2 mt-3" style="color:#0f2744; letter-spacing:0.08em;">{{ group.label }}</div>
+            <div class="d-flex flex-column gap-2">
+                {% for folder in group.classes %}
+                <details class="pps-class" {% if open_class_id == folder.klass.id %}open{% endif %}>
+                    <summary>
+                        <div>
+                            <div class="fw-bold" style="color:#0f2744;">{{ folder.name }}</div>
+                            <div class="small text-muted">{{ folder.division_label }} · {{ folder.student_count }} student{{ 's' if folder.student_count != 1 else '' }}</div>
+                        </div>
+                        {% if folder.has_released %}
+                        <span class="pps-pill pps-ready">Released periods ready</span>
+                        {% else %}
+                        <span class="pps-pill pps-hold">Awaiting release</span>
+                        {% endif %}
+                    </summary>
+                    <div class="p-3">
+                        <div class="fw-bold small mb-2" style="color:#0f2744;">Class roster sheets</div>
+                        <div class="d-flex flex-wrap gap-2 mb-3">
+                            {% for slot in folder.period_slots %}
+                                {% if slot.released %}
+                                <a class="pps-print" href="{{ url_for('registry_class_period_sheet', class_id=folder.klass.id, period=slot.period, academic_year_id=display_year.id if display_year else none) }}">
+                                    Print {{ slot.label }}
+                                </a>
+                                {% else %}
+                                <span class="pps-muted">{{ slot.label }} locked</span>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                        <div class="table-responsive">
+                            <table class="pps-table">
+                                <thead>
+                                    <tr>
+                                        <th>Student</th>
+                                        <th>ID</th>
+                                        <th>Period copies</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in folder.students %}
+                                    <tr>
+                                        <td class="fw-semibold">{{ row.student.full_name }}</td>
+                                        <td class="small text-muted">{{ row.student.student_id }}</td>
+                                        <td>
+                                            <div class="d-flex flex-wrap gap-2">
+                                                {% for slot in row.periods %}
+                                                    {% if slot.released %}
+                                                    <a class="pps-print" href="{{ url_for('registry_student_period_sheet', student_id=row.student.id, academic_year_id=display_year.id if display_year else none, period=slot.period) }}">
+                                                        {{ slot.label }}
+                                                    </a>
+                                                    {% else %}
+                                                    <span class="pps-muted">{{ slot.label }}</span>
+                                                    {% endif %}
+                                                {% endfor %}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="3" class="text-muted small">No students in this class folder.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </details>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        {% else %}
+            <p class="text-muted mb-0">No class folders are mapped for this academic session.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

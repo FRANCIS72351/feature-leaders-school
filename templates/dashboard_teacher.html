@@ -20,6 +20,7 @@
     padding: 28px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
     margin-top: 15px;
+    scroll-margin-top: 88px;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 
@@ -91,7 +92,7 @@
 
   .work-toolbar {
     display: grid;
-    grid-template-columns: 1.2fr 1.2fr 1fr auto;
+    grid-template-columns: 1.2fr 1.2fr 1fr;
     gap: 12px;
     align-items: end;
     margin: -8px 0 20px;
@@ -728,7 +729,7 @@
               <div class="tile-meta mb-2">{{ card.subjects|join(', ') }}</div>
               {% endif %}
               <div class="d-flex flex-wrap gap-2">
-                <a class="teacher-quick-link" href="{{ url_for('grade_entry_class', class_id=card.id) }}">Grades</a>
+                <a class="teacher-quick-link" href="{{ url_for('teacher_dashboard', grade_class_id=card.id) }}#grade-sheet">Grades</a>
                 <a class="teacher-quick-link" href="{{ url_for('teacher_class_attendance', class_id=card.id) }}">Attendance</a>
                 <a class="teacher-quick-link" href="{{ url_for('teacher_class_folder', class_id=card.id) }}">Roster</a>
                 {% if card.is_sponsor or 'Class Sponsor' in card.role_labels %}
@@ -747,7 +748,7 @@
   </div>
 </div>
 
-<div class="grade-sheet-wrapper">
+<div class="grade-sheet-wrapper" id="grade-sheet">
   <!-- Institutional Header with Dual Side Logos -->
   <div class="sheet-header-card">
     <!-- Left Side Logo -->
@@ -836,9 +837,6 @@
           <option value="{{ period_num }}" {% if period_num == grade_period %}selected{% endif %}>{{ period_name }}</option>
         {% endfor %}
       </select>
-    </div>
-    <div>
-      <button type="submit" class="btn btn-outline-secondary btn-sm w-100">Load sheet</button>
     </div>
   </form>
   {% endif %}
@@ -939,7 +937,7 @@
               {% else %}
                 <span class="status-badge pending roster-status-pill">Pending</span>
               {% endif %}
-                <a href="{{ url_for('report_card', student_id=student.id) }}{% if display_year %}?academic_year_id={{ display_year.id }}{% endif %}" class="roster-grade-sheet-link" title="Grade sheet" aria-label="Grade sheet">
+                <a href="{{ url_for('staff_student_grade_sheet', student_id=student.id, academic_year_id=display_year.id if display_year else none) }}" class="roster-grade-sheet-link" title="Print grade sheet" aria-label="Print grade sheet">
                   <i class="fas fa-file-alt" aria-hidden="true"></i>
                 </a>
               </div>
