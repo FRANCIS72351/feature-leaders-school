@@ -127,6 +127,7 @@ class GzipTests(unittest.TestCase):
         response = client.get("/hello", headers={"Accept-Encoding": "gzip"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("Content-Encoding"), "gzip")
+        self.assertIn("no-store", response.headers.get("Cache-Control", ""))
 
 
 if __name__ == "__main__":

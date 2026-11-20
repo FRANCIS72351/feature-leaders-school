@@ -200,7 +200,7 @@ def _static_file_on_disk(relative_path):
         roots.append(os.path.join(root_path, "static"))
 
     seen = set()
-    rel = relative_path.replace("/", os.sep)
+    rel = relative_path.replace("\\", "/").replace("/", os.sep)
     for root in roots:
         norm = os.path.normpath(root)
         if not norm or norm in seen:
@@ -886,8 +886,15 @@ class Student(db.Model):
 
     @property
     def has_id_photo(self):
-        """True when a real student photograph exists (not the default avatar)."""
-        return any(static_photo_file_exists(source) for source in self._id_photo_sources())
+        """True when a real student photograph is stored (not the default avatar).
+
+        Do not open files here. Registry ID lists run this for every student; disk
+        probes hung the cloud dashboard. Print/PDF still resolve the file on disk.
+        """
+        return any(
+            source and not _is_placeholder_photo_name(source)
+            for source in self._id_photo_sources()
+        )
 
     @property
     def official_signature_mark(self):

@@ -3,7 +3,7 @@
 {% block title %}Student Dashboard{% endblock %}
 
 {% block content %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/grading_hub.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/grading_hub.css') }}?v=20261120">
 <div class="student-dashboard py-4">
     <div class="container-fluid student-layout px-3 px-md-4 pro-dashboard">
 
@@ -215,6 +215,26 @@
                 <div class="card border-0 shadow-sm mb-4">
                     <div class="card-header bg-white border-bottom py-3">
                         <h3 class="h6 fw-bold mb-2"><i class="fas fa-chart-line text-primary me-2"></i>Academic Standing</h3>
+                        <form method="GET" action="{{ url_for('student_dashboard') }}" class="student-filter-bar mb-2">
+                            <input type="hidden" name="tab" value="grades">
+                            {% if display_year %}<input type="hidden" name="academic_year_id" value="{{ display_year.id }}">{% endif %}
+                            {% if subjects %}
+                            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                                <label class="small fw-semibold mb-0" for="grades_subject">Subject</label>
+                                <select name="subject" id="grades_subject" class="form-select form-select-sm student-filter-select" onchange="this.form.submit()">
+                                    {% for subject in subjects %}
+                                    <option value="{{ subject.name }}" {% if selected_subject | subjects_match(subject.name) %}selected{% endif %}>{{ subject.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <label class="small fw-semibold mb-0" for="grades_period">Period</label>
+                                <select name="period" id="grades_period" class="form-select form-select-sm student-filter-select" onchange="this.form.submit()">
+                                    {% for period_num, period_name in grading_periods %}
+                                    <option value="{{ period_num }}" {% if selected_period|int == period_num %}selected{% endif %}>{{ period_name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            {% endif %}
+                        </form>
                         {% if subjects %}
                         <div class="student-subject-pills d-flex flex-wrap gap-2 mb-2">
                             {% for subject in subjects %}
@@ -226,7 +246,7 @@
                         <div class="student-period-pills">
                             {% for period_num, period_name in grading_periods %}
                             <a href="{{ url_for('student_dashboard', tab='grades', academic_year_id=display_year.id if display_year else None, subject=selected_subject, period=period_num) }}"
-                               class="period-pill {% if selected_period == period_num %}active{% endif %}">{{ period_name }}</a>
+                               class="period-pill {% if selected_period|int == period_num %}active{% endif %}">{{ period_name }}</a>
                             {% endfor %}
                         </div>
                     </div>
@@ -414,6 +434,28 @@
                     <div class="card-header bg-white border-bottom py-3">
                         <h3 class="h6 fw-bold mb-2"><i class="fas fa-clipboard-list text-primary me-2"></i>Activities Record</h3>
                         <p class="text-muted small mb-2">All assignments, classroom activities, and scores for {{ display_year.name if display_year else 'this year' }}</p>
+                        <form method="GET" action="{{ url_for('student_dashboard') }}" class="student-filter-bar mb-2">
+                            <input type="hidden" name="tab" value="activities">
+                            {% if display_year %}<input type="hidden" name="academic_year_id" value="{{ display_year.id }}">{% endif %}
+                            {% if subjects %}
+                            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                                <label class="small fw-semibold mb-0" for="activities_subject">Subject</label>
+                                <select name="subject" id="activities_subject" class="form-select form-select-sm student-filter-select" onchange="this.form.submit()">
+                                    <option value="" {% if not selected_subject %}selected{% endif %}>All Subjects</option>
+                                    {% for subject in subjects %}
+                                    <option value="{{ subject.name }}" {% if selected_subject and (selected_subject | subjects_match(subject.name)) %}selected{% endif %}>{{ subject.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <label class="small fw-semibold mb-0" for="activities_period">Period</label>
+                                <select name="period" id="activities_period" class="form-select form-select-sm student-filter-select" onchange="this.form.submit()">
+                                    <option value="" {% if not selected_period %}selected{% endif %}>All Periods</option>
+                                    {% for period_num, period_name in grading_periods %}
+                                    <option value="{{ period_num }}" {% if selected_period and selected_period|int == period_num %}selected{% endif %}>{{ period_name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            {% endif %}
+                        </form>
                         {% if subjects %}
                         <div class="student-subject-pills d-flex flex-wrap gap-2 mb-2">
                             <a href="{{ url_for('student_dashboard', tab='activities', academic_year_id=display_year.id if display_year else None, period=selected_period) }}"
@@ -429,7 +471,7 @@
                                class="period-pill {% if not selected_period %}active{% endif %}">All Periods</a>
                             {% for period_num, period_name in grading_periods %}
                             <a href="{{ url_for('student_dashboard', tab='activities', academic_year_id=display_year.id if display_year else None, subject=selected_subject, period=period_num) }}"
-                               class="period-pill {% if selected_period == period_num %}active{% endif %}">{{ period_name }}</a>
+                               class="period-pill {% if selected_period and selected_period|int == period_num %}active{% endif %}">{{ period_name }}</a>
                             {% endfor %}
                         </div>
                     </div>
@@ -869,5 +911,27 @@
     .fin-box span { display: block; font-size: 0.68rem; text-transform: uppercase; color: #64748b; }
     .fin-box strong { font-size: 1.1rem; }
     .style-micro { font-size: 0.75rem; }
+    .student-filter-select { max-width: 16rem; }
+    .subject-pill, .period-pill {
+        display: inline-block;
+        position: relative;
+        z-index: 2;
+        text-decoration: none;
+        font-size: 0.82rem;
+        font-weight: 600;
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+        border: 1px solid #cbd5e1;
+        background: #fff;
+        color: #334155;
+        cursor: pointer;
+    }
+    .subject-pill:hover, .period-pill:hover { border-color: #1e40af; color: #1e40af; }
+    .subject-pill.active, .period-pill.active {
+        background: #1e40af;
+        border-color: #1e40af;
+        color: #fff;
+    }
+    .student-period-pills { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 </style>
 {% endblock %}

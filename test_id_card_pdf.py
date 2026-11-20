@@ -1,5 +1,6 @@
 """ID card folder PDF — filename and CR80 batch bytes, no student PII."""
 import base64
+import os
 import re
 import unittest
 import zlib
@@ -645,6 +646,47 @@ class IdCardPdfTestCase(unittest.TestCase):
 
         with mock.patch('id_card_pdf.find_chromium_executable', return_value=None):
             self.assertIsNone(html_print_batch_to_pdf('<html></html>'))
+
+    def test_chromium_lookup_accepts_linux_path(self):
+        from id_card_pdf import find_chromium_executable
+
+        linux = '/usr/bin/google-chrome-stable'
+        with mock.patch.dict(os.environ, {'ID_CARD_CHROME': '', 'CHROME_PATH': ''}, clear=False):
+            with mock.patch('id_card_pdf.os.path.isfile', side_effect=lambda path: path == linux):
+                with mock.patch('id_card_pdf.os.access', return_value=True):
+                    with mock.patch('id_card_pdf.shutil.which', return_value=None):
+                        self.assertEqual(find_chromium_executable(), linux)
+
+    def test_headless_print_uses_linux_sandbox_flags(self):
+        from id_card_pdf import html_print_batch_to_pdf
+
+        captured = {}
+
+        def fake_run(cmd, **kwargs):
+            captured['cmd'] = cmd
+            return mock.Mock(returncode=1, stderr=b'fail', stdout=b'')
+
+        with mock.patch('id_card_pdf.find_chromium_executable', return_value='/usr/bin/chromium'):
+            with mock.patch('id_card_pdf.subprocess.run', side_effect=fake_run):
+                with mock.patch('id_card_pdf.os.path.isfile', return_value=False):
+                    html_print_batch_to_pdf('<html></html>')
+        self.assertIn('--no-sandbox', captured.get('cmd') or [])
+        self.assertIn('--disable-dev-shm-usage', captured.get('cmd') or [])
+
+
+class IdCardReadyWithoutDiskTestCase(unittest.TestCase):
+    def test_stored_photo_counts_without_opening_files(self):
+        from models import Student
+
+        student = Student(
+            first_name='Amina',
+            last_name='Kollie',
+            student_id='FLPA-1',
+            photo='uploads/id_photos/photo_1_cloud.jpg',
+            photo_filename='photo_1_cloud.jpg',
+        )
+        self.assertTrue(student.has_id_photo)
+        self.assertTrue(student.has_signature)
 
 
 class StaffSignatureMarkTestCase(unittest.TestCase):

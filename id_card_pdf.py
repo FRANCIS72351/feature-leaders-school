@@ -7,6 +7,7 @@ import math
 import mimetypes
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import urllib.request
@@ -99,10 +100,18 @@ _ASSET_URL_RE = re.compile(
 
 
 def find_chromium_executable():
-    """Edge or Chrome on this machine, used to print the on-screen ID HTML to PDF."""
+    """Chrome/Chromium/Edge used to print the on-screen ID HTML to PDF.
+
+    Local Windows uses Edge/Chrome. Ubuntu cloud looks under /usr/bin and PATH.
+    Set ID_CARD_CHROME if the browser lives somewhere else.
+    """
     explicit = (os.environ.get('ID_CARD_CHROME') or os.environ.get('CHROME_PATH') or '').strip()
-    if explicit and os.path.isfile(explicit):
-        return explicit
+    if explicit:
+        if os.path.isfile(explicit) and os.access(explicit, os.X_OK):
+            return explicit
+        found = shutil.which(explicit)
+        if found:
+            return found
     program_files = os.environ.get('PROGRAMFILES', r'C:\Program Files')
     program_files_x86 = os.environ.get('PROGRAMFILES(X86)', r'C:\Program Files (x86)')
     local_app = os.environ.get('LOCALAPPDATA', '')
@@ -113,10 +122,24 @@ def find_chromium_executable():
         os.path.join(program_files_x86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
         os.path.join(local_app, 'Google', 'Chrome', 'Application', 'chrome.exe'),
         os.path.join(local_app, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+        '/usr/bin/google-chrome-stable',
+        '/usr/bin/google-chrome',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/chromium',
+        '/snap/bin/chromium',
+        '/usr/bin/microsoft-edge-stable',
+        '/usr/bin/microsoft-edge',
     ]
     for path in candidates:
         if path and os.path.isfile(path):
             return path
+    for name in (
+        'google-chrome-stable', 'google-chrome', 'chromium-browser',
+        'chromium', 'msedge', 'microsoft-edge-stable', 'microsoft-edge',
+    ):
+        found = shutil.which(name)
+        if found:
+            return found
     return None
 
 
@@ -167,7 +190,7 @@ _GOOGLE_FONT_LINK_RE = re.compile(
 )
 
 
-def _http_get(url, timeout=12):
+def _http_get(url, timeout=3):
     request = urllib.request.Request(
         url,
         headers={'User-Agent': 'Mozilla/5.0 FLPA-ID-Cards'},
@@ -235,6 +258,9 @@ def html_print_batch_to_pdf(html, *, static_root=None):
                 chrome,
                 *extra,
                 '--disable-gpu',
+                '--no-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-software-rasterizer',
                 '--no-first-run',
                 '--no-default-browser-check',
                 '--disable-extensions',

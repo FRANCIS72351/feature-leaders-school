@@ -115,31 +115,59 @@
                             <thead class="table-light">
                                 <tr>
                                     <th>Subject</th>
-                                    <th>Teacher(s)</th>
-                                    <th class="text-end" style="width: 100px;">Remove</th>
+                                    <th>Teacher</th>
+                                    <th class="text-end" style="width: 140px;">Catalog</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for row in class_subjects %}
+                                {% set assigned = assignment_map.get(row.subject_name, []) if assignment_map is defined else [] %}
                                 <tr>
-                                    <td class="fw-semibold">{{ row.subject_name }}</td>
+                                    <td class="fw-semibold align-middle">{{ row.subject_name }}</td>
                                     <td>
-                                        {% set teachers = teacher_map.get(row.subject_name, []) %}
-                                        {% if teachers %}
-                                            {% for t in teachers %}
-                                            <span class="badge bg-light text-dark border me-1">{{ t }}</span>
+                                        {% if assigned %}
+                                            {% for alloc in assigned %}
+                                            <form method="POST" action="{{ url_for('update_class_subject_teacher', assignment_id=alloc.id) }}" class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <input type="hidden" name="next" value="subject_setup">
+                                                <input type="hidden" name="subject_name" value="{{ alloc.subject_name }}">
+                                                <select name="teacher_id" class="form-select form-select-sm" style="max-width: 240px;" required>
+                                                    {% for teacher in faculty_teachers %}
+                                                    <option value="{{ teacher.id }}" {% if teacher.id == alloc.teacher_id %}selected{% endif %}>{{ teacher.full_name }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                                <button type="submit" class="btn btn-sm btn-outline-primary">Save teacher</button>
+                                            </form>
+                                            <form method="POST" action="{{ url_for('remove_class_subject_teacher', assignment_id=alloc.id) }}" class="d-inline"
+                                                  onsubmit="return confirm('Remove this teacher from {{ row.subject_name }}?');">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <input type="hidden" name="next" value="subject_setup">
+                                                <button type="submit" class="btn btn-sm btn-outline-secondary">Unassign</button>
+                                            </form>
                                             {% endfor %}
                                         {% else %}
-                                            <span class="text-muted small">No teacher assigned yet</span>
+                                            <form method="POST" action="{{ url_for('assign_teacher') }}" class="d-flex flex-wrap gap-2 align-items-center">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <input type="hidden" name="next" value="subject_setup">
+                                                <input type="hidden" name="class_id" value="{{ selected_class.id }}">
+                                                <input type="hidden" name="subject_name" value="{{ row.subject_name }}">
+                                                <select name="teacher_id" class="form-select form-select-sm" style="max-width: 240px;" required>
+                                                    <option value="" disabled selected>Choose teacher…</option>
+                                                    {% for teacher in faculty_teachers %}
+                                                    <option value="{{ teacher.id }}">{{ teacher.full_name }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                                <button type="submit" class="btn btn-sm btn-primary">Assign</button>
+                                            </form>
                                         {% endif %}
                                     </td>
-                                    <td class="text-end">
+                                    <td class="text-end align-middle">
                                         <form method="POST" action="{{ url_for('subject_setup', class_id=selected_class.id) }}" class="d-inline"
-                                              onsubmit="return confirm('Remove {{ row.subject_name }} from this class?');">
+                                              onsubmit="return confirm('Remove “{{ row.subject_name }}” from this class? Teachers will no longer see this spelling when putting down grades.');">
                                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                             <input type="hidden" name="action" value="remove_subject">
                                             <input type="hidden" name="subject_id" value="{{ row.id }}">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">Remove subject</button>
                                         </form>
                                     </td>
                                 </tr>
@@ -158,11 +186,45 @@
                 </div>
             </div>
 
+            {% if extra_assignments %}
+            <div class="card border-0 shadow-sm mb-4 border-warning">
+                <div class="card-header bg-white border-bottom py-3">
+                    <h2 class="h6 fw-bold mb-0 text-warning"><i class="fas fa-spell-check me-2"></i>Misspelled or extra names on the grade list</h2>
+                    <p class="text-muted small mb-0">These spellings were typed when a teacher was assigned. Teachers still see them when entering grades. Fix the spelling or delete the name.</p>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex flex-column gap-3">
+                        {% for alloc in extra_assignments %}
+                        <div class="d-flex flex-column flex-md-row gap-2 align-items-md-center justify-content-between p-3 rounded-3" style="background:#fff8f0;border:1px solid #f3d2a8;">
+                            <div>
+                                <div class="fw-bold">{{ alloc.subject_name }}</div>
+                                <div class="small text-muted">{{ alloc.teacher.full_name if alloc.teacher else 'Teacher' }} · {{ selected_class.name }}</div>
+                            </div>
+                            <form method="POST" action="{{ url_for('update_class_subject_teacher', assignment_id=alloc.id) }}" class="d-flex flex-wrap gap-2 align-items-center">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="next" value="subject_setup">
+                                <input type="hidden" name="teacher_id" value="{{ alloc.teacher_id }}">
+                                <label class="visually-hidden" for="fix-subject-{{ alloc.id }}">Correct subject spelling</label>
+                                <input id="fix-subject-{{ alloc.id }}" type="text" name="subject_name" class="form-control form-control-sm" style="min-width:180px;" value="{{ alloc.subject_name }}" required>
+                                <button type="submit" class="btn btn-sm btn-primary">Fix spelling</button>
+                            </form>
+                            <form method="POST" action="{{ url_for('remove_class_subject_teacher', assignment_id=alloc.id) }}"
+                                  onsubmit="return confirm('Delete “{{ alloc.subject_name }}” so teachers no longer see this spelling when entering grades?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="next" value="subject_setup">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete name</button>
+                            </form>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
             <div class="card border-0 shadow-sm">
                 <div class="card-body small text-muted">
-                    <strong>Next step:</strong> After subjects are listed here, assign teachers under
-                    <a href="{{ url_for('class_create') }}">Class Management - Faculty Roster Allocation</a>
-                    so teachers can enter grades for each subject.
+                    <strong>Misspelled subject:</strong> use <strong>Fix spelling</strong> or <strong>Delete name</strong> above, or click <strong>Remove subject</strong> on the catalog row.
+                    That name is taken off the teacher’s grade list so they are not confused while entering scores.
                 </div>
             </div>
             {% else %}

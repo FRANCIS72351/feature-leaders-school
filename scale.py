@@ -204,6 +204,13 @@ def apply_http_performance(app):
                     "Cache-Control",
                     f"public, max-age={max_age}",
                 )
+        elif (response.mimetype or "").startswith("text/html"):
+            # Authenticated dashboards must not reuse one subject/period page.
+            response.headers["Cache-Control"] = (
+                "private, no-store, no-cache, must-revalidate, max-age=0"
+            )
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
         try:
             accept = request.headers.get("Accept-Encoding", "")
         except Exception:

@@ -6,7 +6,7 @@
  * branded shell (logo, icons, offline notice) is cached, which keeps the app
  * installable and gives a proper offline screen instead of the browser error.
  */
-const CACHE_VERSION = 'flpa-shell-v1';
+const CACHE_VERSION = 'flpa-shell-v2';
 const OFFLINE_URL = '/static/offline.html';
 
 const SHELL_ASSETS = [
@@ -69,7 +69,7 @@ async function staleWhileRevalidate(request) {
 /* Pages always come from the server; offline shows the branded notice. */
 async function networkFirstPage(request) {
   try {
-    return await fetch(request);
+    return await fetch(request, { cache: 'no-store' });
   } catch (error) {
     const cached = await caches.match(OFFLINE_URL);
     return (

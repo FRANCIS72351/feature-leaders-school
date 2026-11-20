@@ -1,5 +1,5 @@
 # app.py — Future Leaders Academy Management System
-from flask import Flask, render_template, redirect, url_for, flash, request, Response, jsonify, send_file, send_from_directory, current_app, abort, session, g, has_app_context, has_request_context
+from flask import Flask, render_template, redirect, url_for, flash, request, Response, jsonify, send_file, send_from_directory, current_app, abort, session, g, has_app_context, has_request_context, make_response
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
@@ -3084,6 +3084,22 @@ def subjects_match(left, right):
     return subject_match_key(left) == subject_match_key(right)
 
 
+def resolve_listed_subject(requested, names, fallback_first=True):
+    """Pick the catalog name that matches a query value; do not require exact spelling."""
+    names = [name for name in (names or []) if name]
+    requested = (requested or '').strip()
+    if not names:
+        return requested
+    if not requested:
+        return names[0] if fallback_first else ''
+    for name in names:
+        if subjects_match(name, requested):
+            return name
+    if fallback_first:
+        return names[0]
+    return requested
+
+
 def find_class_for_student_grade(grade_level, stream=None, old_class_id=None):
     """Return the best Class row for a student's grade tier (optionally matching stream)."""
     if not grade_level:
@@ -3781,11 +3797,16 @@ def build_student_academic_portal(student, display_year, selected_subject=None, 
         ]
 
     activity_feed = []
+    submission_map = {}
+    if filtered_assessments:
+        assessment_ids = [item.id for item in filtered_assessments]
+        for sub in Submission.query.filter(
+            Submission.student_id == student.id,
+            Submission.assessment_id.in_(assessment_ids),
+        ).all():
+            submission_map[sub.assessment_id] = sub
     for assessment in filtered_assessments:
-        submission = Submission.query.filter_by(
-            assessment_id=assessment.id,
-            student_id=student.id,
-        ).first()
+        submission = submission_map.get(assessment.id)
         activity_feed.append({
             'assessment': assessment,
             'submission': submission,
@@ -4944,16 +4965,20 @@ def build_full_activity_record(student, display_year, selected_subject=None, sel
     assessments = get_student_assessments(student, display_year)
     component_maps = _component_score_maps_for_student(student, display_year)
     records = []
+    submission_map = {}
+    if assessments:
+        for sub in Submission.query.filter(
+            Submission.student_id == student.id,
+            Submission.assessment_id.in_([item.id for item in assessments]),
+        ).all():
+            submission_map[sub.assessment_id] = sub
     for assessment in assessments:
         if selected_subject and not subjects_match(assessment.subject_name, selected_subject):
             continue
         period_num = assessment.marking_period or 1
         if selected_period and period_num != selected_period:
             continue
-        submission = Submission.query.filter_by(
-            assessment_id=assessment.id,
-            student_id=student.id,
-        ).first()
+        submission = submission_map.get(assessment.id)
         item = {
             'assessment': assessment,
             'submission': submission,
@@ -5424,16 +5449,21 @@ def validate_student_id_for_registration(student_id_value, form, academic_year, 
 def compile_student_dashboard_context(student, display_year, request_args=None, active_tab='grades'):
     """Build the full template context for the student dashboard."""
     request_args = request_args or {}
-    if hasattr(request_args, 'getlist'):
-        selected_subject = request_args.get('subject') or request_args.get('subject_name')
-        has_period_param = request_args.get('period') is not None
-        raw_period = request_args.get('period', type=int)
-    else:
-        selected_subject = request_args.get('subject') or request_args.get('subject_name')
-        has_period_param = request_args.get('period') is not None
-        raw_period = request_args.get('period')
+
+    def _query_text(key):
+        value = request_args.get(key)
+        if value is None:
+            return None
+        value = str(value).strip()
+        return value or None
+
+    selected_subject = _query_text('subject') or _query_text('subject_name')
+    raw_period_text = _query_text('period')
+    has_period_param = raw_period_text is not None
+    raw_period = None
+    if has_period_param:
         try:
-            raw_period = int(raw_period) if raw_period else None
+            raw_period = int(raw_period_text)
         except (TypeError, ValueError):
             raw_period = None
 
@@ -5491,7 +5521,9 @@ def compile_student_dashboard_context(student, display_year, request_args=None, 
 
     pending_ids = {task['assessment'].id for task in pending_tasks}
     visible_pending = [a for a in task_assessments if a.id in pending_ids]
-    if pending_tasks and not visible_pending:
+    # Only My Tasks may jump to the first open assignment. My Grades / Activities
+    # must keep the subject and period the student just chose.
+    if active_tab == 'tasks' and pending_tasks and not visible_pending:
         first_pending = pending_tasks[0]['assessment']
         sel_subject = first_pending.subject_name
         sel_period = first_pending.marking_period or 1
@@ -8859,13 +8891,20 @@ def student_dashboard():
                 active_tab = 'grades'
             ctx = compile_student_dashboard_context(None, display_year, request.args, active_tab=active_tab)
 
-        return render_template(
+        response = make_response(render_template(
             'dashboard_student.html',
             past_years=past_years,
             current_user=current_user,
             active_tab=active_tab,
             **ctx,
-        )
+        ))
+        response.headers['Cache-Control'] = 'private, no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        response.headers['CDN-Cache-Control'] = 'no-store'
+        response.headers['Surrogate-Control'] = 'no-store'
+        response.headers['Vary'] = 'Cookie, Accept-Encoding'
+        return response
 
     except Exception as e:
         logger.error(f"Critical error rendering student dashboard: {str(e)}", exc_info=True)
@@ -11497,8 +11536,7 @@ def teacher_dashboard():
             ).strip()
             if not grade_subject and session.get('teacher_grade_class_id') == grade_class_id:
                 grade_subject = (session.get('teacher_grade_subject') or '').strip()
-            if grade_subject not in grade_entry_subjects:
-                grade_subject = grade_entry_subjects[0] if grade_entry_subjects else ''
+            grade_subject = resolve_listed_subject(grade_subject, grade_entry_subjects)
             grade_period = (
                 request.args.get('grade_period', type=int)
                 or request.args.get('period', type=int)
@@ -12068,9 +12106,9 @@ def principal_class_grading(class_id):
         return redirect(url_for('principal_grade_entry'))
 
     subjects = get_class_subject_catalog(class_id)
-    selected_subject = (request.args.get('subject') or '').strip()
-    if selected_subject not in subjects:
-        selected_subject = subjects[0] if subjects else ''
+    selected_subject = resolve_listed_subject(
+        (request.args.get('subject') or '').strip(), subjects
+    )
 
     selected_period = request.args.get('period', 1, type=int)
     if selected_period not in range(1, 9):
@@ -12371,9 +12409,9 @@ def class_grading_hub(class_id):
         return redirect(url_for('teacher_dashboard'))
 
     subjects = get_assignable_subjects_for_class(teacher, current_user, class_id)
-    selected_subject = (request.args.get('subject') or '').strip()
-    if selected_subject not in subjects:
-        selected_subject = subjects[0] if subjects else ''
+    selected_subject = resolve_listed_subject(
+        (request.args.get('subject') or '').strip(), subjects
+    )
 
     selected_period = request.args.get('period', 1, type=int)
     if selected_period not in range(1, 9):
@@ -13080,9 +13118,9 @@ def manual_activity_grades(class_id):
         if role == 'teacher'
         else get_class_subject_catalog(class_id)
     )
-    selected_subject = (request.args.get('subject') or '').strip()
-    if selected_subject not in subjects:
-        selected_subject = subjects[0] if subjects else ''
+    selected_subject = resolve_listed_subject(
+        (request.args.get('subject') or '').strip(), subjects
+    )
 
     valid_periods = {p for p, _ in MOE_GRADING_PERIODS}
     selected_period = request.args.get('period', 1, type=int)
@@ -20251,11 +20289,18 @@ def _save_id_card_image(file_storage, subdir, student_id, kind, student=None):
         _store_id_photo_original_bytes(student, payload, original_ext)
     payload, ext = _process_id_card_image_bytes(payload, kind, ext)
     upload_dir = os.path.join(current_app.root_path, 'static', 'uploads', subdir)
-    os.makedirs(upload_dir, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')
-    filename = f"{kind}_{int(student_id)}_{timestamp}{ext}"
-    with open(os.path.join(upload_dir, filename), 'wb') as handle:
-        handle.write(payload)
+    try:
+        os.makedirs(upload_dir, exist_ok=True)
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')
+        filename = f"{kind}_{int(student_id)}_{timestamp}{ext}"
+        with open(os.path.join(upload_dir, filename), 'wb') as handle:
+            handle.write(payload)
+    except OSError:
+        logger.exception('ID card image could not be written under %s', upload_dir)
+        raise ValueError(
+            'The server could not save that ID photo. On the cloud, make sure '
+            'static/uploads/id_photos is writable by the app user.'
+        )
     rel_path = os.path.join('uploads', subdir, filename).replace('\\', '/')
     return filename, rel_path
 
@@ -20937,7 +20982,7 @@ def _refresh_id_card_flags(students, academic_year=None, *, commit=False):
 
 
 def _id_card_students_for_year(display_year):
-    """Year roster with ID-ready flags refreshed from photo, signature, class, and ID number."""
+    """Year roster for the ID-card hub. Do not rewrite flags on GET (cloud autoflush hang)."""
     students = []
     if display_year:
         students = (
@@ -20946,7 +20991,6 @@ def _id_card_students_for_year(display_year):
             .order_by(Student.last_name.asc(), Student.first_name.asc())
             .all()
         )
-    _refresh_id_card_flags(students, academic_year=display_year, commit=False)
     return students
 
 
@@ -21473,7 +21517,14 @@ def id_cards_folder_hub():
     roster_total = 0
     for klass in class_rows:
         roster = by_class.get(klass.id, [])
-        ready = sum(1 for row in roster if row.id_card_ready)
+        ready = sum(
+            1 for row in roster
+            if row.id_card_ready or (
+                (row.student_id or '').strip()
+                and row.has_id_photo
+                and row.has_signature
+            )
+        )
         class_stats[klass.id] = {
             'total': len(roster),
             'ready': ready,
@@ -23020,93 +23071,276 @@ def room_quick_create():
     # Refresh page layout state instantly to populate newly registered components
     return redirect(url_for('class_create'))
 
+def _teacher_display_name(teacher):
+    if not teacher:
+        return 'Unassigned teacher'
+    name = f"{(teacher.first_name or '').strip()} {(teacher.last_name or '').strip()}".strip()
+    if name:
+        return name
+    if teacher.user and teacher.user.full_name:
+        return teacher.user.full_name
+    return f"Teacher {teacher.id}"
+
+
+def _faculty_roster_redirect(class_id=None):
+    nxt = (request.form.get('next') or '').strip()
+    if nxt == 'subject_setup' and class_id:
+        return redirect(url_for('subject_setup', class_id=class_id))
+    anchor = f'#class-{class_id}' if class_id else ''
+    return redirect(url_for('class_create') + anchor)
+
+
+def _find_class_subject_assignment(class_id, subject_name, *, exclude_id=None):
+    subject_key = _subject_key(subject_name)
+    if not class_id or not subject_key:
+        return None
+    query = ClassSubjectTeacher.query.filter_by(class_id=class_id)
+    if exclude_id:
+        query = query.filter(ClassSubjectTeacher.id != exclude_id)
+    for row in query.all():
+        if _subject_key(row.subject_name) == subject_key:
+            return row
+    return None
+
+
+def _class_subject_catalog_row(class_id, subject_name):
+    key = _subject_key(subject_name)
+    if not class_id or not key:
+        return None
+    for row in ClassSubject.query.filter_by(class_id=class_id).all():
+        if _subject_key(row.subject_name) == key:
+            return row
+    return None
+
+
+def _ensure_class_subject_catalog_name(class_id, subject_name):
+    name = ' '.join((subject_name or '').split())
+    if not class_id or not name:
+        return
+    if _class_subject_catalog_row(class_id, name):
+        return
+    db.session.add(ClassSubject(class_id=class_id, subject_name=name))
+
+
+def _purge_class_subject_spelling(class_id, subject_name):
+    """Delete a misspelled or extra subject from catalog and teacher grade lists."""
+    key = _subject_key(subject_name)
+    if not class_id or not key:
+        return 0
+    removed = 0
+    for alloc in ClassSubjectTeacher.query.filter_by(class_id=class_id).all():
+        if _subject_key(alloc.subject_name) == key:
+            db.session.delete(alloc)
+            removed += 1
+    catalog = _class_subject_catalog_row(class_id, subject_name)
+    if catalog:
+        db.session.delete(catalog)
+        removed += 1
+    return removed
+
+
+def _rename_class_subject_spelling(class_id, old_name, new_name):
+    """Keep catalog in sync when a teacher assignment spelling is corrected."""
+    if _subject_key(old_name) == _subject_key(new_name):
+        return
+    _ensure_class_subject_catalog_name(class_id, new_name)
+    leftover = _find_class_subject_assignment(class_id, old_name)
+    if leftover:
+        return
+    old_row = _class_subject_catalog_row(class_id, old_name)
+    if old_row:
+        db.session.delete(old_row)
+
+
+def _save_class_subject_assignment(klass, teacher, subject_name, *, assignment=None):
+    """Create or correct one class/subject teacher allocation. One teacher per subject."""
+    subject_name = ' '.join((subject_name or '').split())
+    if not klass or not teacher or not subject_name:
+        return None, 'Class, teacher, and subject are required.'
+
+    occupant = _find_class_subject_assignment(
+        klass.id, subject_name, exclude_id=assignment.id if assignment else None,
+    )
+
+    if assignment is None:
+        if occupant and occupant.teacher_id == teacher.id:
+            return occupant, (
+                f'No change — {_teacher_display_name(teacher)} already teaches '
+                f'"{occupant.subject_name}" in {klass.name}.'
+            )
+        if occupant:
+            previous = _teacher_display_name(occupant.teacher_node)
+            occupant.teacher_id = teacher.id
+            occupant.subject_name = occupant.subject_name or subject_name
+            return occupant, (
+                f'Replaced {previous} with {_teacher_display_name(teacher)} '
+                f'for "{occupant.subject_name}" in {klass.name}.'
+            )
+        assignment = ClassSubjectTeacher(
+            class_id=klass.id,
+            teacher_id=teacher.id,
+            subject_name=subject_name,
+        )
+        db.session.add(assignment)
+        _ensure_class_subject_catalog_name(klass.id, subject_name)
+        return assignment, (
+            f'Assigned {_teacher_display_name(teacher)} to teach "{subject_name}" in {klass.name}.'
+        )
+
+    if occupant:
+        other = _teacher_display_name(occupant.teacher_node)
+        return None, (
+            f'{other} already teaches "{occupant.subject_name}" in {klass.name}. '
+            'Change that assignment first, or pick a different subject.'
+        )
+
+    old_name = assignment.subject_name
+    assignment.teacher_id = teacher.id
+    assignment.subject_name = subject_name
+    _ensure_class_subject_catalog_name(klass.id, subject_name)
+    _rename_class_subject_spelling(klass.id, old_name, subject_name)
+    return assignment, (
+        f'Updated {klass.name}: {_teacher_display_name(teacher)} now teaches "{subject_name}".'
+    )
+
+
 @app.route('/admin/classes/assign-teacher', methods=['POST'])
 @login_required
 def assign_teacher():
-    """
-    Handles form submission for allocating teachers to distinct class subjects
-    via the ClassSubjectTeacher intermediate matrix mapping table.
-    """
-    # ✨ FIX 1: Grant permission to BOTH Admin and Principal roles (case-insensitive protection)
+    """Allocate a teacher to a class subject, or replace the teacher if that subject is already taken."""
     blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
     if blocked:
         return blocked
 
     form = AssignTeacherForm()
-    
-    # Safely order fallback entries alphabetically by actual database string columns
     teachers = Teacher.query.order_by(Teacher.first_name.asc(), Teacher.last_name.asc()).all()
     classes = Class.query.order_by(Class.name.asc()).all()
-
-    # Repopulate choices dynamically so form validation passes smoothly
     form.class_id.choices = [(c.id, c.name) for c in classes]
     form.teacher_id.choices = [
-        (t.id, f"{(t.first_name or '').strip()} {(t.last_name or '').strip()}".strip() or (t.user.full_name if t.user else f"Teacher {t.id}"))
-        for t in teachers
+        (t.id, _teacher_display_name(t)) for t in teachers
     ]
 
     if form.validate_on_submit():
         try:
             class_id = form.class_id.data
             teacher_id = form.teacher_id.data
-            
-            # Access the new subject field safely from your form string payload
-            subject_name = form.subject_name.data.strip() if hasattr(form, 'subject_name') else request.form.get('subject_name', '').strip()
-
+            subject_name = (form.subject_name.data or request.form.get('subject_name') or '').strip()
             if not subject_name:
-                flash("Validation Error: Please provide a valid Subject Name.", "warning")
-                return redirect(url_for('class_create'))
+                flash('Enter the subject this teacher will teach.', 'warning')
+                return _faculty_roster_redirect(class_id)
 
-            # Verify entities exist using modern SQLAlchemy standards
             klass = db.session.get(Class, class_id)
             selected_teacher = db.session.get(Teacher, teacher_id)
-
             if not klass or not selected_teacher:
-                flash("Invalid class or teacher selection.", "danger")
+                flash('Invalid class or teacher selection.', 'danger')
                 return redirect(url_for('class_create'))
 
-            # ✨ REVOLUTIONARY FIX: Check if this specific subject assignment is already registered
-            existing_assignment = ClassSubjectTeacher.query.filter_by(
-                class_id=class_id,
-                subject_name=subject_name
-            ).first()
-
-            if existing_assignment:
-                # Resolve relationship lookup cleanly
-                assigned_t = existing_assignment.teacher_node if hasattr(existing_assignment, 'teacher_node') else existing_assignment.teacher
-                t_name = f"{assigned_t.first_name or ''} {assigned_t.last_name or ''}".strip() if assigned_t else "Another teacher"
-                flash(f"⚠️ Conflict: {t_name} is already assigned to teach '{subject_name}' to {klass.name}!", "warning")
-                return redirect(url_for('class_create'))
-
-            # ✨ CORE CHANGE: Instantiate a multi-assignment row instead of overwriting the Class table directly!
-            new_assignment = ClassSubjectTeacher(
-                class_id=klass.id,
-                teacher_id=selected_teacher.id,
-                subject_name=subject_name
+            row, message = _save_class_subject_assignment(
+                klass, selected_teacher, subject_name,
             )
-            
-            db.session.add(new_assignment)
+            if row is None:
+                flash(message or 'Could not save the teacher assignment.', 'warning')
+                db.session.rollback()
+                return _faculty_roster_redirect(class_id)
+            log_activity('ASSIGN_CLASS_SUBJECT_TEACHER', message or 'Faculty assignment saved.')
             db.session.commit()
-
-            teacher_display = (
-                f"{selected_teacher.first_name or ''} {selected_teacher.last_name or ''}".strip()
-                or (selected_teacher.user.full_name if selected_teacher.user else f"Teacher {selected_teacher.id}")
-            )
-
-            flash(f"✨ Success! Assigned {teacher_display} to teach '{subject_name}' in room {klass.name}.", "success")
-            
+            kind = 'info' if (message or '').startswith('Replaced') or (message or '').startswith('No change') else 'success'
+            flash(message or 'Faculty assignment saved.', kind)
         except Exception as e:
             db.session.rollback()
-            logger.error(f"[-] Critical system assignment error: {str(e)}", exc_info=True)
-            flash(f"Database write error during assignment configuration: {str(e)}", "danger")
+            logger.error('Faculty assignment error: %s', e, exc_info=True)
+            flash(f'Could not save the teacher assignment: {e}', 'danger')
     else:
-        # Flash form parsing errors if any matching token fields fail validation checks (e.g., missing CSRF token)
         for field, errors in form.errors.items():
             for err in errors:
-                flash(f"Form Validation Error [{field}]: {err}", "danger")
+                flash(f'{field}: {err}', 'danger')
 
-    # Dynamic target check: falls back smoothly to class management page layouts
-    return redirect(url_for('class_create') if 'class_create' in current_app.view_functions else url_for('dashboard'))
+    class_id = request.form.get('class_id', type=int)
+    return _faculty_roster_redirect(class_id)
+
+
+@app.route('/admin/classes/assignment/<int:assignment_id>/update', methods=['POST'])
+@login_required
+def update_class_subject_teacher(assignment_id):
+    """Correct a mistaken class/subject teacher allocation."""
+    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    if blocked:
+        return blocked
+
+    assignment = db.session.get(ClassSubjectTeacher, assignment_id)
+    if not assignment:
+        flash('That faculty assignment could not be found.', 'warning')
+        return redirect(url_for('class_create'))
+
+    teacher_id = request.form.get('teacher_id', type=int)
+    subject_name = (request.form.get('subject_name') or assignment.subject_name or '').strip()
+    teacher = db.session.get(Teacher, teacher_id) if teacher_id else assignment.teacher_node
+    klass = assignment.klass_node or db.session.get(Class, assignment.class_id)
+    class_id = assignment.class_id
+
+    if not teacher or not klass:
+        flash('Class or teacher is missing for this assignment.', 'danger')
+        return _faculty_roster_redirect(class_id)
+
+    try:
+        _row, message = _save_class_subject_assignment(
+            klass, teacher, subject_name, assignment=assignment,
+        )
+        if _row is None:
+            flash(message or 'Could not update that assignment.', 'warning')
+            db.session.rollback()
+            return _faculty_roster_redirect(class_id)
+        log_activity('UPDATE_CLASS_SUBJECT_TEACHER', message or 'Updated faculty assignment.')
+        db.session.commit()
+        flash(message or 'Assignment updated.', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        logger.exception('Could not update faculty assignment %s', assignment_id)
+        flash(f'Could not update the assignment: {exc}', 'danger')
+    return _faculty_roster_redirect(class_id)
+
+
+@app.route('/admin/classes/assignment/<int:assignment_id>/remove', methods=['POST'])
+@login_required
+def remove_class_subject_teacher(assignment_id):
+    """Remove a class/subject teacher allocation after a mistaken assignment."""
+    blocked = deny_unless_roles(ACADEMIC_COMMAND_ROLES, academic_office=True)
+    if blocked:
+        return blocked
+
+    assignment = db.session.get(ClassSubjectTeacher, assignment_id)
+    if not assignment:
+        flash('That faculty assignment could not be found.', 'warning')
+        return redirect(url_for('class_create'))
+
+    class_id = assignment.class_id
+    klass = assignment.klass_node
+    teacher = assignment.teacher_node
+    subject_name = assignment.subject_name or 'this subject'
+    class_name = klass.name if klass else 'the class'
+    teacher_name = _teacher_display_name(teacher)
+    try:
+        db.session.delete(assignment)
+        leftover = _find_class_subject_assignment(class_id, subject_name)
+        if not leftover:
+            catalog = _class_subject_catalog_row(class_id, subject_name)
+            if catalog:
+                db.session.delete(catalog)
+        log_activity(
+            'REMOVE_CLASS_SUBJECT_TEACHER',
+            f'Removed {teacher_name} from "{subject_name}" in {class_name}.',
+        )
+        db.session.commit()
+        flash(
+            f'Removed "{subject_name}" for {teacher_name} in {class_name}. '
+            'It will no longer appear on that teacher’s grade list.',
+            'success',
+        )
+    except Exception as exc:
+        db.session.rollback()
+        logger.exception('Could not remove faculty assignment %s', assignment_id)
+        flash(f'Could not remove the assignment: {exc}', 'danger')
+    return _faculty_roster_redirect(class_id)
 
 
 def _stream_preset_for_class(klass):
@@ -23165,9 +23399,14 @@ def subject_setup(class_id=None):
                 subject_row_id = request.form.get('subject_id', type=int)
                 row = ClassSubject.query.filter_by(id=subject_row_id, class_id=selected_class.id).first()
                 if row:
-                    db.session.delete(row)
+                    name = row.subject_name
+                    _purge_class_subject_spelling(selected_class.id, name)
                     db.session.commit()
-                    flash(f'Removed "{row.subject_name}" from {selected_class.name}.', 'success')
+                    flash(
+                        f'Removed "{name}" from {selected_class.name}. '
+                        'Teachers will no longer see that spelling on the grade sheet.',
+                        'success',
+                    )
 
             elif action == 'apply_preset':
                 preset = _stream_preset_for_class(selected_class)
@@ -23198,7 +23437,9 @@ def subject_setup(class_id=None):
 
     class_subjects = []
     teacher_map = {}
+    assignment_map = {}
     preset_subjects = []
+    faculty_teachers = Teacher.query.order_by(Teacher.first_name.asc(), Teacher.last_name.asc()).all()
     if selected_class:
         class_subjects = (
             ClassSubject.query.filter_by(class_id=selected_class.id)
@@ -23210,14 +23451,23 @@ def subject_setup(class_id=None):
             teacher = alloc.teacher_node if hasattr(alloc, 'teacher_node') else alloc.teacher
             if not alloc.subject_name:
                 continue
-            label = (
-                f"{(teacher.first_name or '').strip()} {(teacher.last_name or '').strip()}".strip()
-                if teacher
-                else 'Assigned teacher'
-            )
+            label = _teacher_display_name(teacher)
             teacher_map.setdefault(alloc.subject_name, [])
             if label not in teacher_map[alloc.subject_name]:
                 teacher_map[alloc.subject_name].append(label)
+            assignment_map.setdefault(alloc.subject_name, [])
+            assignment_map[alloc.subject_name].append(alloc)
+
+    extra_assignments = []
+    if selected_class:
+        catalog_keys = {_subject_key(row.subject_name) for row in class_subjects}
+        seen_extra = set()
+        for allocs in assignment_map.values():
+            for alloc in allocs:
+                key = _subject_key(alloc.subject_name)
+                if key and key not in catalog_keys and alloc.id not in seen_extra:
+                    extra_assignments.append(alloc)
+                    seen_extra.add(alloc.id)
 
     return render_template(
         'subject_setup.html',
@@ -23226,6 +23476,9 @@ def subject_setup(class_id=None):
         selected_class=selected_class,
         class_subjects=class_subjects,
         teacher_map=teacher_map,
+        assignment_map=assignment_map,
+        extra_assignments=extra_assignments,
+        faculty_teachers=faculty_teachers,
         preset_subjects=preset_subjects,
     )
 

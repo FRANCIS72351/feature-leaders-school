@@ -116,6 +116,25 @@
         background-color: #f3f8fd !important;
         border-color: #d9e8f6 !important;
     }
+    .faculty-assignment-card {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.45rem;
+        background: #f8fbff;
+        border: 1px solid #d9e8f6;
+        border-radius: 8px;
+        padding: 0.45rem;
+    }
+    .faculty-assignment-form { flex: 1; min-width: 0; }
+    .faculty-assignment-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.2fr) auto;
+        gap: 0.4rem;
+        align-items: center;
+    }
+    @media (max-width: 900px) {
+        .faculty-assignment-grid { grid-template-columns: 1fr; }
+    }
 
     .class-provision-terminal .table-responsive,
     .class-provision-terminal .border-secondary {
@@ -383,8 +402,9 @@
                         <input type="text" class="form-control form-cyber" id="subject_name" name="subject_name" placeholder="e.g., Mathematics, Chemistry, Literature" required>
                     </div>
 
+                    <p class="small text-blue mb-3">If this class already has that subject, the teacher is replaced — you do not need to remove the old assignment first.</p>
                     <button type="submit" class="btn btn-emerald w-100 py-2.5 font-weight-bold shadow-sm rounded-3 text-white">
-                        <i class="fas fa-link me-2"></i>Establish Course Allocation Link
+                        <i class="fas fa-link me-2"></i>Save subject teacher
                     </button>
                 </form>
             </div>
@@ -429,7 +449,7 @@
                                 </td>
                             </tr>
                             {% for c in group.classes %}
-                            <tr>
+                            <tr id="class-{{ c.id }}">
                                 <td class="align-top">
                                     <div class="fw-bold text-white fs-5">{{ c.name }}</div>
                                     <div class="d-flex flex-column gap-1 mt-2 border-top border-secondary border-opacity-10 pt-2 text-blue" style="font-size: 0.78rem;">
@@ -470,15 +490,27 @@
                                             <div class="text-blue small mb-2 font-weight-bold" style="font-size: 0.7rem; text-transform: uppercase;">Faculty Load Matrix:</div>
                                             {% set assignments = c.allocations.all() %}
                                             {% if assignments %}
-                                                <div class="d-flex flex-wrap gap-1.5">
+                                                <div class="d-flex flex-column gap-2">
                                                     {% for asm in assignments %}
-                                                        <div class="badge bg-dark border border-secondary border-opacity-50 text-start p-2 rounded-2 shadow-sm d-flex align-items-center gap-2" style="font-size: 0.75rem;">
-                                                            <div>
-                                                                <i class="fas fa-graduation-cap text-cyan me-1"></i>
-                                                                <span class="text-white font-weight-bold">{{ asm.subject_name }}</span> 
-                                                                <span class="text-blue">by</span> 
-                                                                <span class="text-emerald font-weight-bold">{{ asm.teacher.full_name }}</span>
-                                                            </div>
+                                                        <div class="faculty-assignment-card">
+                                                            <form method="POST" action="{{ url_for('update_class_subject_teacher', assignment_id=asm.id) }}" class="faculty-assignment-form">
+                                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                                <div class="faculty-assignment-grid">
+                                                                    <label class="visually-hidden" for="subject-{{ asm.id }}">Subject</label>
+                                                                    <input id="subject-{{ asm.id }}" type="text" name="subject_name" class="form-control form-cyber form-control-sm" value="{{ asm.subject_name }}" required>
+                                                                    <label class="visually-hidden" for="teacher-{{ asm.id }}">Teacher</label>
+                                                                    <select id="teacher-{{ asm.id }}" name="teacher_id" class="form-select form-cyber form-select-sm" required>
+                                                                        {% for teacher in teachers %}
+                                                                        <option value="{{ teacher.id }}" {% if teacher.id == asm.teacher_id %}selected{% endif %}>{{ teacher.full_name }}</option>
+                                                                        {% endfor %}
+                                                                    </select>
+                                                                    <button type="submit" class="btn btn-sm btn-outline-primary">Save</button>
+                                                                </div>
+                                                            </form>
+                                                            <form method="POST" action="{{ url_for('remove_class_subject_teacher', assignment_id=asm.id) }}" onsubmit="return confirm('Remove “{{ asm.subject_name }}” for {{ asm.teacher.full_name if asm.teacher else 'this teacher' }} in {{ c.name }}? Teachers will no longer see this spelling on the grade list.');">
+                                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove this assignment">Remove</button>
+                                                            </form>
                                                         </div>
                                                     {% endfor %}
                                                 </div>
