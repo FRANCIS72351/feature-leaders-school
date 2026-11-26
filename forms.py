@@ -135,6 +135,25 @@ class AccountPasswordForm(FlaskForm):
     submit_password = SubmitField("Update password")
 
 
+class AccountEmailForm(FlaskForm):
+    new_email = StringField(
+        "New email address",
+        filters=[lambda value: (value or "").strip().lower()],
+        validators=[DataRequired(), Email(message="Enter a real inbox such as name@gmail.com.")],
+    )
+    current_password = PasswordField("Current password", validators=[DataRequired()])
+    submit_email = SubmitField("Send verification")
+
+    def validate_new_email(self, field):
+        from school_mailer import account_email_looks_deliverable
+        if not account_email_looks_deliverable(field.data):
+            raise ValidationError("Enter a real inbox you can open, not a school placeholder.")
+
+
+class AccountVerifyCurrentEmailForm(FlaskForm):
+    submit_verify_current = SubmitField("Send verification to this inbox")
+
+
 class AccountPhotoForm(FlaskForm):
     photo = FileField(
         "Profile photo",
@@ -412,6 +431,16 @@ class PaymentForm(FlaskForm):
     amount_paid = CurrencyField(
         "Amount Paid",
         validators=[DataRequired(), validate_currency],
+    )
+    payment_method = SelectField(
+        "Payment method",
+        choices=[
+            ('cash', 'Cash'),
+            ('mobile_money', 'Mobile Money'),
+            ('bank', 'Bank'),
+        ],
+        default='cash',
+        validators=[Optional()],
     )
     submit = SubmitField("Record Payment")
 

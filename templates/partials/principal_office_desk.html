@@ -1,0 +1,112 @@
+{# Shared Principal office tools. Used by Principal, VPI, and Proprietor. #}
+{% set yp = year_param|default({}) %}
+<style>
+    .principal-office-desk { margin-top: 0.25rem; }
+    .principal-office-desk h2 {
+        font-size: 1.05rem;
+        font-weight: 800;
+        color: #0b1f3a;
+        margin: 0 0 0.35rem;
+    }
+    .principal-office-desk .desk-lead {
+        color: #5b6b7c;
+        font-size: 0.88rem;
+        margin: 0 0 1rem;
+    }
+    .principal-office-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.85rem;
+    }
+    .principal-office-group {
+        background: #fff;
+        border: 1px solid #e4ebf3;
+        border-radius: 14px;
+        padding: 0.9rem 1rem 1rem;
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+    }
+    .principal-office-group h3 {
+        margin: 0 0 0.7rem;
+        font-size: 0.78rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 800;
+        color: #c82828;
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+    }
+    .principal-office-group a {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.65rem;
+        padding: 0.55rem 0.2rem;
+        border-top: 1px solid #eef3f8;
+        text-decoration: none !important;
+        color: #12263a;
+    }
+    .principal-office-group a:first-of-type { border-top: 0; }
+    .principal-office-group a:hover { color: #002d62; }
+    .principal-office-group a i {
+        width: 1.15rem;
+        text-align: center;
+        margin-top: 0.15rem;
+        color: #0284c7;
+    }
+    .principal-office-group a strong {
+        display: block;
+        font-size: 0.86rem;
+        font-weight: 700;
+    }
+    .principal-office-group a span {
+        display: block;
+        font-size: 0.75rem;
+        color: #5b6b7c;
+        font-weight: 500;
+    }
+    @media (max-width: 800px) {
+        .principal-office-grid { grid-template-columns: 1fr; }
+    }
+</style>
+<section class="principal-office-desk" aria-label="Principal office responsibilities">
+    <h2><i class="fas fa-user-shield me-2"></i>Principal office</h2>
+    <p class="desk-lead">The same command desk as the Principal: people, academics, communications, and school operations. Senior High grade and transcript seal is shared by the Proprietor and VPI.</p>
+    <div class="principal-office-grid">
+        <div class="principal-office-group">
+            <h3><i class="fas fa-users"></i> People &amp; accounts</h3>
+            <a href="{{ url_for('admin_users') }}"><i class="fas fa-user-plus"></i><div><strong>Enroll staff &amp; users</strong><span>Create teacher, office, and portal accounts</span></div></a>
+            <a href="{{ url_for('staff_folders') }}"><i class="fas fa-folder-open"></i><div><strong>Staff folders</strong><span>Open an employee record</span></div></a>
+            <a href="{{ url_for('administrative_password_reset') }}"><i class="fas fa-key"></i><div><strong>Password override</strong><span>Reset a staff or student login</span></div></a>
+            <a href="{{ url_for('id_cards_folder_hub') }}"><i class="fas fa-id-card"></i><div><strong>ID cards</strong><span>Student and staff identification</span></div></a>
+        </div>
+        <div class="principal-office-group">
+            <h3><i class="fas fa-graduation-cap"></i> Academics</h3>
+            <a href="{{ url_for('subject_setup') }}"><i class="fas fa-book-open"></i><div><strong>Subject setup</strong><span>Science / Arts courses per class</span></div></a>
+            <a href="{{ url_for('class_create') }}"><i class="fas fa-chalkboard-teacher"></i><div><strong>Classes, teachers &amp; rooms</strong><span>Provision classes and assignments</span></div></a>
+            <a href="{{ url_for('principal_grade_entry') }}"><i class="fas fa-pen-to-square"></i><div><strong>Grade review</strong><span>Backup review and period publishing</span></div></a>
+            <a href="{{ url_for('vpa_grade_releases') }}"><i class="fas fa-stamp"></i><div><strong>Approve grade releases</strong><span>K–9 academic cabinet</span></div></a>
+            <a href="{{ url_for('vpa_transcript_releases') }}"><i class="fas fa-scroll"></i><div><strong>Approve transcripts</strong><span>Official transcript cabinet</span></div></a>
+            {% set desk_role = (current_user.role or '')|lower %}
+            {% if desk_role in ['vpi', 'proprietor', 'owner'] %}
+            <a href="{{ url_for('proprietor_senior_grade_releases') }}"><i class="fas fa-landmark"></i><div><strong>Senior High grades</strong><span>Release Grades 10–12 (Proprietor and VPI)</span></div></a>
+            <a href="{{ url_for('proprietor_senior_transcript_releases') }}"><i class="fas fa-scroll"></i><div><strong>Senior High transcripts</strong><span>Official Transcripts for Grades 10–12</span></div></a>
+            {% endif %}
+            <a href="{{ url_for('academic_years') }}"><i class="fas fa-calendar-alt"></i><div><strong>Academic years</strong><span>Terms, archives, and activation</span></div></a>
+            <a href="{{ url_for('academic_year_rollover', **yp) }}"><i class="fas fa-arrows-rotate"></i><div><strong>Year rollover</strong><span>Promote classes and re-enroll</span></div></a>
+        </div>
+        <div class="principal-office-group">
+            <h3><i class="fas fa-bullhorn"></i> Communications</h3>
+            <a href="{{ url_for('manage_leaders') }}"><i class="fas fa-user-tie"></i><div><strong>About-page leadership</strong><span>Names, roles, bios, and photos</span></div></a>
+            <a href="{{ url_for('school_media_manage') }}"><i class="fas fa-photo-video"></i><div><strong>School media hub</strong><span>Photos, videos, and year documents</span></div></a>
+            <a href="{{ url_for('admin_events_list') }}"><i class="fas fa-calendar-plus"></i><div><strong>Events calendar</strong><span>Entrance exams, PTA, and school events</span></div></a>
+            <a href="{{ url_for('announcements') }}"><i class="fas fa-bullhorn"></i><div><strong>Announcements</strong><span>Broadcast to students, parents, and staff</span></div></a>
+        </div>
+        <div class="principal-office-group">
+            <h3><i class="fas fa-building"></i> Operations</h3>
+            <a href="{{ url_for('principal_dashboard', **yp) }}"><i class="fas fa-th-large"></i><div><strong>Principal portal</strong><span>Enrollment folders, finance pulse, anomalies</span></div></a>
+            <a href="{{ url_for('principal_attendance', academic_year_id=display_year.id if display_year else none) }}"><i class="fas fa-clipboard-check"></i><div><strong>Attendance overview</strong><span>School-wide presence and absences</span></div></a>
+            <a href="{{ url_for('business_dashboard', **yp) }}"><i class="fas fa-wallet"></i><div><strong>Finance hub</strong><span>Tuition ledger and collections</span></div></a>
+            <a href="{{ url_for('financial_reports') }}"><i class="fas fa-chart-bar"></i><div><strong>Financial reports</strong><span>Income, expenses, and audits</span></div></a>
+        </div>
+    </div>
+</section>

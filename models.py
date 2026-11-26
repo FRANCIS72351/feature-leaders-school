@@ -353,6 +353,10 @@ class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
+    email_verified = db.Column(db.Boolean, default=False, server_default='0', nullable=False)
+    email_verified_at = db.Column(db.DateTime, nullable=True)
+    pending_email = db.Column(db.String(120), nullable=True)
+    pending_email_sent_at = db.Column(db.DateTime, nullable=True)
     password_hash = db.Column(db.String(200), nullable=False)
     role = db.Column(db.String(50), nullable=False)  # admin, teacher, student, parent, sponsor
     full_name = db.Column(db.String(120), nullable=False)
@@ -1714,6 +1718,7 @@ class StudentPayment(db.Model):
     collection_desk = db.Column(db.String(20), nullable=True, default="business")
     fee_kind = db.Column(db.String(40), nullable=True)
     handover_id = db.Column(db.Integer, nullable=True, index=True)
+    payment_method = db.Column(db.String(30), nullable=True)
     
     # Modernized timezone-aware payment timestamp
     paid_on = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
@@ -1948,5 +1953,87 @@ class SystemSetting(db.Model):
     deactivated_by = db.relationship("User", foreign_keys=[deactivated_by_id])
 
     def __repr__(self):
-        state = "ACTIVE" if self.system_active else "ON HOLD"
-        return f"<SystemSetting {state}>"
+        return f"<SystemSetting active={self.system_active}>"
+
+
+class SupplyInventory(db.Model):
+    """School-store stock for the Business Manager procurement desk."""
+    __tablename__ = "supply_inventory"
+
+    id = db.Column(db.Integer, primary_key=True)
+    item_name = db.Column(db.String(160), nullable=False, index=True)
+    category = db.Column(db.String(80), nullable=False, default="Supplies")
+    quantity_in_stock = db.Column(db.Integer, nullable=False, default=0)
+    reorder_level = db.Column(db.Integer, nullable=False, default=5)
+    unit = db.Column(db.String(40), nullable=True)
+    last_updated_by_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    last_updated_by = db.relationship("User", foreign_keys=[last_updated_by_id])
+
+
+class SchoolExpense(db.Model):
+    """Procurement / operating expense with optional stock impact."""
+    __tablename__ = "school_expenses"
+
+    id = db.Column(db.Integer, primary_key=True)
+    category = db.Column(db.String(80), nullable=False, default="Supplies")
+    item_name = db.Column(db.String(160), nullable=False)
+    quantity = db.Column(db.Integer, nullable=False, default=1)
+    unit_cost = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    total_amount = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    currency = db.Column(db.String(3), nullable=False, default="USD")
+    vendor_name = db.Column(db.String(160), nullable=True)
+    receipt_ref = db.Column(db.String(80), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+    academic_year_id = db.Column(db.Integer, db.ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True)
+    ledger_transaction_id = db.Column(db.Integer, db.ForeignKey("business_transactions.id", ondelete="SET NULL"), nullable=True)
+    inventory_id = db.Column(db.Integer, db.ForeignKey("supply_inventory.id", ondelete="SET NULL"), nullable=True)
+    recorded_by_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    academic_year = db.relationship("AcademicYear")
+    inventory_item = db.relationship("SupplyInventory")
+    recorded_by = db.relationship("User", foreign_keys=[recorded_by_id])
+
+
+class NonTeachingStaff(db.Model):
+    """Support-staff roster used by the Business Manager (not teachers)."""
+    __tablename__ = "non_teaching_staff"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    full_name = db.Column(db.String(160), nullable=False)
+    job_title = db.Column(db.String(80), nullable=False, default="Clerk")
+    phone = db.Column(db.String(40), nullable=True)
+    department = db.Column(db.String(80), nullable=True)
+    shift_notes = db.Column(db.String(200), nullable=True)
+    base_salary = db.Column(db.Numeric(10, 2), nullable=True)
+    currency = db.Column(db.String(3), nullable=False, default="USD")
+    status = db.Column(db.String(20), nullable=False, default="active")
+    hired_date = db.Column(db.Date, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    user = db.relationship("User", foreign_keys=[user_id])
+    attendance_logs = db.relationship(
+        "StaffAttendanceLog",
+        back_populates="staff",
+        cascade="all, delete-orphan",
+        lazy="dynamic",
+    )
+
+
+class StaffAttendanceLog(db.Model):
+    __tablename__ = "staff_attendance_logs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    staff_id = db.Column(db.Integer, db.ForeignKey("non_teaching_staff.id", ondelete="CASCADE"), nullable=False, index=True)
+    work_date = db.Column(db.Date, nullable=False, index=True)
+    status = db.Column(db.String(20), nullable=False, default="Present")
+    notes = db.Column(db.String(250), nullable=True)
+    logged_by_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    staff = db.relationship("NonTeachingStaff", back_populates="attendance_logs")
+    logged_by = db.relationship("User", foreign_keys=[logged_by_id])

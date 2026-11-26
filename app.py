@@ -80,8 +80,8 @@ from utils import (
     currency_to_float,
 )
 from io import BytesIO, StringIO
-from sqlalchemy import func, text, or_, case
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy import event, func, text, or_, case
+from sqlalchemy.orm import Session as SASession, joinedload, selectinload
 from sqlalchemy.exc import IntegrityError
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -198,28 +198,33 @@ ROLE_ALIASES = {
     'owner': 'proprietor',
     'school proprietor': 'proprietor',
     'school owner': 'proprietor',
+    'business_manager': 'business',
+    'business manager': 'business',
+    'bursar': 'business',
 }
 
-# VPA owns curriculum day-to-day. VPI owns finance. Both vice principals share the
-# academic release queues and the student academic registry for command oversight.
-# Senior High grade release is reserved for the School Proprietor alone.
-ACADEMIC_COMMAND_ROLES = frozenset({'admin', 'principal', 'vpa'})
-ACADEMIC_RELEASE_ROLES = frozenset({'admin', 'principal', 'vpa', 'vpi'})
-SENIOR_GRADE_RELEASE_ROLES = frozenset({'proprietor'})
+# Principal office authority is shared with VPI and the School Proprietor.
+# VPA still owns day-to-day curriculum. Senior High grade/transcript seal is
+# shared by the Proprietor and VPI.
+PRINCIPAL_OFFICE_ROLES = frozenset({'principal', 'vpi', 'proprietor'})
+PRINCIPAL_COMMAND_ROLES = frozenset({'admin'}) | PRINCIPAL_OFFICE_ROLES
+ACADEMIC_COMMAND_ROLES = frozenset({'admin', 'principal', 'vpa', 'vpi', 'proprietor'})
+ACADEMIC_RELEASE_ROLES = frozenset({'admin', 'principal', 'vpa', 'vpi', 'proprietor'})
+SENIOR_GRADE_RELEASE_ROLES = frozenset({'proprietor', 'vpi'})
 FISCAL_COMMAND_ROLES = frozenset({'admin', 'business', 'vpi', 'principal', 'proprietor'})
 STAFF_INTERNAL_GRADE_ROLES = frozenset({
-    'admin', 'teacher', 'registrar', 'principal', 'vpa', 'vpi', 'dean', 'business', 'proprietor',
+    'admin', 'teacher', 'registrar', 'principal', 'vpa', 'vpi', 'dean', 'proprietor',
 })
 OFFICIAL_TRANSCRIPT_STAFF_ROLES = frozenset({'admin', 'registrar', 'principal', 'vpa', 'vpi', 'proprietor'})
 PROPRIETOR_ROLES = frozenset({'proprietor', 'owner', 'admin'})
 PROPRIETOR_AUDIT_ROLES = frozenset({'proprietor'})
 SENIOR_GRADE_RELEASE_HOLD_MESSAGE = (
-    'Senior High grade and transcript release is reserved for the School Proprietor. '
+    'Senior High grade and transcript release is reserved for the School Proprietor and VPI. '
     'Kindergarten, Elementary, and Junior High remain on the academic release cabinet.'
 )
 GRADE_RELEASE_TEACHER_FLASH = (
     'Submitted for academic approval. Students cannot view this period until approved. '
-    'Senior High packages go to the Proprietor; other divisions go to VPA. '
+    'Senior High packages go to the Proprietor or VPI; other divisions go to VPA. '
     'Previously approved periods remain available.'
 )
 STUDENT_GRADE_HOLD_MESSAGE = (
@@ -244,8 +249,8 @@ STUDENT_PERIOD_HOLD_MESSAGE = (
     'This marking period is still under review by the Vice Principal for '
     'Academics. It will appear here once approved.'
 )
-CLASS_STRUCTURE_ROLES = frozenset({'admin', 'principal', 'registrar', 'vpa', 'vpi', 'lead developer'})
-FACILITY_ROLES = frozenset({'admin', 'principal', 'registrar', 'vpi', 'lead developer'})
+CLASS_STRUCTURE_ROLES = frozenset({'admin', 'principal', 'registrar', 'vpa', 'vpi', 'proprietor', 'lead developer'})
+FACILITY_ROLES = frozenset({'admin', 'principal', 'registrar', 'vpi', 'proprietor', 'lead developer'})
 
 
 def role_home_endpoint(user=None):
@@ -281,6 +286,11 @@ def canonical_role(user):
     return ROLE_ALIASES.get(role, role)
 
 
+def has_principal_command(user=None):
+    """Principal, VPI, Proprietor, and Admin share Principal office authority."""
+    return canonical_role(user or current_user) in PRINCIPAL_COMMAND_ROLES
+
+
 def is_senior_high_class(klass):
     """True when a class maps to Senior High (Grades 10–12)."""
     if not klass:
@@ -303,7 +313,7 @@ def is_senior_high_student(student, year_id=None):
 
 
 def user_may_release_senior_grades(user=None):
-    """Senior High grade and transcript stamps belong only to the School Proprietor."""
+    """Senior High grade and transcript stamps belong to the Proprietor and VPI."""
     actor = user if user is not None else current_user
     return canonical_role(actor) in SENIOR_GRADE_RELEASE_ROLES
 
@@ -790,14 +800,14 @@ from forms import (
     AnnouncementForm, BusinessTransactionForm, AssignTeacherForm, CreateClassForm,
     EventForm, ConfirmDeleteForm, LeaderForm, EnrollmentForm, PaymentForm, TransactionForm,
     DisciplineForm, SchoolMediaForm, RecordClassroomActivityForm,
-    AccountPasswordForm, AccountPhotoForm,
+    AccountPasswordForm, AccountPhotoForm, AccountEmailForm, AccountVerifyCurrentEmailForm,
     RegistryCollectFeeForm, RegistryCloseDayForm, RegistryAcknowledgeForm,
 )
 
 SCHOOL_VIDEO_MAX_DURATION_SEC = int(os.environ.get('SCHOOL_VIDEO_MAX_DURATION_SEC', '180'))
 SCHOOL_VIDEO_MAX_MB = int(os.environ.get('SCHOOL_VIDEO_MAX_MB', '150'))
-COMMUNICATIONS_MANAGER_ROLES = frozenset({"admin", "principal", "vpa"})
-SCHOOL_MEDIA_MANAGER_ROLES = frozenset({"admin", "principal", "vpa", "registrar"})
+COMMUNICATIONS_MANAGER_ROLES = frozenset({"admin", "principal", "vpa", "vpi", "proprietor"})
+SCHOOL_MEDIA_MANAGER_ROLES = frozenset({"admin", "principal", "vpa", "vpi", "proprietor", "registrar"})
 REGISTRAR_MEDIA_CATEGORIES = frozenset({"entrance", "info_sheet"})
 DOCUMENT_ONLY_MEDIA_CATEGORIES = frozenset({"entrance", "info_sheet"})
 HOMEPAGE_FEATURED_MEDIA_CATEGORIES = frozenset({"general", "gallery", "advertisement"})
@@ -1198,11 +1208,11 @@ ATTENDANCE_SCOPE_OWN = 'own'
 def get_attendance_visibility_scope(user):
     """Return attendance access tier for a user, or None if denied."""
     role = normalize_role(user)
-    if role in ('admin', 'principal', 'proprietor', 'owner'):
+    if role in ('admin', 'principal', 'proprietor', 'owner', 'vpi'):
         return ATTENDANCE_SCOPE_FULL
     if role in ('registrar', 'dean'):
         return ATTENDANCE_SCOPE_READ
-    if role in ('business', 'vpi', 'vpa'):
+    if role in ('business', 'vpa'):
         return ATTENDANCE_SCOPE_SUMMARY
     if role == 'teacher':
         return ATTENDANCE_SCOPE_CLASS
@@ -2131,6 +2141,491 @@ def notify_class_new_activity(klass, teacher_user, title, subject_name, marking_
         content=body,
         audience='students',
     ))
+    _email_class_activity_notice(
+        klass,
+        teacher_user,
+        title,
+        subject_name,
+        marking_period,
+        description,
+        due_date,
+    )
+
+
+def _email_class_activity_notice(
+    klass, teacher_user, title, subject_name, marking_period, description, due_date,
+):
+    """Brevo notice to student and parent emails. Never blocks posting the activity."""
+    try:
+        from school_mailer import mailer_configured, send_class_activity_notice
+        if not mailer_configured():
+            return
+        year = get_active_academic_year()
+        students = get_class_students_for_year(klass.id, year) if klass else []
+        if students:
+            ids = [row.id for row in students]
+            students = (
+                Student.query.options(joinedload(Student.user))
+                .filter(Student.id.in_(ids))
+                .all()
+            )
+        addresses = []
+        for student in students:
+            user = getattr(student, 'user', None)
+            if account_email_can_receive_notices(user):
+                addresses.append(user.email)
+            parent_email = getattr(student, 'parent_email', None)
+            if account_email_looks_deliverable(parent_email):
+                addresses.append(parent_email)
+        if not addresses:
+            return
+        send_class_activity_notice(
+            addresses,
+            class_name=getattr(klass, 'name', '') or 'your class',
+            title=title,
+            subject_name=subject_name,
+            period_label=grading_period_label(marking_period),
+            teacher_name=getattr(teacher_user, 'full_name', None) or getattr(teacher_user, 'email', ''),
+            description=description,
+            due_date=due_date,
+        )
+    except Exception:
+        logger.exception('Class activity email notice failed for class %s', getattr(klass, 'id', None))
+
+
+def _student_live_notice_emails(student):
+    """Verified student portal inbox, plus a deliverable parent/guardian address."""
+    addresses = []
+    user = getattr(student, 'user', None)
+    if user is None and getattr(student, 'user_id', None):
+        user = db.session.get(User, student.user_id)
+    if account_email_can_receive_notices(user):
+        addresses.append(user.email)
+    parent_email = getattr(student, 'parent_email', None)
+    if account_email_looks_deliverable(parent_email):
+        addresses.append(parent_email)
+    seen = set()
+    unique = []
+    for addr in addresses:
+        key = (addr or '').strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique.append(addr.strip())
+    return unique
+
+
+def _grade_mail_teacher_name():
+    if current_user.is_authenticated:
+        return (current_user.full_name or current_user.email or 'Your teacher').strip()
+    return 'Your teacher'
+
+
+class _StudentGradeMailBatch:
+    """Group one save-action into one live email per student, then send after commit."""
+
+    def __init__(self, *, teacher_name=None, class_name=None):
+        self.teacher_name = teacher_name or _grade_mail_teacher_name()
+        self.class_name = class_name or ''
+        self._by_student = {}
+
+    def add(self, student, item, *, class_name=None):
+        if not student or not item:
+            return
+        emails = _student_live_notice_emails(student)
+        if not emails:
+            return
+        sid = student.id
+        rec = self._by_student.setdefault(sid, {
+            'emails': emails,
+            'student_name': student.full_name,
+            'first_name': getattr(student, 'first_name', None) or student.full_name,
+            'class_name': class_name or self.class_name or '',
+            'teacher_name': self.teacher_name,
+            'items': [],
+        })
+        if class_name and not rec.get('class_name'):
+            rec['class_name'] = class_name
+        rec['items'].append(item)
+
+    def dispatch(self):
+        payloads = [dict(row) for row in self._by_student.values() if row.get('items')]
+        if not payloads:
+            return
+        import threading
+
+        def _run(rows):
+            try:
+                from school_mailer import mailer_configured, send_student_grade_update
+                if not mailer_configured():
+                    return
+                for row in rows:
+                    try:
+                        send_student_grade_update(
+                            row['emails'],
+                            student_name=row.get('student_name'),
+                            first_name=row.get('first_name'),
+                            class_name=row.get('class_name'),
+                            teacher_name=row.get('teacher_name'),
+                            items=row.get('items') or [],
+                        )
+                    except Exception:
+                        logger.exception(
+                            'Live grade notice failed for %s',
+                            row.get('student_name'),
+                        )
+            except Exception:
+                logger.exception('Live grade notice batch failed')
+
+        threading.Thread(target=_run, args=(payloads,), daemon=True, name='flpa-grade-mail').start()
+
+
+_FLPA_RECEIPT_MAIL_KEY = 'flpa_digital_receipts'
+_FLPA_PROPRIETOR_TX_KEY = 'flpa_proprietor_tx'
+_FLPA_PROPRIETOR_EMAILS_KEY = 'flpa_proprietor_emails'
+
+
+def _queue_digital_receipt_payload(payload):
+    if not payload or not payload.get('emails'):
+        return
+    bucket = db.session.info.setdefault(_FLPA_RECEIPT_MAIL_KEY, [])
+    bucket.append(payload)
+
+
+def _proprietor_notice_emails(session=None):
+    """Deliverable inboxes for every School Proprietor / owner account."""
+    sess = session if session is not None else db.session
+    roles = ('proprietor', 'owner', 'school proprietor', 'school owner')
+    try:
+        query = sess.query(User).filter(
+            or_(
+                func.lower(User.role).in_(roles),
+                User.role.ilike('%proprietor%'),
+                User.role.ilike('%owner%'),
+            )
+        )
+        with sess.no_autoflush:
+            users = query.all()
+    except Exception:
+        logger.exception('Could not load proprietor notice emails')
+        return []
+    seen = set()
+    out = []
+    for user in users:
+        if getattr(user, 'is_active', True) is False:
+            continue
+        if canonical_role(user) != 'proprietor':
+            continue
+        if not account_email_can_receive_notices(user):
+            continue
+        addr = (user.email or '').strip()
+        key = addr.lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(addr)
+    return out
+
+
+def _queue_proprietor_transaction_notice(payload):
+    if not payload:
+        return
+    bucket = db.session.info.setdefault(_FLPA_PROPRIETOR_TX_KEY, [])
+    bucket.append(dict(payload))
+
+
+def _dispatch_proprietor_transactions(payloads):
+    try:
+        from school_mailer import mailer_configured, send_proprietor_transaction_notice
+        if not mailer_configured():
+            return
+        for row in payloads or []:
+            try:
+                send_proprietor_transaction_notice(
+                    row.get('emails') or [],
+                    kind=row.get('kind'),
+                    amount_text=row.get('amount_text'),
+                    particulars=row.get('particulars'),
+                    party=row.get('party'),
+                    receipt_number=row.get('receipt_number'),
+                    collected_at=row.get('collected_at'),
+                    recorded_by=row.get('recorded_by'),
+                    academic_year=row.get('academic_year'),
+                    paid_on=row.get('paid_on'),
+                    method=row.get('method'),
+                )
+            except Exception:
+                logger.exception('Proprietor till notice failed')
+    except Exception:
+        logger.exception('Proprietor till notice batch failed')
+
+
+def _flush_proprietor_payload_from_payment(payment):
+    student = getattr(payment, 'student', None)
+    if student is None and getattr(payment, 'student_id', None):
+        student = db.session.get(Student, payment.student_id)
+    year = getattr(payment, 'academic_year', None)
+    if year is None and getattr(payment, 'academic_year_id', None):
+        year = db.session.get(AcademicYear, payment.academic_year_id)
+    paid_at = getattr(payment, 'paid_on', None)
+    paid_label = paid_at.strftime('%d %b %Y %H:%M') if hasattr(paid_at, 'strftime') else (str(paid_at or '')[:16])
+    desk = (getattr(payment, 'collection_desk', None) or 'business').strip().lower()
+    actor = ''
+    if has_request_context() and getattr(current_user, 'is_authenticated', False):
+        actor = (current_user.full_name or current_user.email or '').strip()
+    _queue_proprietor_transaction_notice({
+        'kind': 'fee',
+        'amount_text': format_school_money(
+            payment.amount_paid, getattr(payment, 'currency', None),
+        ),
+        'particulars': payment.description or payment.fee_kind or 'Student fee',
+        'party': (student.full_name if student else '') + (
+            f' ({student.student_id})' if student and student.student_id else ''
+        ),
+        'receipt_number': payment.receipt_number or (f'SP-{payment.id}' if payment.id else ''),
+        'collected_at': 'Registry Day Book' if desk == 'registry' else 'Business Office',
+        'recorded_by': actor or 'School office',
+        'academic_year': getattr(year, 'name', None) or '',
+        'paid_on': paid_label,
+        'method': getattr(payment, 'payment_method', None) or '',
+    })
+
+
+def _flush_proprietor_payload_from_ledger(tx):
+    if getattr(tx, 'is_deleted', False):
+        return
+    desc = tx.description or ''
+    if '[SP-' in desc:
+        return
+    kind = (tx.type or 'income').strip().lower() or 'income'
+    actor = ''
+    if has_request_context() and getattr(current_user, 'is_authenticated', False):
+        actor = (current_user.full_name or current_user.email or '').strip()
+    _queue_proprietor_transaction_notice({
+        'kind': kind,
+        'amount_text': format_school_money(tx.amount, getattr(tx, 'currency', None)),
+        'particulars': desc or tx.category or 'Ledger entry',
+        'party': tx.category or '',
+        'receipt_number': f'BT-{tx.id}' if getattr(tx, 'id', None) else '',
+        'collected_at': 'Business ledger',
+        'recorded_by': actor or 'School office',
+        'academic_year': tx.academic_year or '',
+        'paid_on': tx.date or datetime.now(timezone.utc).strftime('%d %b %Y'),
+        'method': '',
+    })
+
+
+def _dispatch_digital_receipts(payloads):
+    try:
+        from school_mailer import mailer_configured, send_digital_payment_receipt
+        if not mailer_configured():
+            return
+        for row in payloads or []:
+            try:
+                send_digital_payment_receipt(
+                    row.get('emails') or [],
+                    student_name=row.get('student_name'),
+                    student_id=row.get('student_id'),
+                    first_name=row.get('first_name'),
+                    class_name=row.get('class_name'),
+                    receipt_number=row.get('receipt_number'),
+                    amount_text=row.get('amount_text'),
+                    particulars=row.get('particulars'),
+                    fee_label=row.get('fee_label'),
+                    academic_year=row.get('academic_year'),
+                    paid_on=row.get('paid_on'),
+                    collected_at=row.get('collected_at'),
+                    received_by=row.get('received_by'),
+                    balance_text=row.get('balance_text'),
+                    charge_note=row.get('charge_note'),
+                )
+            except Exception:
+                logger.exception(
+                    'Digital receipt email failed for %s',
+                    row.get('student_name'),
+                )
+    except Exception:
+        logger.exception('Digital receipt email batch failed')
+
+
+@event.listens_for(SASession, 'after_flush')
+def _flpa_collect_proprietor_tx(session, flush_context):
+    from sqlalchemy.orm.attributes import get_history
+    for obj in list(session.new):
+        if isinstance(obj, StudentPayment):
+            _flush_proprietor_payload_from_payment(obj)
+        elif isinstance(obj, BusinessTransaction):
+            _flush_proprietor_payload_from_ledger(obj)
+    for obj in list(session.dirty):
+        if not isinstance(obj, StudentPayment):
+            continue
+        hist = get_history(obj, 'amount_paid')
+        if hist.has_changes():
+            _flush_proprietor_payload_from_payment(obj)
+    if session.info.get(_FLPA_PROPRIETOR_TX_KEY):
+        session.info[_FLPA_PROPRIETOR_EMAILS_KEY] = _proprietor_notice_emails(session)
+
+
+def _proprietor_notice_emails_after_commit(session):
+    """Fresh connection — the flush session cannot emit SQL after commit."""
+    emails = session.info.pop(_FLPA_PROPRIETOR_EMAILS_KEY, None) or []
+    if emails:
+        return emails
+    try:
+        bind = session.get_bind()
+    except Exception:
+        bind = None
+    if bind is None:
+        try:
+            bind = db.engine
+        except Exception:
+            return []
+    from sqlalchemy.orm import Session as MailSession
+    try:
+        with MailSession(bind) as mail_session:
+            return _proprietor_notice_emails(mail_session)
+    except Exception:
+        logger.exception('Could not load proprietor notice emails after commit')
+        return []
+
+
+@event.listens_for(SASession, 'after_commit')
+def _flpa_send_digital_receipts(session):
+    import threading
+    rows = session.info.pop(_FLPA_RECEIPT_MAIL_KEY, None) or []
+    if rows:
+        threading.Thread(
+            target=_dispatch_digital_receipts,
+            args=(list(rows),),
+            daemon=True,
+            name='flpa-receipt-mail',
+        ).start()
+    proprietor_rows = session.info.pop(_FLPA_PROPRIETOR_TX_KEY, None) or []
+    if not proprietor_rows:
+        session.info.pop(_FLPA_PROPRIETOR_EMAILS_KEY, None)
+        return
+    emails = _proprietor_notice_emails_after_commit(session)
+    if not emails:
+        return
+    for row in proprietor_rows:
+        row['emails'] = emails
+    threading.Thread(
+        target=_dispatch_proprietor_transactions,
+        args=(list(proprietor_rows),),
+        daemon=True,
+        name='flpa-proprietor-tx-mail',
+    ).start()
+
+
+@event.listens_for(SASession, 'after_rollback')
+def _flpa_clear_digital_receipts(session):
+    session.info.pop(_FLPA_RECEIPT_MAIL_KEY, None)
+    session.info.pop(_FLPA_PROPRIETOR_TX_KEY, None)
+    session.info.pop(_FLPA_PROPRIETOR_EMAILS_KEY, None)
+
+
+def _queue_student_digital_receipt(student, payment):
+    """Queue a live digital receipt after this payment is committed."""
+    if not student or not payment:
+        return
+    emails = _student_live_notice_emails(student)
+    if not emails:
+        return
+    from registry_desk import (
+        CHARGE_OTHER,
+        classify_student_payment,
+        fee_kind_label,
+        payment_shows_semester_installment,
+    )
+    year = getattr(payment, 'academic_year', None)
+    if year is None and getattr(payment, 'academic_year_id', None):
+        year = db.session.get(AcademicYear, payment.academic_year_id)
+    year_id = getattr(year, 'id', None) or getattr(payment, 'academic_year_id', None)
+    klass = get_student_class_for_year(student, year_id) if year_id else None
+    paid_at = getattr(payment, 'paid_on', None)
+    paid_label = paid_at.strftime('%d %b %Y') if hasattr(paid_at, 'strftime') else (str(paid_at or '')[:10])
+    desk = (getattr(payment, 'collection_desk', None) or 'business').strip().lower()
+    collected_at = 'Registry Day Book' if desk == 'registry' else 'Business Office'
+    collector = getattr(payment, 'collected_by', None)
+    if collector is None and getattr(payment, 'collected_by_user_id', None):
+        collector = db.session.get(User, payment.collected_by_user_id)
+    received_by = (getattr(collector, 'full_name', None) or getattr(collector, 'email', None) or '').strip()
+    if not received_by and has_request_context() and getattr(current_user, 'is_authenticated', False):
+        received_by = (current_user.full_name or current_user.email or '').strip()
+    fee_kind = getattr(payment, 'fee_kind', None)
+    fee_label = fee_kind_label(fee_kind) if fee_kind else categorize_fee_payment(payment.description)
+    particulars = (payment.description or '').strip()
+    if payment_shows_semester_installment(payment) and not particulars:
+        particulars = billing_period_label(payment.term, payment.installment)
+    receipt_no = (getattr(payment, 'receipt_number', None) or '').strip()
+    if not receipt_no and getattr(payment, 'id', None):
+        receipt_no = f'FLPA-SP-{int(payment.id):06d}'
+    amount_text = format_school_money(
+        payment.amount_paid,
+        getattr(payment, 'currency', None),
+    )
+    bucket = classify_student_payment(payment)
+    balance_text = None
+    charge_note = None
+    try:
+        financials = build_student_financials(student, year)
+        if bucket == CHARGE_OTHER:
+            charge_note = (
+                'This is an additional school charge. It does not reduce the yearly school-fee bill.'
+            )
+            balance_text = format_school_money(
+                financials.get('tuition_balance'),
+                getattr(payment, 'currency', None),
+            ) + ' remaining on school fees this year'
+        else:
+            balance_text = format_school_money(
+                financials.get('tuition_balance'),
+                getattr(payment, 'currency', None),
+            ) + ' remaining on school fees this year'
+    except Exception:
+        logger.exception('Could not attach fee balance to digital receipt for student %s', student.id)
+    _queue_digital_receipt_payload({
+        'emails': emails,
+        'student_name': student.full_name,
+        'first_name': getattr(student, 'first_name', None) or student.full_name,
+        'student_id': getattr(student, 'student_id', None) or '',
+        'class_name': getattr(klass, 'name', None) or '',
+        'receipt_number': receipt_no,
+        'amount_text': amount_text,
+        'particulars': particulars,
+        'fee_label': fee_label,
+        'academic_year': getattr(year, 'name', None) or '',
+        'paid_on': paid_label,
+        'collected_at': collected_at,
+        'received_by': received_by or 'School office',
+        'balance_text': balance_text,
+        'charge_note': charge_note,
+    })
+
+
+def _period_grade_mail_item(subject_name, period, score, *, visibility, remarks=None, title=None):
+    from school_mailer import _format_notice_score
+    return {
+        'title': title or 'Period standing',
+        'subject': subject_name,
+        'period_label': grading_period_label(period),
+        'score_text': _format_notice_score(score),
+        'visibility': visibility,
+        'note': remarks or '',
+    }
+
+
+def _activity_grade_mail_item(assessment, score, *, visibility, note=None):
+    from school_mailer import _format_notice_score
+    max_score = getattr(assessment, 'max_score', None)
+    return {
+        'title': getattr(assessment, 'title', None) or 'Class activity',
+        'subject': getattr(assessment, 'subject_name', None) or '',
+        'period_label': grading_period_label(getattr(assessment, 'marking_period', None) or 1),
+        'score_text': _format_notice_score(score, max_score),
+        'visibility': visibility,
+        'note': (note or '').strip(),
+    }
 
 
 def teacher_owns_assessment(teacher_profile, user, assessment):
@@ -4354,7 +4849,7 @@ def official_transcript_is_released(student_id, academic_year_id):
     """True when a student-year approval or a non-senior school-wide year release exists.
 
     A year-wide stamp never unlocks Senior High — those students need a
-    proprietor per-student or Senior High class/group release.
+    Proprietor or VPI per-student or Senior High class/group release.
     """
     if not academic_year_id:
         return False
@@ -5097,7 +5592,7 @@ def provision_student_portal_account(student, email, password=None, full_name=No
     if not student:
         return None
 
-    email = (email or '').strip()
+    email = normalize_account_email(email)
     if not email:
         return None
 
@@ -5105,7 +5600,7 @@ def provision_student_portal_account(student, email, password=None, full_name=No
     user = db.session.get(User, student.user_id) if student.user_id else None
 
     if not user:
-        user = User.query.filter(func.lower(User.email) == email.lower()).first()
+        user = User.query.filter(func.lower(User.email) == email).first()
 
     if user and user.id != student.user_id:
         existing = Student.query.filter_by(user_id=user.id).first()
@@ -5124,6 +5619,7 @@ def provision_student_portal_account(student, email, password=None, full_name=No
         )
         user.set_password(issued)
         user.must_change_password = True if must_change_password is None else bool(must_change_password)
+        accept_notice_email_if_deliverable(user)
         db.session.add(user)
         db.session.flush()
     else:
@@ -5133,6 +5629,7 @@ def provision_student_portal_account(student, email, password=None, full_name=No
             user.set_password(supplied)
             issued = supplied
             user.must_change_password = True if must_change_password is None else bool(must_change_password)
+        accept_notice_email_if_deliverable(user)
 
     student.user_id = user.id
     login_username = student.student_id or student.student_id_code
@@ -5909,6 +6406,124 @@ def verify_recovery_token(token, expiration=600): # 10 minutes
     return user_id
 
 
+EMAIL_VERIFY_SALT = 'flpa-email-verify'
+EMAIL_VERIFY_MAX_AGE = 60 * 60 * 24
+EMAIL_VERIFY_RESEND_SECONDS = 120
+
+
+from school_mailer import account_email_looks_deliverable, normalize_account_email
+
+
+def account_email_is_verified(user):
+    return bool(user and getattr(user, 'email_verified', False) and account_email_looks_deliverable(getattr(user, 'email', None)))
+
+
+def account_email_can_receive_notices(user):
+    """True when the portal email is a real inbox that can receive live FLPA mail."""
+    return account_email_looks_deliverable(getattr(user, 'email', None) if user else None)
+
+
+def accept_notice_email_if_deliverable(user):
+    """Mark a real inbox ready for notices so accounts are not stuck unverified."""
+    if not user or not account_email_can_receive_notices(user):
+        return False
+    if getattr(user, 'email_verified', False):
+        return False
+    user.email_verified = True
+    user.email_verified_at = datetime.now(timezone.utc)
+    return True
+
+
+def backfill_deliverable_notice_emails():
+    """One-time catch-up: existing Gmail/school inboxes should not sit unverified."""
+    marked = 0
+    try:
+        pending = User.query.filter(
+            (User.email_verified.is_(False)) | (User.email_verified.is_(None))
+        ).all()
+    except Exception:
+        return 0
+    for user in pending:
+        if accept_notice_email_if_deliverable(user):
+            marked += 1
+    if marked:
+        db.session.commit()
+    return marked
+
+
+def user_needs_notice_email(user):
+    """True only when this account still has no inbox that can receive mail."""
+    if not user:
+        return False
+    return not account_email_can_receive_notices(user)
+
+
+def _email_taken_by_other(email, user_id):
+    email = normalize_account_email(email)
+    if not email:
+        return True
+    owner = User.query.filter(func.lower(User.email) == email).first()
+    if owner and owner.id != user_id:
+        return True
+    pending_owner = User.query.filter(
+        func.lower(User.pending_email) == email,
+        User.id != user_id,
+    ).first()
+    if not pending_owner:
+        return False
+    sent_at = getattr(pending_owner, 'pending_email_sent_at', None)
+    if sent_at is None:
+        return True
+    if sent_at.tzinfo is None:
+        sent_at = sent_at.replace(tzinfo=timezone.utc)
+    age = datetime.now(timezone.utc) - sent_at
+    return age.total_seconds() < EMAIL_VERIFY_MAX_AGE
+
+
+def generate_email_verify_token(user_id, email):
+    serializer = URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
+    return serializer.dumps({'uid': int(user_id), 'email': normalize_account_email(email)}, salt=EMAIL_VERIFY_SALT)
+
+
+def decode_email_verify_token(token):
+    serializer = URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
+    try:
+        payload = serializer.loads(token, salt=EMAIL_VERIFY_SALT, max_age=EMAIL_VERIFY_MAX_AGE)
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload.get('uid'), payload.get('email')
+
+
+def _queue_email_verification(user, target_email, *, changing):
+    from school_mailer import mailer_configured, send_email_verification
+    target = normalize_account_email(target_email)
+    if not account_email_looks_deliverable(target):
+        return False, 'Enter a real inbox you can open, such as a Gmail or school email.'
+    if not mailer_configured():
+        return False, 'Email notices are not configured on this server yet. Contact the office.'
+    if _email_taken_by_other(target, user.id):
+        return False, 'That email is already used by another FLPA Portal account.'
+    last_sent = getattr(user, 'pending_email_sent_at', None)
+    if last_sent is not None:
+        if last_sent.tzinfo is None:
+            last_sent = last_sent.replace(tzinfo=timezone.utc)
+        wait = EMAIL_VERIFY_RESEND_SECONDS - (datetime.now(timezone.utc) - last_sent).total_seconds()
+        if wait > 0 and normalize_account_email(user.pending_email) == target:
+            return False, 'A verification email was just sent. Check that inbox, or wait a minute to resend.'
+    token = generate_email_verify_token(user.id, target)
+    from school_mailer import public_absolute_url
+    # Query string, not a dotted path: mail apps and the public site drop or 404 those links.
+    verify_url = public_absolute_url(url_for('verify_account_email', code=token))
+    if not send_email_verification(target, user.full_name, verify_url, changing=changing):
+        return False, 'Could not send the verification email. Check the address and try again.'
+    user.pending_email = target
+    user.pending_email_sent_at = datetime.now(timezone.utc)
+    db.session.commit()
+    return True, target
+
+
 def generate_transcript_verify_token(student_id):
     """Signed token embedded in transcript QR codes (does not expire)."""
     serializer = URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
@@ -6108,6 +6723,7 @@ def ensure_legacy_sqlite_schema():
             "fee_kind": "VARCHAR(40)",
             "handover_id": "INTEGER",
             "currency": "VARCHAR(3) DEFAULT 'USD'",
+            "payment_method": "VARCHAR(30)",
         },
         "grades": {
             "academic_year_id": "INTEGER",
@@ -6156,6 +6772,10 @@ def ensure_legacy_sqlite_schema():
             "home_address": "VARCHAR(255)",
             "telephone_number": "VARCHAR(20)",
             "must_change_password": "BOOLEAN DEFAULT 0",
+            "email_verified": "BOOLEAN DEFAULT 0",
+            "email_verified_at": "DATETIME",
+            "pending_email": "VARCHAR(120)",
+            "pending_email_sent_at": "DATETIME",
             "id_card_photo_path": "VARCHAR(200)",
             "id_card_signature_path": "VARCHAR(200)",
             "id_expiration_date": "DATE",
@@ -6575,6 +7195,8 @@ def get_system_settings():
 def _system_hold_exempt_endpoints():
     return {
         'static', 'login', 'logout', 'index', 'about', 'contact',
+        'verify_account_email',
+        'mail_unsubscribe',
         'events_list', 'school_media_gallery', 'school_media_download',
         'admin_system_control', 'admin_system_activate', 'admin_system_deactivate',
         'student_enrollment', 'submit_registration', 'api_lookup_student',
@@ -6610,7 +7232,7 @@ def enforce_system_license():
 
 
 _PASSWORD_CHANGE_EXEMPT_ENDPOINTS = frozenset({
-    'account_settings', 'logout', 'login', 'static',
+    'account_settings', 'verify_account_email', 'logout', 'login', 'static',
 })
 
 
@@ -6628,6 +7250,41 @@ def enforce_initial_password_change():
         return None
     flash('Please change your initial password before continuing.', 'warning')
     return redirect(url_for('account_settings'))
+
+
+_BUSINESS_ACADEMIC_ENDPOINT_MARKERS = (
+    'grade_entry', 'save_grades', 'publish_period', 'vpa_grade', 'vpa_transcript',
+    'principal_grade', 'assign_activity', 'subject_setup', 'teacher_dashboard',
+    'class_create', 'academic_years', 'admin_users', 'principal_dashboard',
+    'vpa_dashboard',
+)
+
+
+@app.before_request
+def isolate_business_office_from_academics():
+    """Business Manager may bill students but cannot open grading or admin control."""
+    if not getattr(current_user, 'is_authenticated', False):
+        return None
+    if canonical_role(current_user) != 'business':
+        return None
+    endpoint = request.endpoint or ''
+    if endpoint in ('static', 'logout', 'login', 'account_settings', 'verify_account_email'):
+        return None
+    if endpoint.startswith('business') or endpoint in (
+        'dashboard', 'business_dashboard', 'business_dashboard_path',
+        'financial_reports', 'daily_expense_report', 'payroll_summary',
+        'business_management', 'business_overview', 'export_business',
+        'export_payments', 'report_business_pdf', 'print_business_payment_receipt',
+    ):
+        return None
+    if any(marker in endpoint for marker in _BUSINESS_ACADEMIC_ENDPOINT_MARKERS):
+        flash(
+            'The Business Manager desk cannot open academic grades, exams, or admin settings. '
+            'Student names, classes, and fee balances remain available for billing.',
+            'danger',
+        )
+        return redirect(url_for('business_dashboard'))
+    return None
 
 
 @app.context_processor
@@ -6650,7 +7307,11 @@ def inject_nav_flags():
             if getattr(current_user, "is_authenticated", False)
             else role_lower
         ),
-        "can_manage_leaders": role_lower in {"admin", "principal", "proprietor", "owner"},
+        "can_manage_leaders": (
+            canonical_role(current_user) in PRINCIPAL_COMMAND_ROLES
+            if getattr(current_user, "is_authenticated", False)
+            else False
+        ),
         "dashboard_role_label": (
             dashboard_role_label(current_user)
             if getattr(current_user, "is_authenticated", False)
@@ -6672,6 +7333,21 @@ def inject_nav_flags():
         "school_video_max_mb": SCHOOL_VIDEO_MAX_MB,
         "video_mime_type": _school_media_video_mime,
         "format_video_duration": _format_video_duration,
+        "needs_notice_email": (
+            user_needs_notice_email(current_user)
+            if getattr(current_user, "is_authenticated", False)
+            else False
+        ),
+        "account_email_verified": (
+            account_email_is_verified(current_user)
+            if getattr(current_user, "is_authenticated", False)
+            else False
+        ),
+        "pending_notice_email": (
+            getattr(current_user, "pending_email", None)
+            if getattr(current_user, "is_authenticated", False)
+            else None
+        ),
         "current_year": datetime.now(timezone.utc).year,
         "school_print_brand": school_print_brand(),
         "id_card_front_header_name": id_card_header_title(side='front'),
@@ -6683,11 +7359,11 @@ def inject_nav_flags():
         "default_avatar_url": default_static_photo_url(),
         "can_issue_id_cards": (
             getattr(current_user, "is_authenticated", False)
-            and canonical_role(current_user) in {"admin", "principal", "registrar"}
+            and canonical_role(current_user) in PRINCIPAL_COMMAND_ROLES | {"registrar"}
         ),
         "can_issue_staff_id_cards": (
             getattr(current_user, "is_authenticated", False)
-            and canonical_role(current_user) in {"admin", "principal", "registrar", "vpi", "vpa"}
+            and canonical_role(current_user) in PRINCIPAL_COMMAND_ROLES | {"registrar", "vpa"}
         ),
         "can_print_official_transcript": (
             getattr(current_user, "is_authenticated", False)
@@ -6810,7 +7486,12 @@ def index():
 def login():
     form = LoginForm()
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    
+    email_just_confirmed = request.args.get('confirmed') == '1'
+    if request.method == 'GET' and email_just_confirmed:
+        hinted = (request.args.get('email') or '').strip()
+        if hinted and not form.email.data:
+            form.email.data = hinted
+
     if form.validate_on_submit():
         if check_brute_force(ip):
             flash('Too many failed login attempts. Please try again in 15 minutes.', 'danger')
@@ -6841,10 +7522,15 @@ def login():
                 commit=True,
             )
             log_incident('SUCCESSFUL_LOGIN')
+            if accept_notice_email_if_deliverable(user):
+                db.session.commit()
             if getattr(user, 'must_change_password', False):
                 flash('Please change your initial password before continuing.', 'warning')
                 return redirect(url_for('account_settings'))
-            flash('Login successful.', 'success')
+            if email_just_confirmed:
+                flash('Signed in. This inbox will receive your FLPA Portal notices.', 'success')
+            else:
+                flash('Login successful.', 'success')
             home_ep = home_endpoint_for_role(user)
             next_url = (request.args.get('next') or request.form.get('next') or '').strip()
             next_path = next_url.split('?', 1)[0].rstrip('/')
@@ -6944,9 +7630,9 @@ def admin_system_deactivate():
 # -------------------------------------------------------------------------
 
 BUSINESS_DASHBOARD_ROLES = frozenset({
-    'admin', 'business', 'principal', 'vpi', 'vpa', 'registrar', 'registry', 'dean'
+    'admin', 'business', 'principal', 'vpi', 'vpa', 'registrar', 'registry', 'dean', 'proprietor',
 })
-PRINCIPAL_GRADE_ENTRY_ROLES = frozenset({'principal', 'admin'})
+PRINCIPAL_GRADE_ENTRY_ROLES = PRINCIPAL_COMMAND_ROLES
 
 
 def _require_business_dashboard_access():
@@ -6955,7 +7641,7 @@ def _require_business_dashboard_access():
         flash('Please log in to continue.', 'danger')
         return redirect(url_for('login'))
 
-    user_role = normalize_role(current_user)
+    user_role = canonical_role(current_user)
     if user_role not in BUSINESS_DASHBOARD_ROLES:
         flash('Access restricted: Business dashboard privileges required.', 'danger')
         return render_template('errors/403.html'), 403
@@ -6970,16 +7656,25 @@ def _render_business_dashboard():
     all_students = Student.query.all()
     current_role = normalize_role(current_user)
 
+    if canonical_role(current_user) in ('proprietor', 'owner'):
+        return redirect(url_for('proprietor_dashboard'))
+
     admin_view_requested = (request.args.get('view') or '').strip().lower() == 'admin'
-    can_open_admin_view = current_role in {'admin', 'principal'}
+    can_open_admin_view = canonical_role(current_user) == 'admin'
     effective_role = 'admin' if admin_view_requested and can_open_admin_view else current_role
-    announcements_link = current_role in {"admin", "principal", "dean"}
+    announcements_link = current_role in {"admin", "principal", "dean", "vpi", "proprietor"}
 
     display_year, active_year_biz, years_biz, viewing_archived_biz = resolve_dashboard_academic_year(
         session_key=BUSINESS_YEAR_SESSION_KEY,
     )
     biz_stats = _registrar_counts_for_year(display_year, viewing_archived=viewing_archived_biz)
     payment_form = PaymentForm()
+
+    if request.method == 'POST' and request.form.get('desk_action'):
+        from business_desk import handle_desk_post
+        desk_result = handle_desk_post(request.form, display_year=display_year)
+        if desk_result:
+            return desk_result
 
     if request.method == 'POST' and 'submit_payment' in request.form:
         populate_business_payment_form(
@@ -7012,6 +7707,13 @@ def _render_business_dashboard():
                         installment=installment,
                         currency=payment_form.currency.data,
                         fee_kind=fee_kind,
+                        collection_desk='business',
+                        collected_by_user_id=current_user.id,
+                        payment_method=(
+                            payment_form.payment_method.data
+                            if getattr(payment_form, 'payment_method', None)
+                            else 'cash'
+                        ),
                     )
                     db.session.commit()
                     flash(
@@ -7021,7 +7723,7 @@ def _render_business_dashboard():
                     if payment:
                         return redirect(url_for('print_business_payment_receipt', payment_id=payment.id))
                     redirect_kwargs = {
-                        'tab': 'tuition',
+                        'tab': 'money',
                         'class_id': request.form.get('class_id', type=int),
                         'student_id': payment_form.student.data,
                     }
@@ -7058,7 +7760,7 @@ def _render_business_dashboard():
     business_ctx['counts'] = counts
 
     # Explicit template rendering by role
-    if current_role in {'admin', 'principal'} or effective_role == 'admin':
+    if canonical_role(current_user) == 'admin' or effective_role == 'admin':
         template_name = 'dashboard_admin.html'
         dashboard_title = f"Welcome to Your {current_role.capitalize()} Dashboard"
     else:
@@ -7074,8 +7776,8 @@ def _render_business_dashboard():
         active_year=display_year,
         system_active_year=active_year_biz,
         effective_role=effective_role,
-        show_admin_hub_link=current_role in {'admin', 'principal'},
-        show_principal_hub_link=current_role == 'principal',
+        show_admin_hub_link=canonical_role(current_user) == 'admin',
+        show_principal_hub_link=current_role in PRINCIPAL_OFFICE_ROLES,
         **business_ctx
     )
 
@@ -7091,6 +7793,9 @@ def core_dashboard_gateway():
     operational dashboards.
     """
     user_role = canonical_role(current_user)
+
+    if user_role in ('proprietor', 'owner'):
+        return redirect(url_for('proprietor_dashboard'))
 
     # 1. Handle Principal Role First
     if user_role == 'principal':
@@ -7116,6 +7821,8 @@ def core_dashboard_gateway():
         'vpa': 'vpa_dashboard',
         'dean': 'dean_dashboard',
         'student': 'student_dashboard',
+        'proprietor': 'proprietor_dashboard',
+        'owner': 'proprietor_dashboard',
     }
 
     target_endpoint = role_route_map.get(user_role)
@@ -7159,7 +7866,7 @@ def core_dashboard_gateway():
     current_role = (current_user.role or "").strip().lower()
     effective_role = session.get('effective_role', current_role)
 
-    announcements_link = current_role in {"admin", "principal", "dean"}
+    announcements_link = current_role in {"admin", "principal", "dean", "vpi", "proprietor"}
 
     # ======================================================================
     # 1.5 SPECIALIZED ROLE DISPATCH (PREVENT INFINITE REDIRECTS)
@@ -7562,6 +8269,9 @@ def save_period_activity_sheet(class_id):
 
     saved_count = 0
     errors = []
+    notice_batch = _StudentGradeMailBatch(
+        class_name=getattr(klass, 'name', None),
+    )
     for activity_key in activity_keys:
         if activity_key == 'quick':
             assessment = quick_assessment
@@ -7599,6 +8309,9 @@ def save_period_activity_sheet(class_id):
                 assessment,
                 student,
                 score,
+                notice_batch=notice_batch,
+                visibility='published' if publish_to_report else 'draft',
+                class_name=getattr(klass, 'name', None),
             )
             saved_count += 1
 
@@ -7633,6 +8346,7 @@ def save_period_activity_sheet(class_id):
             active_year.id, class_id, period, published=False, actor_id=current_user.id,
         )
     db.session.commit()
+    notice_batch.dispatch()
     period_label = grading_period_label(period)
     if publish_to_report:
         if saved_count or published_count:
@@ -7948,6 +8662,7 @@ def save_grades(class_id):
     period_label = grading_period_label(period)
     saved_count = 0
     score_changes = []
+    notice_batch = _StudentGradeMailBatch(class_name=getattr(klass, 'name', None))
 
     for student in students:
         parsed, err = _parse_student_period_grade_from_form(student, request.form, klass, period)
@@ -7992,7 +8707,8 @@ def save_grades(class_id):
         grade.marking_period = period
         grade.period = period
         grade.activity_type = 'Semester Exam' if period in (7, 8) else 'Period Assessment'
-        old_score = grade.score if grade.id else None
+        old_score = grade.score if getattr(grade, 'id', None) else None
+        was_submitted = bool(grade.submitted) if getattr(grade, 'id', None) else False
         grade.ca_score = ca_score
         grade.exam_score = exam_score if period in range(1, 7) else total
         grade.score = total
@@ -8007,6 +8723,18 @@ def save_grades(class_id):
         if old_score != total:
             old_txt = f'{old_score:g}' if old_score is not None else '—'
             score_changes.append(f'{student.full_name} {old_txt} → {total:g}')
+        if old_score != total or (publish_to_report and not was_submitted):
+            notice_batch.add(
+                student,
+                _period_grade_mail_item(
+                    subject_name,
+                    period,
+                    total,
+                    visibility='published' if publish_to_report else 'draft',
+                    remarks=grade.remarks,
+                ),
+                class_name=klass.name,
+            )
 
     if saved_count:
         reconcile_grade_package_after_save(
@@ -8022,6 +8750,7 @@ def save_grades(class_id):
             + (f' Changes: {change_note}' if change_note else ''),
         )
     db.session.commit()
+    notice_batch.dispatch()
     if saved_count:
         if publish_to_report:
             flash(
@@ -8055,6 +8784,7 @@ def _persist_period_grades_from_form(
     students = get_class_students_for_year(class_id, active_year)
     saved_count = 0
     score_changes = []
+    notice_batch = _StudentGradeMailBatch(class_name=getattr(klass, 'name', None))
 
     for student in students:
         parsed, err = _parse_student_period_grade_from_form(student, request.form, klass, period)
@@ -8089,6 +8819,7 @@ def _persist_period_grades_from_form(
             db.session.add(grade)
 
         old_score = grade.score if getattr(grade, 'id', None) else None
+        was_submitted = bool(grade.submitted) if getattr(grade, 'id', None) else False
         grade.teacher_id = teacher_id
         grade.class_id = class_id
         grade.academic_year_id = active_year.id
@@ -8113,6 +8844,18 @@ def _persist_period_grades_from_form(
         if old_score != total:
             old_txt = f'{old_score:g}' if old_score is not None else '—'
             score_changes.append(f'{student.full_name} {old_txt} → {total:g}')
+        if old_score != total or (publish_to_report and not was_submitted):
+            notice_batch.add(
+                student,
+                _period_grade_mail_item(
+                    subject_name,
+                    period,
+                    total,
+                    visibility='published' if publish_to_report else 'draft',
+                    remarks=grade.remarks,
+                ),
+                class_name=getattr(klass, 'name', None),
+            )
 
     if saved_count:
         reconcile_grade_package_after_save(
@@ -8132,6 +8875,7 @@ def _persist_period_grades_from_form(
             + (f' Changes: {change_note}' if change_note else ''),
         )
     db.session.commit()
+    notice_batch.dispatch()
     return saved_count, None
 
 
@@ -8174,7 +8918,9 @@ def publish_period_grades(class_id):
         klass_id=class_id, academic_year_id=active_year.id
     ).all()
     student_ids = {s.id for s in students}
+    students_by_id = {s.id: s for s in students}
     published_count = 0
+    notice_batch = _StudentGradeMailBatch(class_name=getattr(klass, 'name', None))
 
     for grade in Grade.query.filter_by(
         class_id=class_id,
@@ -8188,6 +8934,19 @@ def publish_period_grades(class_id):
             continue
         grade.submitted = True
         published_count += 1
+        student = students_by_id.get(grade.student_id)
+        if student:
+            notice_batch.add(
+                student,
+                _period_grade_mail_item(
+                    subject_name,
+                    period,
+                    grade.score,
+                    visibility='published',
+                    remarks=grade.remarks,
+                ),
+                class_name=klass.name,
+            )
 
     if published_count:
         reconcile_grade_package_after_save(
@@ -8199,6 +8958,7 @@ def publish_period_grades(class_id):
             f'published {published_count} score(s).',
         )
     db.session.commit()
+    notice_batch.dispatch()
     period_label = grading_period_label(period)
     if published_count:
         flash(
@@ -8638,7 +9398,7 @@ def download_report_card(student_id):
             teacher_profile = Teacher.query.filter_by(user_id=current_user.id).first()
             if not teacher_profile or not teacher_can_access_student(teacher_profile, current_user, student):
                 abort(403)
-        if not student.tuition_cleared and user_role not in {'admin', 'teacher', 'registrar', 'principal'}:
+        if not student.tuition_cleared and user_role not in {'admin', 'teacher', 'registrar', 'principal', 'vpi', 'proprietor'}:
             pass
 
     is_staff_preview = viewer_can_see_unreleased_official_grades() and not parent_qr_access
@@ -8963,7 +9723,7 @@ def verify_student(token):
     staff_view = False
     if current_user.is_authenticated:
         role = normalize_role(current_user)
-        staff_view = role in {'admin', 'principal', 'registrar', 'teacher', 'business', 'sponsor'}
+        staff_view = role in {'admin', 'principal', 'registrar', 'teacher', 'sponsor', 'vpi', 'proprietor'}
 
     registration_label = 'Registered' if student.is_registered else 'Pending'
     if student.status and str(student.status).upper() in ALUMNI_STATUSES:
@@ -10299,17 +11059,17 @@ def _youtube_embed_url(url):
 
 def _require_analytics_access():
     """Restrict analytics APIs to staff roles."""
-    if normalize_role(current_user) not in ('admin', 'registrar', 'principal', 'business'):
+    if canonical_role(current_user) not in PRINCIPAL_COMMAND_ROLES | {'registrar', 'business'}:
         abort(403)
 
 
 def _require_leader_manager():
-    """About-page leadership profiles — admin and principal."""
+    """About-page leadership profiles — Principal office (shared with VPI and Proprietor)."""
     if not current_user.is_authenticated:
         flash("Please log in to continue.", "danger")
         return redirect(url_for("dashboard"))
-    if (current_user.role or "").lower() not in {"admin", "principal"}:
-        flash("Administrator access required.", "danger")
+    if not has_principal_command():
+        flash("Principal office access is required.", "danger")
         return redirect(url_for("dashboard"))
     return None
 
@@ -10888,6 +11648,8 @@ def add_grade():
         flash('This grade is finalized and cannot be changed.', 'danger')
         return redirect(url_for('teacher_dashboard'))
 
+    old_score = grade.score if getattr(grade, 'id', None) else None
+    was_submitted = bool(grade.submitted) if getattr(grade, 'id', None) else False
     grade.teacher_id = teacher_profile.id
     grade.class_id = student_class_id
     grade.academic_year_id = active_year.id
@@ -10916,6 +11678,22 @@ def add_grade():
             published=False, actor_id=current_user.id,
         )
     db.session.commit()
+    if old_score != score or (submitted and not was_submitted):
+        klass = db.session.get(Class, student_class_id) if student_class_id else None
+        batch = _StudentGradeMailBatch(class_name=getattr(klass, 'name', None))
+        batch.add(
+            student,
+            _period_grade_mail_item(
+                subject_name,
+                marking_period,
+                score,
+                visibility='published' if submitted else 'draft',
+                remarks=grade.remarks,
+                title=activity_type,
+            ),
+            class_name=getattr(klass, 'name', None),
+        )
+        batch.dispatch()
 
     if submitted:
         flash(f"Grade saved. {GRADE_RELEASE_TEACHER_FLASH}", "success")
@@ -11953,7 +12731,7 @@ def attendance_overview():
 @login_required
 def principal_attendance():
     """Principal executive attendance overview."""
-    if normalize_role(current_user) not in ('principal', 'admin'):
+    if not has_principal_command():
         flash('Access denied.', 'danger')
         return redirect(url_for('login'))
     return render_attendance_overview(
@@ -12274,7 +13052,10 @@ def principal_publish_period_grades(class_id):
 
     students = get_class_students_for_year(class_id, active_year)
     student_ids = {s.id for s in students}
+    students_by_id = {s.id: s for s in students}
     published_count = 0
+    klass = Class.query.get(class_id)
+    notice_batch = _StudentGradeMailBatch(class_name=getattr(klass, 'name', None))
 
     for grade in Grade.query.filter_by(
         class_id=class_id,
@@ -12288,12 +13069,26 @@ def principal_publish_period_grades(class_id):
             continue
         grade.submitted = True
         published_count += 1
+        student = students_by_id.get(grade.student_id)
+        if student:
+            notice_batch.add(
+                student,
+                _period_grade_mail_item(
+                    subject_name,
+                    period,
+                    grade.score,
+                    visibility='published',
+                    remarks=grade.remarks,
+                ),
+                class_name=getattr(klass, 'name', None),
+            )
 
     if published_count:
         reconcile_grade_package_after_save(
             active_year.id, class_id, period, published=True, actor_id=current_user.id,
         )
     db.session.commit()
+    notice_batch.dispatch()
     period_label = grading_period_label(period)
     if published_count:
         flash(
@@ -12781,7 +13576,17 @@ def scan_assignment(student_id):
     })
 
 
-def _apply_activity_score(teacher_profile, assessment, student, score, feedback=None):
+def _apply_activity_score(
+    teacher_profile,
+    assessment,
+    student,
+    score,
+    feedback=None,
+    *,
+    notice_batch=None,
+    visibility='draft',
+    class_name=None,
+):
     """Save or update a student's score for an activity and refresh draft period grade."""
     submission = Submission.query.filter_by(
         assessment_id=assessment.id,
@@ -12794,6 +13599,10 @@ def _apply_activity_score(teacher_profile, assessment, student, score, feedback=
         )
         db.session.add(submission)
 
+    old_score = submission.score if getattr(submission, 'id', None) else None
+    was_graded = bool(submission.is_graded)
+    old_feedback = (submission.teacher_feedback or '').strip() if submission.teacher_feedback else ''
+    new_feedback = (feedback or '').strip()
     submission.score = score
     submission.is_graded = True
     submission.score_published = True
@@ -12806,6 +13615,19 @@ def _apply_activity_score(teacher_profile, assessment, student, score, feedback=
         assessment.marking_period or 1,
         teacher_id=teacher_profile.id if teacher_profile else None,
     )
+    score_changed = (not was_graded) or (old_score != score)
+    note_changed = bool(new_feedback) and new_feedback != old_feedback
+    if notice_batch is not None and (score_changed or note_changed):
+        notice_batch.add(
+            student,
+            _activity_grade_mail_item(
+                assessment,
+                score,
+                visibility=visibility,
+                note=new_feedback,
+            ),
+            class_name=class_name,
+        )
     return submission
 
 
@@ -12841,9 +13663,19 @@ def grade_submission(submission_id):
         return redirect(url_for('activity_detail', assessment_id=assessment.id))
 
     feedback = request.form.get('feedback', '').strip() or None
-    _apply_activity_score(teacher_profile, assessment, student, score, feedback=feedback)
+    notice_batch = _StudentGradeMailBatch(class_name=getattr(klass, 'name', None))
+    _apply_activity_score(
+        teacher_profile,
+        assessment,
+        student,
+        score,
+        feedback=feedback,
+        notice_batch=notice_batch,
+        class_name=getattr(klass, 'name', None),
+    )
 
     db.session.commit()
+    notice_batch.dispatch()
     flash('Score saved. Draft period grade updated for the student dashboard.', 'success')
     return redirect(request.referrer or url_for('activity_detail', assessment_id=assessment.id))
 
@@ -12883,9 +13715,19 @@ def grade_activity_student(assessment_id, student_id):
         return redirect(url_for('activity_detail', assessment_id=assessment.id))
 
     feedback = request.form.get('feedback', '').strip() or None
-    _apply_activity_score(teacher_profile, assessment, student, score, feedback=feedback)
+    notice_batch = _StudentGradeMailBatch(class_name=getattr(klass, 'name', None))
+    _apply_activity_score(
+        teacher_profile,
+        assessment,
+        student,
+        score,
+        feedback=feedback,
+        notice_batch=notice_batch,
+        class_name=getattr(klass, 'name', None),
+    )
 
     db.session.commit()
+    notice_batch.dispatch()
     flash(f'Score saved for {student.full_name}.', 'success')
     return redirect(url_for('activity_detail', assessment_id=assessment.id))
 
@@ -12917,6 +13759,7 @@ def bulk_grade_activity(assessment_id):
     }
     saved_count = 0
     errors = []
+    notice_batch = _StudentGradeMailBatch(class_name=getattr(klass, 'name', None))
 
     for student_id in roster_ids:
         score_raw = request.form.get(f'score_{student_id}', '').strip()
@@ -12941,6 +13784,8 @@ def bulk_grade_activity(assessment_id):
             student,
             score,
             feedback=feedback,
+            notice_batch=notice_batch,
+            class_name=getattr(klass, 'name', None),
         )
         saved_count += 1
 
@@ -12952,6 +13797,7 @@ def bulk_grade_activity(assessment_id):
             return redirect(url_for('activity_detail', assessment_id=assessment.id))
 
     db.session.commit()
+    notice_batch.dispatch()
     if saved_count:
         flash(f'Saved {saved_count} score{"s" if saved_count != 1 else ""} for {assessment.title}.', 'success')
     else:
@@ -13018,6 +13864,7 @@ def save_quick_activity_grades(class_id):
     }
     saved_count = 0
     errors = []
+    notice_batch = _StudentGradeMailBatch(class_name=getattr(klass, 'name', None))
 
     for student_id in roster_ids:
         score_raw = request.form.get(f'score_{student_id}', '').strip()
@@ -13042,6 +13889,8 @@ def save_quick_activity_grades(class_id):
             student,
             score,
             feedback=feedback,
+            notice_batch=notice_batch,
+            class_name=getattr(klass, 'name', None),
         )
         saved_count += 1
 
@@ -13058,6 +13907,7 @@ def save_quick_activity_grades(class_id):
             ))
 
     db.session.commit()
+    notice_batch.dispatch()
     if saved_count:
         flash(
             f'Saved {saved_count} activity score{"s" if saved_count != 1 else ""} '
@@ -13301,11 +14151,21 @@ RESET_ROLE_GROUPS = [
         'roles': {'student'},
     },
     {
+        'key': 'proprietor',
+        'label': 'Proprietor',
+        'icon': 'fa-landmark',
+        'browse': 'list',
+        'roles': {'proprietor', 'owner'},
+    },
+    {
         'key': 'staff',
         'label': 'Staff',
         'icon': 'fa-briefcase',
         'browse': 'list',
-        'roles': {'registrar', 'business', 'vpa', 'vpi', 'dean', 'principal', 'parent', 'sponsor'},
+        'roles': {
+            'proprietor', 'owner', 'principal', 'vpa', 'vpi', 'dean',
+            'registrar', 'business', 'parent', 'sponsor',
+        },
     },
     {
         'key': 'admin',
@@ -13325,10 +14185,10 @@ def _reset_operator_can_target(operator, target_user):
     op_role = (operator.role or '').lower()
     if op_role == 'admin':
         return True
-    if op_role == 'principal':
+    if canonical_role(operator) in PRINCIPAL_OFFICE_ROLES:
         if target_user.id == operator.id:
             return False
-        return (target_user.role or '').lower() != 'admin'
+        return canonical_role(target_user) != 'admin'
     return False
 
 
@@ -13393,8 +14253,10 @@ def _reset_build_class_students(klass, search_q, operator):
 
 def _reset_build_role_users(role_keys, search_q, operator):
     rows = []
+    wanted = {str(key).strip().lower() for key in (role_keys or set()) if key}
     for user in User.query.order_by(User.full_name.asc()).all():
-        if (user.role or '').lower() not in role_keys:
+        stored = (user.role or '').strip().lower()
+        if stored not in wanted and canonical_role(user) not in wanted:
             continue
         if not _reset_operator_can_target(operator, user):
             continue
@@ -13414,7 +14276,7 @@ def _reset_build_role_users(role_keys, search_q, operator):
 @app.route('/admin/account/override-reset', methods=['GET', 'POST'])
 @login_required
 def administrative_password_reset():
-    if not current_user.role or current_user.role.lower() not in ['admin', 'principal']:
+    if not has_principal_command():
         flash("Unauthorized access matrix. Insufficient clearance permissions.", "danger")
         return redirect(url_for('login'))
 
@@ -13478,9 +14340,29 @@ def administrative_password_reset():
         try:
             target_user.set_password(new_password)
             db.session.commit()
+            mailed = False
+            try:
+                from school_mailer import mailer_configured, send_password_changed_notice
+                if mailer_configured() and account_email_looks_deliverable(target_user.email):
+                    mailed = send_password_changed_notice(
+                        target_user.email,
+                        target_user.full_name or target_user.username,
+                    )
+            except Exception:
+                logger.exception('Password-reset notice failed for user %s', target_user.id)
+            if mailed:
+                note = " A notice was emailed to the account holder."
+            elif account_email_looks_deliverable(target_user.email):
+                note = (
+                    " Give them the new password in person — the email notice was not sent. "
+                    "If the log says Unauthorized IP, authorize this computer in Brevo "
+                    "(Settings → Security → Authorized IPs)."
+                )
+            else:
+                note = ""
             flash(
                 f"Credentials for {target_user.full_name or target_user.username} successfully overwritten. "
-                f"They can sign in immediately with the new password.",
+                f"They can sign in immediately with the new password.{note}",
                 "success",
             )
             return _reset_redirect()
@@ -14373,7 +15255,7 @@ def format_rollover_flash_summary(results):
 
 
 def _rollover_role_guard():
-    if current_user.role.lower() not in ['admin', 'principal']:
+    if not has_principal_command():
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
     return None
@@ -15093,7 +15975,7 @@ def academic_years():
 @login_required
 def end_academic_year(year_id):
     # ✨ Secured role authentication matrix
-    if current_user.role.lower() not in ['admin', 'principal']:
+    if not has_principal_command():
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
 
@@ -15124,7 +16006,7 @@ def end_academic_year(year_id):
 @app.route('/academic-years/<int:year_id>/activate', methods=['POST'])
 @login_required
 def activate_academic_year(year_id):
-    if current_user.role.lower() not in ['admin', 'principal']:
+    if not has_principal_command():
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
 
@@ -15144,7 +16026,7 @@ def activate_academic_year(year_id):
 @login_required
 def edit_academic_year(year_id):
     # ✨ Fixed: Clean multi-role checking with lowercase protection
-    if current_user.role.lower() not in ['admin', 'principal']:
+    if not has_principal_command():
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
 
@@ -15183,7 +16065,7 @@ def edit_academic_year(year_id):
 @app.route('/academic-years/reregister-students', methods=['POST'])
 @login_required
 def reregister_students():
-    if current_user.role.lower() not in ['admin', 'principal']:
+    if not has_principal_command():
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
 
@@ -15208,7 +16090,7 @@ def reregister_students():
 @app.route('/academic-years/delete/<int:year_id>', methods=['POST'])
 @login_required
 def delete_academic_year(year_id):
-    if current_user.role.lower() not in ['admin', 'principal']:
+    if not has_principal_command():
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
 
@@ -15471,7 +16353,8 @@ def sync_registration_fee_ledger(
     if existing_reg_payment:
         if update_existing:
             old_amount = parse_currency_amount_optional(existing_reg_payment.amount_paid)
-            if old_amount != fee_amount:
+            amount_changed = old_amount != fee_amount
+            if amount_changed:
                 existing_reg_payment.amount_paid = fee_amount
                 marker = f"[SP-{existing_reg_payment.id}]"
                 income_tx = BusinessTransaction.query.filter(
@@ -15486,6 +16369,8 @@ def sync_registration_fee_ledger(
                 existing_reg_payment.receipt_number = _next_registry_receipt_if_needed()
             existing_reg_payment.collection_desk = existing_reg_payment.collection_desk or 'registry'
             existing_reg_payment.fee_kind = existing_reg_payment.fee_kind or 'registration'
+            if amount_changed:
+                _queue_student_digital_receipt(student, existing_reg_payment)
         return existing_reg_payment
 
     return record_student_payment_with_income(
@@ -15635,6 +16520,7 @@ def record_student_payment_with_income(
     fee_kind=None,
     handover_id=None,
     currency=None,
+    payment_method=None,
 ):
     """
     Record a student fee. Business-office collections hit official income immediately.
@@ -15662,6 +16548,7 @@ def record_student_payment_with_income(
         collection_desk=collection_desk,
         fee_kind=fee_kind,
         handover_id=handover_id,
+        payment_method=(payment_method or '').strip().lower() or None,
     )
     db.session.add(payment)
     db.session.flush()
@@ -15678,6 +16565,7 @@ def record_student_payment_with_income(
             logger.exception('Could not refresh the registry clerk draft.')
     else:
         post_income_for_student_payment(student, payment)
+    _queue_student_digital_receipt(student, payment)
     return payment
 
 
@@ -15832,8 +16720,12 @@ def build_business_dashboard_context(
     search_class = (search_class or request.args.get("search_class", "") or "").strip()
     search_student = (request.args.get("search_student") or "").strip()
     active_tab = (request.args.get("tab") or "tuition").strip().lower()
-    if active_tab not in {"tuition", "summary", "ledger"}:
-        active_tab = "tuition"
+    if active_tab in {"tuition", "money"}:
+        active_tab = "money"
+    elif active_tab in {"summary", "overview"}:
+        active_tab = "overview"
+    elif active_tab not in {"money", "overview", "ledger", "procurement", "staff"}:
+        active_tab = "overview"
     ledger_filter = (request.args.get("ledger_filter") or "all").strip().lower()
     if ledger_filter not in {"all", "flagged"}:
         ledger_filter = "all"
@@ -16075,7 +16967,33 @@ def build_business_dashboard_context(
         "display_year": display_year,
         "viewing_archived": viewing_archived,
         **_business_registry_inbox_context(),
+        **_business_command_desk_context(display_year, classes_list, fee_income_total, total_revenue, total_expenses),
     }
+
+
+def _business_command_desk_context(display_year, classes_list, fee_income_total, total_revenue, total_expenses):
+    empty = {
+        'kpis': {},
+        'inventory_items': [],
+        'school_expenses': [],
+        'support_staff': [],
+        'today_attendance': [],
+        'attendance_today': None,
+        'payment_methods': (),
+        'expense_categories': (),
+        'staff_titles': (),
+        'attendance_statuses': (),
+    }
+    try:
+        from business_desk import collect_kpis, desk_lists
+        payload = desk_lists()
+        payload['kpis'] = collect_kpis(
+            display_year, classes_list, fee_income_total, total_revenue, total_expenses,
+        )
+        return payload
+    except Exception:
+        logger.exception('Business command desk context failed')
+        return empty
 
 
 def _business_registry_inbox_context():
@@ -16614,7 +17532,7 @@ def api_lookup_student():
 @login_required
 def api_registrar_lookup_student():
     """Staff-only student lookup for registrar dashboard enrollment auto-fill."""
-    if normalize_role(current_user) not in {'admin', 'principal', 'registrar'}:
+    if canonical_role(current_user) not in PRINCIPAL_COMMAND_ROLES | {'registrar'}:
         return jsonify({'found': False, 'error': 'Unauthorized.'}), 403
 
     payload = request.get_json(silent=True) or {}
@@ -16677,7 +17595,7 @@ def api_registrar_lookup_student():
 @login_required
 def api_registrar_check_student_id():
     """Staff-only live duplicate check for registrar enrollment student IDs."""
-    if normalize_role(current_user) not in {'admin', 'principal', 'registrar'}:
+    if canonical_role(current_user) not in PRINCIPAL_COMMAND_ROLES | {'registrar'}:
         return jsonify({'available': False, 'error': 'Unauthorized.'}), 403
 
     payload = request.get_json(silent=True) or {}
@@ -17827,7 +18745,7 @@ def apply_student_form_to_record(student, form, *, registrar_name, registration_
 @login_required
 def admin_repair_alumni_bulk():
     """Mark misclassified Grade 12 students in the active year as alumni."""
-    if normalize_role(current_user) not in ('admin', 'registrar', 'principal'):
+    if canonical_role(current_user) not in PRINCIPAL_COMMAND_ROLES | {'registrar'}:
         flash('Unauthorized access.', 'danger')
         return redirect(url_for('login'))
 
@@ -17861,7 +18779,7 @@ def admin_repair_alumni_bulk():
 @app.route('/registrar/class/<int:class_id>/reassign-teacher', methods=['POST'])
 @login_required
 def registrar_reassign_class_teacher(class_id):
-    if normalize_role(current_user) not in {'admin', 'principal', 'registrar'}:
+    if canonical_role(current_user) not in PRINCIPAL_COMMAND_ROLES | {'registrar'}:
         flash('Unauthorized access.', 'danger')
         return redirect(url_for('dashboard', **registrar_dashboard_redirect_kwargs()))
 
@@ -17912,7 +18830,7 @@ def _registration_form_error_summary(form):
 @login_required
 def register_student():
     # 1. Authorize user permissions (aliases like registry → registrar)
-    if canonical_role(current_user) not in {"admin", "principal", "registrar"}:
+    if canonical_role(current_user) not in PRINCIPAL_COMMAND_ROLES | {"registrar"}:
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
 
@@ -18087,7 +19005,7 @@ def register_student():
 
 
 def _require_registry_day_book():
-    if canonical_role(current_user) not in {"admin", "principal", "registrar"}:
+    if canonical_role(current_user) not in PRINCIPAL_COMMAND_ROLES | {"registrar"}:
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
     return None
@@ -18191,7 +19109,7 @@ def _build_registry_fee_cabinet(display_year, *, viewing_archived=False):
 
 
 def _require_business_registry_inbox():
-    if canonical_role(current_user) not in {"admin", "principal", "business", "vpi"}:
+    if canonical_role(current_user) not in PRINCIPAL_COMMAND_ROLES | {"business"}:
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
     return None
@@ -18478,7 +19396,7 @@ def print_registry_receipt(payment_id):
 @app.route('/registrar/day-book/record/<int:handover_id>', methods=['GET'], endpoint='print_registry_daily_record')
 @login_required
 def print_registry_daily_record(handover_id):
-    if canonical_role(current_user) not in {"admin", "principal", "registrar", "business", "vpi"}:
+    if canonical_role(current_user) not in PRINCIPAL_COMMAND_ROLES | {"registrar", "business"}:
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
     from registry_desk import fee_kind_label, registry_takings_query
@@ -18791,7 +19709,7 @@ def registry_student_period_sheet_pdf(student_id):
 @login_required
 def print_registrar_student(student_id):
     """Printable official student file from a registrar class/student folder."""
-    if canonical_role(current_user) not in {"admin", "principal", "registrar"}:
+    if canonical_role(current_user) not in PRINCIPAL_COMMAND_ROLES | {"registrar"}:
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
 
@@ -18815,7 +19733,7 @@ def print_registrar_student(student_id):
 @login_required
 def print_registrar_registration_receipt(payment_id):
     """Printable official registration-fee receipt for registrar, principal, and admin."""
-    if canonical_role(current_user) not in {"admin", "principal", "registrar"}:
+    if canonical_role(current_user) not in PRINCIPAL_COMMAND_ROLES | {"registrar"}:
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
 
@@ -18830,7 +19748,7 @@ def print_registrar_registration_receipt(payment_id):
 @login_required
 def print_registrar_credential_slip(student_id):
     """Printable portal login slip. Initial password is shown once from session."""
-    if canonical_role(current_user) not in {"admin", "principal", "registrar"}:
+    if canonical_role(current_user) not in PRINCIPAL_COMMAND_ROLES | {"registrar"}:
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
 
@@ -18947,7 +19865,7 @@ _ID_PHOTO_HEADROOM_FRAC = 0.10  # 8–12% of square side above the crown; never 
 
 
 def _require_registrar_office():
-    if canonical_role(current_user) not in {"admin", "principal", "registrar"}:
+    if canonical_role(current_user) not in PRINCIPAL_COMMAND_ROLES | {"registrar"}:
         flash("Unauthorized access.", "danger")
         return False
     return True
@@ -18968,7 +19886,7 @@ def _registrar_office_guard():
 
 def _require_staff_id_office():
     """Staff/teacher ID cards: registrar office plus VPI and VPA, who manage staff records."""
-    if canonical_role(current_user) not in {"admin", "principal", "registrar", "vpi", "vpa"}:
+    if canonical_role(current_user) not in PRINCIPAL_COMMAND_ROLES | {"registrar", "vpa"}:
         flash("Unauthorized access.", "danger")
         return False
     return True
@@ -18986,6 +19904,75 @@ def _registrar_student_folder_redirect(student_id):
         url_for('dashboard', **registrar_dashboard_redirect_kwargs(open_student_id=student_id))
         + f'#student-folder-{int(student_id)}'
     )
+
+
+def _same_class_name_duplicates(student):
+    """Other students in the same class folder with the same display name."""
+    if not student or not student.klass_id:
+        return []
+    needle = (student.full_name or '').strip().casefold()
+    if not needle:
+        return []
+    year_id = student.academic_year_id
+    query = Student.query.filter(
+        Student.id != student.id,
+        Student.klass_id == student.klass_id,
+    )
+    if year_id:
+        query = query.filter(
+            or_(Student.academic_year_id == year_id, Student.academic_year_id.is_(None))
+        )
+    matches = []
+    for other in query.order_by(Student.student_id.asc()).all():
+        if (other.full_name or '').strip().casefold() == needle:
+            matches.append(other)
+    return matches
+
+
+def _student_record_history_counts(student):
+    sid = student.id
+    return {
+        'payments': StudentPayment.query.filter_by(student_id=sid).count(),
+        'grades': Grade.query.filter_by(student_id=sid).count(),
+        'submissions': Submission.query.filter_by(student_id=sid).count(),
+    }
+
+
+def _student_record_can_purge(counts):
+    return not any(int(counts.get(key) or 0) for key in ('payments', 'grades', 'submissions'))
+
+
+def _detach_student_from_class(student, class_id=None, year_id=None):
+    class_id = class_id or student.klass_id
+    year_id = year_id if year_id is not None else student.academic_year_id
+    if not class_id:
+        return False
+    query = Enrollment.query.filter_by(student_id=student.id, class_id=class_id)
+    if year_id:
+        query = query.filter(or_(
+            Enrollment.academic_year_id == year_id,
+            Enrollment.academic_year_id.is_(None),
+        ))
+    for row in query.all():
+        db.session.delete(row)
+    if student.klass_id == class_id:
+        student.klass_id = None
+    return True
+
+
+def _purge_empty_student_record(student):
+    """Delete an empty duplicate student file and its unused portal login."""
+    portal = student.user
+    sid = student.id
+    Enrollment.query.filter_by(student_id=sid).delete(synchronize_session=False)
+    StudentRegistryDocument.query.filter_by(student_id=sid).delete(synchronize_session=False)
+    Attendance.query.filter_by(student_id=sid).delete(synchronize_session=False)
+    student.user_id = None
+    db.session.flush()
+    db.session.delete(student)
+    db.session.flush()
+    if portal is not None and canonical_role(portal) == 'student':
+        db.session.delete(portal)
 
 
 def _default_id_expiration_date(academic_year=None):
@@ -21402,6 +22389,96 @@ def view_registrar_student_document(student_id, document_id):
 
 
 @app.route(
+    '/registrar/students/<int:student_id>/remove',
+    methods=['GET', 'POST'],
+    endpoint='remove_registrar_student',
+)
+@login_required
+def remove_registrar_student(student_id):
+    """Remove a duplicate from a class, or delete an empty extra student file."""
+    denied = _registrar_office_guard()
+    if denied:
+        return denied
+
+    student = Student.query.get_or_404(student_id)
+    class_id = student.klass_id
+    klass = student.assigned_class or (db.session.get(Class, class_id) if class_id else None)
+    duplicates = _same_class_name_duplicates(student)
+    counts = _student_record_history_counts(student)
+    can_purge = _student_record_can_purge(counts)
+    return_to = request.args.get('return_to') or request.form.get('return_to') or 'class_roster'
+
+    def _after_remove():
+        if return_to == 'class_roster' and class_id:
+            return redirect(url_for(
+                'registrar_class_students',
+                class_id=class_id,
+                **registrar_dashboard_redirect_kwargs(),
+            ))
+        return redirect(url_for('dashboard', **registrar_dashboard_redirect_kwargs()))
+
+    if request.method == 'POST':
+        action = (request.form.get('action') or '').strip()
+        if action == 'remove_class':
+            if not class_id:
+                flash('This student is not in a class folder.', 'warning')
+                return _after_remove()
+            _detach_student_from_class(student, class_id=class_id)
+            log_activity(
+                'REMOVE_STUDENT_FROM_CLASS',
+                f'Removed {student.full_name} (ID: {student.student_id}) from class #{class_id}.',
+            )
+            db.session.commit()
+            flash(
+                f'{student.full_name} was taken out of this class. '
+                'The student file is still in Unassigned if you need it.',
+                'success',
+            )
+            return _after_remove()
+
+        if action == 'delete_record':
+            typed = (request.form.get('confirm_name') or '').strip()
+            expected = (student.full_name or '').strip()
+            if not typed or typed.casefold() != expected.casefold():
+                flash('Type the student name exactly to delete this file.', 'danger')
+                return redirect(url_for(
+                    'remove_registrar_student',
+                    student_id=student.id,
+                    return_to=return_to,
+                ))
+            if not can_purge:
+                flash(
+                    'This file has payments, grades, or classwork. '
+                    'Keep this one and delete the empty duplicate instead.',
+                    'danger',
+                )
+                return redirect(url_for(
+                    'remove_registrar_student',
+                    student_id=student.id,
+                    return_to=return_to,
+                ))
+            label = f'{student.full_name} (ID: {student.student_id})'
+            _purge_empty_student_record(student)
+            log_activity('DELETE_STUDENT', f'Deleted duplicate student record {label}.')
+            db.session.commit()
+            flash(f'{label} was deleted from the school roster.', 'success')
+            return _after_remove()
+
+        flash('Choose whether to remove this student from the class or delete the file.', 'warning')
+        return redirect(url_for('remove_registrar_student', student_id=student.id, return_to=return_to))
+
+    return render_template(
+        'remove_student.html',
+        student=student,
+        klass=klass,
+        duplicates=duplicates,
+        counts=counts,
+        can_purge=can_purge,
+        return_to=return_to,
+    )
+
+
+@app.route(
     '/registrar/students/<int:student_id>/documents/<int:document_id>/delete',
     methods=['POST'],
     endpoint='delete_registrar_student_document',
@@ -22726,7 +23803,7 @@ def print_student_id_card(student_id):
 @app.route('/edit-student/<int:student_id>', methods=['GET', 'POST'])
 @login_required
 def edit_student(student_id):
-    if canonical_role(current_user) not in {"admin", "principal", "registrar"}:
+    if canonical_role(current_user) not in PRINCIPAL_COMMAND_ROLES | {"registrar"}:
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
 
@@ -23547,7 +24624,7 @@ def announcements():
 
 # ---------------------- BUSINESS MANAGEMENT -----------------------
 @app.route('/business-management', methods=['GET', 'POST'])
-@role_required('VPI', 'business', 'admin', 'principal')  # Enforce administrative access permissions
+@role_required('VPI', 'business', 'admin', 'principal', 'proprietor')
 def business_management():
     from forms import TransactionForm, EnrollmentForm, PaymentForm
     from models import Student, AcademicYear, Class, BusinessTransaction, StudentPayment, SchoolFee
@@ -23783,6 +24860,46 @@ def soft_delete_transaction(id):
     db.session.commit()
     flash('Transaction removed from view. Audit log updated.', 'info')
     return redirect(url_for('business_management'))
+
+@app.route('/business/daily-summary.csv')
+@login_required
+def business_daily_summary():
+    blocked = _require_business_dashboard_access()
+    if blocked:
+        return blocked
+    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    lines = ['kind,reference,party,amount,currency,method,notes']
+    for payment in StudentPayment.query.filter(StudentPayment.paid_on.isnot(None)).order_by(StudentPayment.id.desc()).limit(400).all():
+        paid = payment.paid_on.strftime('%Y-%m-%d') if hasattr(payment.paid_on, 'strftime') else str(payment.paid_on)[:10]
+        if paid != today:
+            continue
+        student = payment.student
+        lines.append(','.join([
+            'payment',
+            (payment.receipt_number or f'SP-{payment.id}').replace(',', ' '),
+            ((student.full_name if student else '') or '').replace(',', ' '),
+            str(payment.amount_paid or 0),
+            payment.currency or 'USD',
+            payment.payment_method or '',
+            (payment.description or '').replace(',', ' '),
+        ]))
+    for tx in BusinessTransaction.query.filter_by(is_deleted=False, date=today).all():
+        lines.append(','.join([
+            tx.type or 'ledger',
+            str(tx.id),
+            (tx.category or '').replace(',', ' '),
+            str(tx.amount or 0),
+            tx.currency or 'USD',
+            '',
+            (tx.description or '').replace(',', ' '),
+        ]))
+    payload = '\n'.join(lines) + '\n'
+    return Response(
+        payload,
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename=flpa-daily-summary-{today}.csv'},
+    )
+
 
 @app.route('/business/daily-expenses')
 @role_required('VPI', 'business', 'admin')
@@ -24241,7 +25358,7 @@ def _proprietor_live_snapshot(display_year, *, viewing_archived=False):
 def proprietor_dashboard():
     """School Proprietor — live executive view of academics, finance, and campus."""
     display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
-        session_key=PROPRIETOR_YEAR_SESSION_KEY,
+        session_key=dashboard_year_session_key(),
     )
     snapshot = _proprietor_live_snapshot(display_year, viewing_archived=viewing_archived)
     return render_template(
@@ -24262,7 +25379,7 @@ def proprietor_dashboard():
 def proprietor_live_json():
     """Lightweight JSON pulse for the proprietor live board (auto-refresh)."""
     display_year, _active, _years, viewing_archived = resolve_dashboard_academic_year(
-        session_key=PROPRIETOR_YEAR_SESSION_KEY,
+        session_key=dashboard_year_session_key(),
     )
     return jsonify(_proprietor_live_snapshot(display_year, viewing_archived=viewing_archived))
 
@@ -24343,7 +25460,7 @@ def proprietor_audit_logs_json():
 
 
 def _proprietor_senior_release_guard():
-    """Senior High grade seal is proprietor-only."""
+    """Senior High grade seal: Proprietor and VPI."""
     if user_may_release_senior_grades():
         return None
     flash(SENIOR_GRADE_RELEASE_HOLD_MESSAGE, 'danger')
@@ -24353,12 +25470,12 @@ def _proprietor_senior_release_guard():
 @app.route('/proprietor/senior-grade-releases', methods=['GET'])
 @login_required
 def proprietor_senior_grade_releases():
-    """Proprietor seal desk: Senior High grade and report release only."""
+    """Proprietor and VPI seal desk: Senior High grade and report release only."""
     blocked = _proprietor_senior_release_guard()
     if blocked:
         return blocked
     display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
-        session_key=PROPRIETOR_YEAR_SESSION_KEY,
+        session_key=dashboard_year_session_key(),
     )
     cabinet = _build_vpa_release_cabinet(
         display_year,
@@ -24400,7 +25517,7 @@ def proprietor_senior_class_grade_folder(class_id):
         )
         return redirect(url_for('vpa_grade_releases'))
     display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
-        session_key=PROPRIETOR_YEAR_SESSION_KEY,
+        session_key=dashboard_year_session_key(),
     )
     cabinet = _build_vpa_release_cabinet(
         display_year,
@@ -24452,7 +25569,7 @@ def proprietor_senior_transcript_releases():
     if blocked:
         return blocked
     display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
-        session_key=PROPRIETOR_YEAR_SESSION_KEY,
+        session_key=dashboard_year_session_key(),
     )
     cabinet = _build_vpa_release_cabinet(
         display_year,
@@ -24494,7 +25611,7 @@ def proprietor_senior_class_transcript_folder(class_id):
         )
         return redirect(url_for('vpa_transcript_releases'))
     display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
-        session_key=PROPRIETOR_YEAR_SESSION_KEY,
+        session_key=dashboard_year_session_key(),
     )
     cabinet = _build_vpa_release_cabinet(
         display_year,
@@ -24584,7 +25701,7 @@ def proprietor_approve_all_senior_transcripts():
 
 # -------------------------- PAYROLL -------------------------------
 @app.route('/principal/dashboard')
-@role_required('Principal', 'proprietor', 'admin') # Principal + school proprietor oversight
+@role_required('Principal', 'VPI', 'proprietor', 'admin')
 def principal_dashboard():
     from datetime import timedelta
     display_year, active_year, years, viewing_archived = resolve_dashboard_academic_year(
@@ -27013,13 +28130,14 @@ def delete_user(user_id):
 def analytics_payments():
     _require_analytics_access()
     from collections import defaultdict
-    year_counts = defaultdict(float)
+    year_counts = defaultdict(lambda: Decimal('0.00'))
     payments = StudentPayment.query.all()
     for p in payments:
-        year_counts[str(p.academic_year_id)] += p.amount_paid
+        year_counts[str(p.academic_year_id)] += parse_currency_amount_optional(p.amount_paid)
+    totals = {key: float(amount) for key, amount in year_counts.items()}
     return jsonify({
-        'total': sum(year_counts.values()),
-        'by_year': year_counts
+        'total': float(sum(year_counts.values())),
+        'by_year': totals,
     })
 
 #----------------User profile---------------------#
@@ -27027,11 +28145,47 @@ def analytics_payments():
 @app.route('/account/settings', methods=['GET', 'POST'])
 @login_required
 def account_settings():
-    """Logged-in user: change password and upload a square profile photo."""
+    """Logged-in user: notice email, password, and profile photo."""
     password_form = AccountPasswordForm()
     photo_form = AccountPhotoForm()
+    email_form = AccountEmailForm()
+    verify_current_form = AccountVerifyCurrentEmailForm()
 
-    if request.method == 'POST' and photo_form.submit_photo.data:
+    if request.method == 'POST' and email_form.submit_email.data:
+        if email_form.validate():
+            if not check_password_hash(current_user.password_hash, email_form.current_password.data):
+                flash('Current password is incorrect.', 'danger')
+            else:
+                new_email = normalize_account_email(email_form.new_email.data)
+                if new_email == normalize_account_email(current_user.email) and account_email_is_verified(current_user):
+                    flash('That is already your verified notice email.', 'info')
+                    return redirect(url_for('account_settings'))
+                changing = new_email != normalize_account_email(current_user.email)
+                ok, detail = _queue_email_verification(current_user, new_email, changing=changing)
+                if ok:
+                    flash(
+                        f'Check {detail} and open the confirmation link. '
+                        'Your current login email stays active until then.',
+                        'success',
+                    )
+                else:
+                    flash(detail, 'warning')
+                return redirect(url_for('account_settings'))
+        else:
+            flash('Enter a real email address and your current password.', 'danger')
+
+    elif request.method == 'POST' and verify_current_form.submit_verify_current.data:
+        if not account_email_looks_deliverable(current_user.email):
+            flash('Your current email cannot receive mail. Enter a real inbox below.', 'warning')
+            return redirect(url_for('account_settings'))
+        ok, detail = _queue_email_verification(current_user, current_user.email, changing=False)
+        if ok:
+            flash(f'A confirmation link was sent to {detail}.', 'success')
+        else:
+            flash(detail, 'warning')
+        return redirect(url_for('account_settings'))
+
+    elif request.method == 'POST' and photo_form.submit_photo.data:
         if photo_form.validate():
             photo_file = photo_form.photo.data
             upload_dir = os.path.join(current_app.root_path, 'static', 'uploads', 'photos')
@@ -27093,11 +28247,95 @@ def account_settings():
         'account_settings.html',
         password_form=password_form,
         photo_form=photo_form,
+        email_form=email_form,
+        verify_current_form=verify_current_form,
         dashboard_url=url_for(home_endpoint),
         role_label=dashboard_role_label(current_user),
         preview_url=current_user.photo_url,
         default_avatar_url=default_static_photo_url(),
+        email_verified=account_email_is_verified(current_user),
+        email_deliverable=account_email_looks_deliverable(current_user.email),
+        pending_email=getattr(current_user, 'pending_email', None),
     )
+
+
+@app.route('/mail/unsubscribe', methods=['GET', 'POST'], endpoint='mail_unsubscribe')
+def mail_unsubscribe():
+    """Gmail one-click List-Unsubscribe target. School notices stay on unless the office is asked."""
+    return (
+        'Future Leaders Preparatory Academy school notices are official portal mail. '
+        'To stop notices, sign in and update Account Settings, or contact the school office.',
+        200,
+        {'Content-Type': 'text/plain; charset=utf-8'},
+    )
+
+
+def _email_confirm_token_from_request(token=None):
+    if token:
+        return str(token).strip()
+    for key in ('code', 'token'):
+        value = (request.values.get(key) or '').strip()
+        if value:
+            return value
+    path = (request.path or '').split('?', 1)[0]
+    marker = '/account/verify-email/'
+    if marker in path:
+        return path.split(marker, 1)[1].strip('/')
+    return ''
+
+
+def _redirect_after_email_confirm(*, email=None, ok=False):
+    """Leave any open session and land on the password page."""
+    if getattr(current_user, 'is_authenticated', False):
+        logout_user()
+    if ok and email:
+        return redirect(url_for('login', confirmed=1, email=email))
+    return redirect(url_for('login'))
+
+
+@app.route('/account/confirm-email', methods=['GET', 'POST'], endpoint='verify_account_email')
+@app.route('/account/verify-email', methods=['GET', 'POST'])
+@app.route('/account/verify-email/<path:token>', methods=['GET', 'POST'])
+def verify_account_email(token=None):
+    """Confirm a new inbox, then send the person to the login page for their password."""
+    token = _email_confirm_token_from_request(token)
+    decoded = decode_email_verify_token(token) if token else None
+    if not decoded:
+        flash('That confirmation link is invalid or has expired. Sign in and request a new one from Account Settings.', 'danger')
+        return _redirect_after_email_confirm()
+    user_id, token_email = decoded
+    user = db.session.get(User, user_id)
+    target = normalize_account_email(token_email)
+    pending = normalize_account_email(getattr(user, 'pending_email', None) if user else None)
+    if not user or not target or pending != target:
+        flash('That confirmation link does not match a pending email change. Sign in and send a new one.', 'danger')
+        return _redirect_after_email_confirm()
+    if _email_taken_by_other(target, user.id):
+        flash('That email now belongs to another account. Sign in and choose a different inbox.', 'danger')
+        return _redirect_after_email_confirm()
+    try:
+        user.email = target
+        user.email_verified = True
+        user.email_verified_at = datetime.now(timezone.utc)
+        user.pending_email = None
+        user.pending_email_sent_at = None
+        log_activity(
+            'EMAIL_CONFIRMED',
+            f'Confirmed notice email for {user.full_name}.',
+            user=user,
+        )
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash('That email is already used by another FLPA Portal account.', 'danger')
+        return _redirect_after_email_confirm()
+    try:
+        from school_mailer import send_email_verified_notice
+        send_email_verified_notice(target, user.full_name)
+    except Exception:
+        logger.exception('Verified-email notice failed for user %s', user.id)
+    flash('Email confirmed. Sign in with your password to open the portal.', 'success')
+    return _redirect_after_email_confirm(email=target, ok=True)
 
 
 @app.route('/api/profile', methods=['GET'])
@@ -27134,15 +28372,22 @@ def analytics_grades():
     subject_counts = defaultdict(float)
     grades = Grade.query.all()
     for g in grades:
-        subject_counts[str(g.subject)] += g.score
+        try:
+            score = float(g.score or 0)
+        except (TypeError, ValueError):
+            score = 0.0
+        subject_counts[str(g.subject)] += score
     return jsonify({
         'total': sum(subject_counts.values()),
-        'by_subject': subject_counts
+        'by_subject': dict(subject_counts),
     })
 
 # ---------------------------- ERROR -------------------------------
 @app.errorhandler(404)
 def page_not_found(e):
+    path = (request.path or '').split('?', 1)[0]
+    if path.startswith('/account/verify-email') or path.rstrip('/') == '/account/confirm-email':
+        return verify_account_email(None)
     return render_template('404.html'), 404
 
 # -------------------------------------------------------------------
@@ -27155,7 +28400,7 @@ app = init_export_routes(app)
 @app.route('/admin/users/<int:user_id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_user(user_id):
-    if normalize_role(current_user) not in ('admin', 'principal'):
+    if not has_principal_command():
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
 
@@ -27163,7 +28408,7 @@ def edit_user(user_id):
     user = db.first_or_404(db.select(User).filter_by(id=user_id))
     current_role = normalize_role(current_user)
 
-    if current_role == 'principal' and normalize_role(user) == 'admin':
+    if current_role in PRINCIPAL_OFFICE_ROLES and normalize_role(user) == 'admin':
         flash("This admin account cannot be managed here.", "danger")
         return redirect(url_for('admin_users'))
 
@@ -27171,7 +28416,8 @@ def edit_user(user_id):
 
     if form.validate_on_submit():
         username = (form.username.data or '').strip() or None
-        if User.query.filter(User.email == form.email.data, User.id != user_id).first():
+        new_email = normalize_account_email(form.email.data)
+        if _email_taken_by_other(new_email, user_id):
             flash("That email is already assigned to another user.", "danger")
             return render_template('admin_edit_user.html', form=form, user=user)
         if username and User.query.filter(User.username == username, User.id != user_id).first():
@@ -27179,17 +28425,25 @@ def edit_user(user_id):
             return render_template('admin_edit_user.html', form=form, user=user)
 
         requested_role = (form.role.data or '').strip().lower()
-        if current_role == 'principal' and requested_role == 'admin' and user_id != current_user.id:
+        if current_role in PRINCIPAL_OFFICE_ROLES and requested_role == 'admin' and user_id != current_user.id:
             flash("Only an admin can assign the admin role.", "danger")
             return render_template('admin_edit_user.html', form=form, user=user)
 
         if user_id == current_user.id:
             new_role = (form.role.data or '').strip().lower()
-            if normalize_role(current_user) in ('admin', 'principal') and new_role not in ('admin', 'principal'):
-                flash("You cannot change your own role away from admin/principal access.", "danger")
+            if has_principal_command() and new_role not in PRINCIPAL_COMMAND_ROLES:
+                flash("You cannot change your own role away from school command access.", "danger")
                 return render_template('admin_edit_user.html', form=form, user=user)
 
-        user.email = form.email.data
+        email_changed = new_email != normalize_account_email(user.email)
+        user.email = new_email
+        if email_changed:
+            if account_email_looks_deliverable(new_email):
+                user.email_verified = True
+                user.email_verified_at = datetime.now(timezone.utc)
+            else:
+                user.email_verified = False
+                user.email_verified_at = None
         user.username = username
         user.full_name = form.full_name.data
         user.role = form.role.data
@@ -27227,6 +28481,8 @@ def edit_user(user_id):
 
         try:
             db.session.commit()
+            if email_changed and account_email_looks_deliverable(user.email):
+                _queue_email_verification(user, user.email, changing=False)
             flash(f"User {user.full_name} updated successfully.", "success")
             return redirect(url_for('admin_users'))
         except Exception as e:
@@ -27240,7 +28496,7 @@ def edit_user(user_id):
 @app.route('/admin/users/transfer-role', methods=['POST'])
 @login_required
 def transfer_role():
-    if normalize_role(current_user) not in ('admin', 'principal'):
+    if not has_principal_command():
         flash('Unauthorized access.', 'danger')
         return redirect(url_for('login'))
 
@@ -27277,7 +28533,7 @@ def transfer_role():
 @app.route('/admin/users/<int:user_id>/deactivate', methods=['POST'])
 @login_required
 def deactivate_staff_user(user_id):
-    if normalize_role(current_user) not in ('admin', 'principal'):
+    if not has_principal_command():
         flash('Unauthorized access.', 'danger')
         return redirect(url_for('login'))
 
@@ -27310,7 +28566,7 @@ def deactivate_staff_user(user_id):
 @login_required
 def admin_users():
     # ✨ FIX 1: Grant permission to BOTH Admin and Principal roles (case-insensitive protection)
-    if current_user.role.lower() not in ['admin', 'principal']:
+    if not has_principal_command():
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
 
@@ -27322,14 +28578,14 @@ def admin_users():
     classes = db.session.execute(db.select(Class).order_by(Class.name)).scalars().all()
 
     if form.validate_on_submit():
-        submitted_email = (form.email.data or '').strip()
-        existing_email_user = User.query.filter(
-            func.lower(User.email) == submitted_email.lower()
-        ).first()
-        if existing_email_user:
+        if canonical_role(current_user) != 'admin' and (form.role.data or '').strip().lower() == 'admin':
+            flash('Only an admin can create an admin account.', 'danger')
+            return render_template('admin_users.html', form=form, users=users, classes=classes)
+        submitted_email = normalize_account_email(form.email.data)
+        if _email_taken_by_other(submitted_email, 0):
             flash(
-                f"A user with the email '{submitted_email}' already exists "
-                f"({existing_email_user.full_name}). Please use a different email address.",
+                f"A user with the email '{submitted_email}' already exists. "
+                "Please use a different email address.",
                 "danger",
             )
             return render_template('admin_users.html', form=form, users=users, classes=classes)
@@ -27337,13 +28593,14 @@ def admin_users():
         try:
             # Create user entity schema array
             user = User(
-                email=submitted_email,
+                email=normalize_account_email(submitted_email),
                 full_name=form.full_name.data,
                 role=form.role.data,
                 home_address=form.home_address.data,
                 telephone_number=form.telephone_number.data
             )
             user.set_password(form.password.data)
+            accept_notice_email_if_deliverable(user)
 
             # Photo processing system pipeline
             photo_file = form.photo.data
@@ -27388,7 +28645,26 @@ def admin_users():
                 f'Created {canonical_role(user)} account for {user.full_name} ({user.email}).',
             )
             db.session.commit()
-            flash(f"User {user.full_name} ({user.role}) created successfully.", "success")
+            try:
+                from school_mailer import mailer_configured, send_account_ready_email
+                if mailer_configured() and account_email_looks_deliverable(user.email):
+                    _queue_email_verification(user, user.email, changing=False)
+                if mailer_configured() and send_account_ready_email(user.email, user.full_name, user.role):
+                    flash(
+                        f"User {user.full_name} ({user.role}) created successfully. A sign-in notice was emailed.",
+                        "success",
+                    )
+                elif mailer_configured():
+                    flash(
+                        f"User {user.full_name} ({user.role}) created successfully. "
+                        "The welcome email could not be sent — check Brevo SMTP settings.",
+                        "warning",
+                    )
+                else:
+                    flash(f"User {user.full_name} ({user.role}) created successfully.", "success")
+            except Exception:
+                logger.exception('Welcome email failed for %s', user.email)
+                flash(f"User {user.full_name} ({user.role}) created successfully.", "success")
             return redirect(url_for('admin_users'))
 
         except IntegrityError as e:
@@ -27409,7 +28685,7 @@ def admin_users():
 @app.route('/admin/users/<int:user_id>/unlock', methods=['POST'])
 @login_required
 def unlock_user(user_id):
-    if normalize_role(current_user) not in ('admin', 'principal'):
+    if not has_principal_command():
         flash("Unauthorized access.", "danger")
         return redirect(url_for('login'))
 
@@ -27489,6 +28765,12 @@ with app.app_context():
             synced = backfill_student_payments_to_income_ledger()
             if synced:
                 print(f"Business ledger sync: posted {synced} historical student fee payment(s) as income.")
+        try:
+            marked_inboxes = backfill_deliverable_notice_emails()
+            if marked_inboxes:
+                print(f"Notice email: marked {marked_inboxes} real inbox(es) ready for live alerts.", flush=True)
+        except Exception as mail_backfill_err:
+            print(f"Notice email backfill skipped: {mail_backfill_err}", flush=True)
         print("Database ready. Year indexes on. Set RUN_BOOT_REPAIRS=1 only to run a full data-repair pass.", flush=True)
     except Exception as db_err:
         print(f"Warning: table auto-generation bypass encountered: {db_err}", flush=True)

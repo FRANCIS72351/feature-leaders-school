@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+{% block title %}Remove student — {{ student.full_name }}{% endblock %}
+{% block content %}
+<style>
+    .remove-wrap { max-width: 720px; margin: 1.5rem auto 2.5rem; }
+    .remove-card {
+        background: #fff;
+        border: 1px solid #e8c4c4;
+        border-radius: 14px;
+        padding: 1.35rem 1.4rem;
+        box-shadow: 0 10px 28px rgba(17, 24, 39, 0.08);
+    }
+    .remove-kicker {
+        color: #c82828;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        margin-bottom: 0.35rem;
+    }
+    .remove-name { font-size: 1.35rem; font-weight: 800; color: #111827; margin: 0; }
+    .remove-meta { color: #4b5563; margin: 0.35rem 0 1rem; }
+    .dup-list { margin: 0 0 1rem; padding-left: 1.1rem; color: #1f2937; }
+    .hist-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; margin-bottom: 1.1rem; }
+    .hist-cell {
+        background: #fff8f7;
+        border: 1px solid #f0d4d4;
+        border-radius: 10px;
+        padding: 0.7rem 0.75rem;
+        text-align: center;
+    }
+    .hist-cell strong { display: block; font-size: 1.15rem; color: #111827; }
+    .hist-cell span { font-size: 0.72rem; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; }
+    .remove-actions { display: flex; flex-wrap: wrap; gap: 0.55rem; align-items: center; margin-top: 0.75rem; }
+    .confirm-name { max-width: 320px; }
+    @media (max-width: 640px) { .hist-grid { grid-template-columns: 1fr; } }
+</style>
+<div class="remove-wrap">
+    <p class="remove-kicker">Registry · class roster</p>
+    <div class="remove-card">
+        <h1 class="remove-name">{{ student.full_name }}</h1>
+        <p class="remove-meta">
+            Student ID <strong>{{ student.student_id or '—' }}</strong>
+            {% if klass %} · {{ klass.name }}{% endif %}
+        </p>
+
+        {% if duplicates %}
+        <div class="alert alert-warning">
+            This name is also in this class on another file. Keep the file with the correct student ID, photo, and payments. Remove the extra one.
+            <ul class="dup-list mb-0 mt-2">
+                {% for other in duplicates %}
+                <li>{{ other.full_name }} · ID {{ other.student_id or '—' }}
+                    <a href="{{ url_for('edit_student', student_id=other.id, return_to='class_roster') }}">open</a>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <div class="hist-grid">
+            <div class="hist-cell"><strong>{{ counts.payments }}</strong><span>Payments</span></div>
+            <div class="hist-cell"><strong>{{ counts.grades }}</strong><span>Grades</span></div>
+            <div class="hist-cell"><strong>{{ counts.submissions }}</strong><span>Classwork</span></div>
+        </div>
+
+        {% if student.klass_id %}
+        <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="return_to" value="{{ return_to }}">
+            <input type="hidden" name="action" value="remove_class">
+            <p class="mb-2">Take this name off the class list. The file stays in <strong>Unassigned</strong>.</p>
+            <div class="remove-actions">
+                <button type="submit" class="btn btn-outline-danger">Remove from this class</button>
+            </div>
+        </form>
+        <hr>
+        {% endif %}
+
+        {% if can_purge %}
+        <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="return_to" value="{{ return_to }}">
+            <input type="hidden" name="action" value="delete_record">
+            <p class="mb-2">This file has no payments, grades, or classwork. You can delete it completely. Type the student name to confirm.</p>
+            <label class="form-label small fw-semibold" for="confirm_name">Type {{ student.full_name }}</label>
+            <input class="form-control confirm-name mb-2" id="confirm_name" name="confirm_name" autocomplete="off">
+            <div class="remove-actions">
+                <button type="submit" class="btn btn-danger">Delete this student file</button>
+                <a href="{{ url_for('registrar_class_students', class_id=student.klass_id) if student.klass_id else url_for('dashboard') }}" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+        </form>
+        {% else %}
+        <p class="text-muted mb-2">This file has school history, so it cannot be deleted. Keep it and remove the empty duplicate instead.</p>
+        <a href="{{ url_for('registrar_class_students', class_id=student.klass_id) if student.klass_id else url_for('dashboard') }}" class="btn btn-outline-secondary">Cancel</a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

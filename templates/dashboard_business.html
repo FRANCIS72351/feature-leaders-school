@@ -4,18 +4,43 @@
 
 {% block content %}
 <style>
-    .biz-shell { background: #f4f6fb; min-height: 100vh; padding-bottom: 2rem; }
+    .biz-shell { background: #f3f1ea; min-height: 100vh; padding-bottom: 2rem; color: #1a2332; }
+    .biz-hero {
+        background: linear-gradient(135deg, #0b1f3a 0%, #16365c 55%, #1c4a6e 100%);
+        color: #fff;
+        border-radius: 18px;
+        padding: 1.35rem 1.5rem;
+        box-shadow: 0 18px 40px rgba(11, 31, 58, 0.22);
+        margin-bottom: 1.1rem;
+    }
+    .biz-hero .kicker {
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        font-size: 0.72rem;
+        color: #d4af37;
+        font-weight: 800;
+    }
+    .biz-kpi {
+        background: #fff;
+        border: 1px solid #e4dfd2;
+        border-radius: 14px;
+        padding: 1rem 1.1rem;
+        height: 100%;
+        box-shadow: 0 8px 20px rgba(26, 35, 50, 0.04);
+    }
+    .biz-kpi .label { font-size: 0.72rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #7a6a4f; }
+    .biz-kpi .value { font-size: 1.25rem; font-weight: 800; color: #0b1f3a; }
     .biz-tab-btn {
         border: none;
         background: transparent;
         color: #64748b;
-        font-weight: 600;
-        padding: 0.75rem 1.25rem;
+        font-weight: 700;
+        padding: 0.75rem 1.15rem;
         border-bottom: 3px solid transparent;
     }
     .biz-tab-btn.active {
-        color: #2563eb;
-        border-bottom-color: #2563eb;
+        color: #0b1f3a;
+        border-bottom-color: #d4af37;
         background: #fff;
     }
     .biz-card {
@@ -127,14 +152,15 @@
         </div>
         {% include 'partials/account_settings_link.html' %}
     </div>
-    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <div class="biz-hero d-flex flex-column flex-lg-row justify-content-between gap-3 mb-4">
         <div>
-            <h1 class="h4 fw-bold mb-1">Business Office</h1>
-            <p class="text-muted small mb-0">
-                {% if display_year or active_year %}Session: <strong>{{ (display_year or active_year).name }}</strong>{% if viewing_archived %} <span class="badge bg-warning text-dark">Archived</span>{% endif %}{% else %}No active academic year{% endif %}
-                · Today ({{ daily_collections_date.strftime('%b %d, %Y') if daily_collections_date else 'today' }}):
-                <strong class="text-success">${{ "{:,.2f}".format(daily_collections_total|default(0)) }}</strong>
-                from {{ daily_collections_count|default(0) }} payment(s)
+            <div class="kicker">Business Manager · Isolated finance desk</div>
+            <h1 class="h4 fw-bold mb-1 text-white">Command desk</h1>
+            <p class="small mb-0" style="color:#dbe7f3;">
+                {% if display_year or active_year %}Session <strong>{{ (display_year or active_year).name }}</strong>{% if viewing_archived %} <span class="badge bg-warning text-dark">Archived</span>{% endif %}{% else %}No active academic year{% endif %}
+                · Till today {{ daily_collections_date.strftime('%b %d, %Y') if daily_collections_date else 'today' }}:
+                <strong>{{ kpis.fee_collected_label if kpis else '' }}</strong>
+                · {{ daily_collections_count|default(0) }} receipt(s) today
             </p>
         </div>
         <div class="d-flex flex-wrap gap-2 align-items-center">
@@ -164,10 +190,11 @@
             <a href="{{ url_for('principal_dashboard', **year_param) }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-crown me-1"></i> Principal Hub</a>
             {% endif %}
             <a href="{{ url_for('account_settings') }}" class="btn btn-sm btn-outline-danger"><i class="fas fa-user-cog me-1"></i>Settings</a>
-            <a href="{{ url_for('business_management') }}" class="btn btn-sm btn-outline-secondary">Advanced Ledger</a>
-            <a href="{{ url_for('export_business', year=selected_year) }}" class="btn btn-sm btn-outline-primary">Export Transactions CSV</a>
-            <a href="{{ url_for('export_payments', year=selected_year) }}" class="btn btn-sm btn-outline-secondary">Export Payments CSV</a>
-            <a href="{{ url_for('report_business_pdf', year=selected_year) }}" class="btn btn-sm btn-outline-info"><i class="fas fa-print me-1"></i>Print / PDF</a>
+            <a href="{{ url_for('business_management') }}" class="btn btn-sm btn-outline-light">Advanced Ledger</a>
+            <a href="{{ url_for('business_daily_summary') }}" class="btn btn-sm btn-warning text-dark fw-semibold">Export daily summary</a>
+            <a href="{{ url_for('export_business', year=selected_year) }}" class="btn btn-sm btn-outline-light">CSV ledger</a>
+            <a href="{{ url_for('export_payments', year=selected_year) }}" class="btn btn-sm btn-outline-light">CSV payments</a>
+            <a href="{{ url_for('report_business_pdf', year=selected_year) }}" class="btn btn-sm btn-outline-light"><i class="fas fa-print me-1"></i>Print / PDF</a>
         </div>
     </div>
 
@@ -211,19 +238,60 @@
     {% endif %}
     <div class="biz-card mb-4">
         <div class="d-flex flex-wrap border-bottom">
-            <a href="{{ url_for('business_dashboard', tab='tuition', class_id=selected_class_id or '', student_id=selected_student_id or '', **year_param) }}"
-               class="biz-tab-btn {% if active_tab == 'tuition' %}active{% endif %}">
-                <i class="fas fa-hand-holding-dollar me-1"></i> Collect Tuition
+            <a href="{{ url_for('business_dashboard', tab='overview', **year_param) }}" class="biz-tab-btn {% if active_tab == 'overview' %}active{% endif %}">
+                <i class="fas fa-gauge-high me-1"></i> Overview
             </a>
-            <a href="{{ url_for('business_dashboard', tab='summary', **year_param) }}" class="biz-tab-btn {% if active_tab == 'summary' %}active{% endif %}">
-                <i class="fas fa-chart-pie me-1"></i> Summary
+            <a href="{{ url_for('business_dashboard', tab='money', class_id=selected_class_id or '', student_id=selected_student_id or '', **year_param) }}"
+               class="biz-tab-btn {% if active_tab == 'money' %}active{% endif %}">
+                <i class="fas fa-hand-holding-dollar me-1"></i> Money
+            </a>
+            <a href="{{ url_for('business_dashboard', tab='procurement', **year_param) }}" class="biz-tab-btn {% if active_tab == 'procurement' %}active{% endif %}">
+                <i class="fas fa-boxes-stacked me-1"></i> Procurement
             </a>
             <a href="{{ url_for('business_dashboard', tab='ledger', **year_param) }}" class="biz-tab-btn {% if active_tab == 'ledger' %}active{% endif %}">
-                <i class="fas fa-list me-1"></i> Recent Activity
+                <i class="fas fa-book me-1"></i> Records
+            </a>
+            <a href="{{ url_for('business_dashboard', tab='staff', **year_param) }}" class="biz-tab-btn {% if active_tab == 'staff' %}active{% endif %}">
+                <i class="fas fa-id-badge me-1"></i> Support staff
             </a>
         </div>
 
-        {% if active_tab == 'tuition' %}
+        {% if active_tab == 'overview' %}
+        <div class="p-4">
+            {% set k = kpis or {} %}
+            <div class="row g-3 mb-4">
+                <div class="col-md-4 col-xl-2"><div class="biz-kpi"><div class="label">Fees collected</div><div class="value">{{ k.fee_collected_label or '—' }}</div></div></div>
+                <div class="col-md-4 col-xl-2"><div class="biz-kpi"><div class="label">Outstanding</div><div class="value text-danger">{{ k.outstanding_label or '—' }}</div></div></div>
+                <div class="col-md-4 col-xl-2"><div class="biz-kpi"><div class="label">Month expenses</div><div class="value">{{ k.monthly_expense_label or '—' }}</div></div></div>
+                <div class="col-md-4 col-xl-2"><div class="biz-kpi"><div class="label">Net cash</div><div class="value">{{ k.net_cash_label or '—' }}</div></div></div>
+                <div class="col-md-4 col-xl-2"><div class="biz-kpi"><div class="label">Support staff</div><div class="value">{{ k.support_staff_count or 0 }}</div></div></div>
+                <div class="col-md-4 col-xl-2"><div class="biz-kpi"><div class="label">Low stock</div><div class="value">{{ k.low_stock_count or 0 }}</div></div></div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mb-4">
+                <a class="btn btn-sm btn-success" href="{{ url_for('business_dashboard', tab='money', **year_param) }}"><i class="fas fa-plus me-1"></i> Quick-add payment</a>
+                <a class="btn btn-sm btn-outline-dark" href="{{ url_for('business_dashboard', tab='procurement', **year_param) }}"><i class="fas fa-receipt me-1"></i> Quick-log expense</a>
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('business_daily_summary') }}"><i class="fas fa-file-csv me-1"></i> Daily summary</a>
+            </div>
+            <h3 class="h6 fw-bold mb-2">Unpaid class balances</h3>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead class="table-light"><tr><th>Class</th><th>Students</th><th class="text-end">Balance</th><th></th></tr></thead>
+                    <tbody>
+                    {% for klass in k.debtor_classes or [] %}
+                    <tr>
+                        <td class="fw-semibold">{{ klass.name }}</td>
+                        <td>{{ klass.student_count }}</td>
+                        <td class="text-end text-danger fw-bold">${{ "{:,.2f}".format(klass.balance) }}</td>
+                        <td class="text-end"><a class="btn btn-sm btn-outline-success" href="{{ url_for('business_dashboard', tab='money', class_id=klass.id, **year_param) }}">Collect</a></td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="text-muted">No outstanding class balances on this desk.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% elif active_tab == 'money' %}
         <div class="p-4">
             <div class="d-flex flex-wrap align-items-center gap-3 mb-4">
                 <div class="d-flex align-items-center gap-2">
@@ -255,7 +323,7 @@
                     </form>
                     <div class="d-flex flex-column gap-2" style="max-height: 420px; overflow-y: auto;">
                         {% for klass in classes %}
-                        <a href="{{ url_for('business_dashboard', tab='tuition', class_id=klass.id, **year_param) }}"
+                        <a href="{{ url_for('business_dashboard', tab='money', class_id=klass.id, **year_param) }}"
                            class="class-pick {% if selected_class_id == klass.id %}selected{% endif %}">
                             <div class="fw-bold">{{ klass.name }}</div>
                             <div class="small text-muted">{{ klass.student_count }} students · Fee ${{ "{:,.2f}".format(klass.yearly_fees) }}</div>
@@ -287,7 +355,7 @@
                     </form>
                     <div class="d-flex flex-column gap-2" style="max-height: 480px; overflow-y: auto;">
                         {% for s in class_roster %}
-                        <a href="{{ url_for('business_dashboard', tab='tuition', class_id=selected_class_id, student_id=s.id, search_student=search_student, **year_param) if search_student else url_for('business_dashboard', tab='tuition', class_id=selected_class_id, student_id=s.id, **year_param) }}"
+                        <a href="{{ url_for('business_dashboard', tab='money', class_id=selected_class_id, student_id=s.id, search_student=search_student, **year_param) if search_student else url_for('business_dashboard', tab='money', class_id=selected_class_id, student_id=s.id, **year_param) }}"
                            class="student-row {% if selected_student_id == s.id %}selected{% endif %}">
                             <div class="d-flex justify-content-between align-items-start gap-2">
                                 <div>
@@ -362,7 +430,7 @@
                     </div>
                     {% endif %}
                     {% endif %}
-                    <form method="post" action="{{ url_for('business_dashboard', tab='tuition', class_id=selected_class_id, student_id=selected_student_id, **year_param) }}">
+                    <form method="post" action="{{ url_for('business_dashboard', tab='money', class_id=selected_class_id, student_id=selected_student_id, **year_param) }}">
                         {{ payment_form.hidden_tag() }}
                         <input type="hidden" name="class_id" value="{{ selected_class_id }}">
                         <input type="hidden" name="student_id" value="{{ selected_student_id }}">
@@ -401,6 +469,12 @@
                             {% endif %}
                         </div>
                         <div class="form-text mb-3">Liberia: US$ or L$. One receipt, one currency. Commas are OK — e.g. 60,000</div>
+                        {% if payment_form._fields.get('payment_method') %}
+                        <div class="mb-3">
+                            <label class="form-label small text-muted">How paid</label>
+                            {{ payment_form.payment_method(class_='form-select') }}
+                        </div>
+                        {% endif %}
                         <div class="mb-3">
                             <label class="form-label small text-muted">Description</label>
                             {{ payment_form.description(class_='form-control', placeholder='Tuition Payment') }}
@@ -435,7 +509,150 @@
                 </div>
             </div>
         </div>
-        {% elif active_tab == 'summary' %}
+        {% elif active_tab == 'procurement' %}
+        <div class="p-4">
+            <div class="row g-4">
+                <div class="col-lg-5">
+                    <h3 class="h6 fw-bold mb-3">Log purchase / expense</h3>
+                    <form method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="desk_action" value="log_expense">
+                        <div class="mb-2"><label class="form-label small">Item</label><input class="form-control" name="item_name" required placeholder="Chalk, A4 paper, fuel…"></div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-6"><label class="form-label small">Category</label>
+                                <select class="form-select" name="category">{% for cat in expense_categories %}<option>{{ cat }}</option>{% endfor %}</select>
+                            </div>
+                            <div class="col-3"><label class="form-label small">Qty</label><input class="form-control" type="number" min="1" name="quantity" value="1"></div>
+                            <div class="col-3"><label class="form-label small">Unit cost</label><input class="form-control" name="unit_cost" placeholder="0.00"></div>
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-4"><label class="form-label small">Currency</label>
+                                <select class="form-select" name="currency"><option value="USD">US$</option><option value="LRD">L$</option></select>
+                            </div>
+                            <div class="col-8"><label class="form-label small">Vendor</label><input class="form-control" name="vendor_name" placeholder="Supplier name"></div>
+                        </div>
+                        <div class="mb-2"><label class="form-label small">Invoice / receipt ref</label><input class="form-control" name="receipt_ref"></div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" name="update_stock" value="1" id="updStock" checked>
+                            <label class="form-check-label small" for="updStock">Add quantity to store inventory</label>
+                        </div>
+                        <button class="btn btn-dark w-100" type="submit">Post to ledger &amp; store</button>
+                    </form>
+                </div>
+                <div class="col-lg-7">
+                    <h3 class="h6 fw-bold mb-3">Store inventory</h3>
+                    <div class="table-responsive mb-4">
+                        <table class="table table-sm">
+                            <thead class="table-light"><tr><th>Item</th><th>Stock</th><th>Reorder</th><th></th></tr></thead>
+                            <tbody>
+                            {% for item in inventory_items or [] %}
+                            <tr class="{% if item.quantity_in_stock <= item.reorder_level %}table-warning{% endif %}">
+                                <td>{{ item.item_name }}<div class="small text-muted">{{ item.category }}</div></td>
+                                <td>{{ item.quantity_in_stock }}</td>
+                                <td>{{ item.reorder_level }}</td>
+                                <td>
+                                    <form method="post" class="d-flex gap-1">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <input type="hidden" name="desk_action" value="adjust_stock">
+                                        <input type="hidden" name="inventory_id" value="{{ item.id }}">
+                                        <input class="form-control form-control-sm" style="width:4.5rem" name="quantity_in_stock" value="{{ item.quantity_in_stock }}">
+                                        <button class="btn btn-sm btn-outline-dark">Save</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="4" class="text-muted">No stock items yet. Log a purchase with “add to inventory”.</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <h3 class="h6 fw-bold mb-2">Recent purchases</h3>
+                    <ul class="list-unstyled small mb-0">
+                        {% for row in school_expenses or [] %}
+                        <li class="border-bottom py-2 d-flex justify-content-between gap-2">
+                            <span>{{ row.item_name }} · {{ row.category }}{% if row.vendor_name %} · {{ row.vendor_name }}{% endif %}</span>
+                            <strong>{{ row.total_amount }} {{ row.currency }}</strong>
+                        </li>
+                        {% else %}
+                        <li class="text-muted">No procurement rows yet.</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+        {% elif active_tab == 'staff' %}
+        <div class="p-4">
+            <div class="row g-4">
+                <div class="col-lg-4">
+                    <h3 class="h6 fw-bold mb-3">Add support staff</h3>
+                    <form method="post" class="mb-4">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="desk_action" value="add_staff">
+                        <div class="mb-2"><input class="form-control" name="full_name" placeholder="Full name" required></div>
+                        <div class="mb-2"><select class="form-select" name="job_title">{% for t in staff_titles %}<option>{{ t }}</option>{% endfor %}</select></div>
+                        <div class="mb-2"><input class="form-control" name="phone" placeholder="Phone"></div>
+                        <div class="mb-2"><input class="form-control" name="department" placeholder="Department / post"></div>
+                        <div class="mb-2"><input class="form-control" name="shift_notes" placeholder="Shift / duty notes"></div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-7"><input class="form-control" name="base_salary" placeholder="Salary rate"></div>
+                            <div class="col-5"><select class="form-select" name="currency"><option value="USD">US$</option><option value="LRD">L$</option></select></div>
+                        </div>
+                        <div class="mb-3"><input class="form-control" type="date" name="hired_date"></div>
+                        <button class="btn btn-dark w-100" type="submit">Save roster row</button>
+                    </form>
+                    <h3 class="h6 fw-bold mb-3">Today’s attendance</h3>
+                    <form method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="desk_action" value="log_attendance">
+                        <select class="form-select mb-2" name="staff_id" required>
+                            <option value="">Select staff</option>
+                            {% for person in support_staff or [] %}<option value="{{ person.id }}">{{ person.full_name }}</option>{% endfor %}
+                        </select>
+                        <select class="form-select mb-2" name="status">{% for s in attendance_statuses %}<option>{{ s }}</option>{% endfor %}</select>
+                        <input class="form-control mb-2" name="notes" placeholder="Duty note">
+                        <button class="btn btn-outline-dark w-100" type="submit">Mark attendance</button>
+                    </form>
+                </div>
+                <div class="col-lg-8">
+                    <h3 class="h6 fw-bold mb-3">Roster</h3>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle">
+                            <thead class="table-light"><tr><th>Name</th><th>Post</th><th>Phone</th><th>Rate</th><th></th></tr></thead>
+                            <tbody>
+                            {% for person in support_staff or [] %}
+                            <tr>
+                                <td class="fw-semibold">{{ person.full_name }}<div class="small text-muted">{{ person.shift_notes or person.department or '' }}</div></td>
+                                <td>{{ person.job_title }}</td>
+                                <td>{{ person.phone or '—' }}</td>
+                                <td>{% if person.base_salary %}{{ person.base_salary }} {{ person.currency }}{% else %}—{% endif %}</td>
+                                <td>
+                                    <form method="post" class="d-flex gap-1">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <input type="hidden" name="desk_action" value="pay_salary">
+                                        <input type="hidden" name="staff_id" value="{{ person.id }}">
+                                        <input class="form-control form-control-sm" style="width:6rem" name="amount" value="{{ person.base_salary or '' }}" placeholder="Pay">
+                                        <button class="btn btn-sm btn-success">Pay</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="5" class="text-muted">No support staff on the roster yet.</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <h3 class="h6 fw-bold mt-4 mb-2">Attendance log · {{ attendance_today }}</h3>
+                    <ul class="small mb-0">
+                        {% for log in today_attendance or [] %}
+                        <li>{{ log.staff.full_name if log.staff else 'Staff' }} — {{ log.status }}{% if log.notes %} · {{ log.notes }}{% endif %}</li>
+                        {% else %}
+                        <li class="text-muted">No marks yet today.</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+        {% elif active_tab == 'overview_legacy' %}
         <div class="p-4">
             <div class="row g-3 mb-4">
                 <div class="col-md-3">
@@ -495,7 +712,7 @@
                         {% for klass in classes %}
                         <tr>
                             <td>
-                                <a href="{{ url_for('business_dashboard', tab='tuition', class_id=klass.id, **year_param) }}" class="fw-semibold text-decoration-none">
+                                <a href="{{ url_for('business_dashboard', tab='money', class_id=klass.id, **year_param) }}" class="fw-semibold text-decoration-none">
                                     {{ klass.name }}
                                 </a>
                             </td>
@@ -613,7 +830,7 @@
                 <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
                 <form method="post" action="{{ url_for('finance_activate_student', student_id=s.id) }}" class="d-inline">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="next" value="{{ url_for('business_dashboard', tab='tuition', class_id=selected_class_id, student_id=s.id, **year_param) }}">
+                    <input type="hidden" name="next" value="{{ url_for('business_dashboard', tab='money', class_id=selected_class_id, student_id=s.id, **year_param) }}">
                     <button type="submit" class="btn btn-primary">
                         <i class="fas fa-check me-1"></i> Confirm Activation
                     </button>

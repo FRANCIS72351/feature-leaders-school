@@ -155,8 +155,20 @@
     <!-- LOGO -->
     <img src="{{ url_for('static', filename='images/LOGO.png') }}" alt="Future Leaders Preparatory Academy logo" class="logo" onerror="this.onerror=null;this.src='{{ school_logo_url }}';">
 
-    <h3 class="text-center login-title mb-2">Welcome Back</h3>
-    <p class="text-center login-copy mb-4">Sign in to the academy portal to continue your work.</p>
+    <h3 class="text-center login-title mb-2">{% if email_just_confirmed %}Email confirmed{% else %}Welcome Back{% endif %}</h3>
+    <p class="text-center login-copy mb-4">
+      {% if email_just_confirmed %}
+      This inbox is now on your FLPA Portal account. Enter your password to sign in.
+      {% else %}
+      Sign in to the academy portal to continue your work.
+      {% endif %}
+    </p>
+    {% if email_just_confirmed %}
+    <div class="alert alert-success small py-2 mb-3">
+      <i class="fas fa-envelope-circle-check me-1"></i>
+      Confirmed. Use the password you already have for this account.
+    </div>
+    {% endif %}
 
     {% if system_on_hold %}
     <div class="alert alert-warning small py-2 mb-3">

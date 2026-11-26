@@ -211,7 +211,7 @@
                 <i class="fas fa-coins me-2" style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important"></i><span style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important">VPI Financial Command Center</span>
             </h2>
             <p id="vpi-cmd-sub" class="small mb-0 mt-1" style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important;background:none !important;text-shadow:none !important">
-                <span style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important">Vice Principal for Instruction — tuition, ledger, fiscal oversight, student academic registry, and shared grade/transcript release authority with VPA.</span>{% if display_year %} · <b style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important">{{ display_year.name }}</b>{% if viewing_archived %} <span class="badge bg-warning text-dark">Archived</span>{% endif %}{% endif %}
+                <span style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important">Vice Principal for Instruction — finance, operations, and the full Principal office desk.</span>{% if display_year %} · <b style="color:#ff0000 !important;-webkit-text-fill-color:#ff0000 !important">{{ display_year.name }}</b>{% if viewing_archived %} <span class="badge bg-warning text-dark">Archived</span>{% endif %}{% endif %}
             </p>
         </div>
         <form method="get" class="d-flex gap-2 mt-2 mt-md-0 align-items-center">
@@ -290,7 +290,7 @@
                     <div><i class="fas fa-stamp text-amber me-2"></i>Approve grade releases with VPA</div>
                     <div><i class="fas fa-scroll text-cyan me-2"></i>Approve Official Transcript releases</div>
                     <div><i class="fas fa-chart-pie text-cyan me-2"></i>Financial reports &amp; audits</div>
-                    <div class="text-muted pt-1">Curriculum catalogs and day-to-day teacher assignment remain with the VPA office.</div>
+                    <div class="text-muted pt-1">Curriculum catalogs stay with VPA day-to-day. Principal office tools below are also yours.</div>
                 </div>
             </div>
 
@@ -304,6 +304,14 @@
                     <a href="{{ url_for('vpa_transcript_releases') }}" class="vpi-quick-link" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;margin-bottom:10px;background:#fff;border:1px solid #d1d5db;border-radius:10px;text-decoration:none;">
                         <i class="fas fa-scroll" style="font-size:20px;color:#0ea5e9;"></i>
                         <span style="display:inline;font-size:16px !important;font-weight:700;color:#1f2937 !important;line-height:1.3;">Approve Transcripts{% if stats.pending_transcript_releases %} ({{ stats.pending_transcript_releases }}){% endif %}</span>
+                    </a>
+                    <a href="{{ url_for('proprietor_senior_grade_releases') }}" class="vpi-quick-link" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;margin-bottom:10px;background:#fff;border:1px solid #d1d5db;border-radius:10px;text-decoration:none;">
+                        <i class="fas fa-landmark" style="font-size:20px;color:#b45309;"></i>
+                        <span style="display:inline;font-size:16px !important;font-weight:700;color:#1f2937 !important;line-height:1.3;">Senior High grade release</span>
+                    </a>
+                    <a href="{{ url_for('proprietor_senior_transcript_releases') }}" class="vpi-quick-link" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;margin-bottom:10px;background:#fff;border:1px solid #d1d5db;border-radius:10px;text-decoration:none;">
+                        <i class="fas fa-scroll" style="font-size:20px;color:#b45309;"></i>
+                        <span style="display:inline;font-size:16px !important;font-weight:700;color:#1f2937 !important;line-height:1.3;">Senior High transcripts</span>
                     </a>
                     <a href="{{ url_for('business_management', year=selected_year_name) }}" class="vpi-quick-link" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;margin-bottom:10px;background:#fff;border:1px solid #d1d5db;border-radius:10px;text-decoration:none;">
                         <i class="fas fa-cash-register" style="font-size:20px;color:#0d9488;"></i>
@@ -324,6 +332,10 @@
                     <a href="{{ url_for('business_overview') }}" class="vpi-quick-link" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;margin-bottom:10px;background:#fff;border:1px solid #d1d5db;border-radius:10px;text-decoration:none;">
                         <i class="fas fa-landmark" style="font-size:20px;color:#0ea5e9;"></i>
                         <span style="display:inline;font-size:16px !important;font-weight:700;color:#1f2937 !important;line-height:1.3;">Fiscal Oversight / Business Overview</span>
+                    </a>
+                    <a href="{{ url_for('principal_dashboard', **year_param) }}" class="vpi-quick-link" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;margin-bottom:10px;background:#fff;border:1px solid #d1d5db;border-radius:10px;text-decoration:none;">
+                        <i class="fas fa-user-shield" style="font-size:20px;color:#c82828;"></i>
+                        <span style="display:inline;font-size:16px !important;font-weight:700;color:#1f2937 !important;line-height:1.3;">Principal portal</span>
                     </a>
                     <a href="{{ url_for('staff_id_cards_folder') }}" class="vpi-quick-link" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;margin-bottom:10px;background:#fff;border:1px solid #d1d5db;border-radius:10px;text-decoration:none;">
                         <i class="fas fa-id-badge" style="font-size:20px;color:#c82828;"></i>
@@ -614,6 +626,7 @@
             </div>
         </div>
     </div>
+    {% include 'partials/principal_office_desk.html' %}
 </div>
 
 <script>

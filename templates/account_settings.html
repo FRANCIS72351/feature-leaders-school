@@ -99,7 +99,7 @@
     <div class="account-settings-card">
         <div class="account-settings-header">
             <h1><i class="fas fa-user-cog me-2"></i>Account Settings</h1>
-            <p>Update your password and profile photo for this login.</p>
+            <p>Update your notice email, password, or photo.</p>
         </div>
         <div class="account-settings-body">
             <div class="text-center mb-4">
@@ -110,6 +110,62 @@
                 </div>
                 <div class="fw-bold">{{ current_user.full_name }}</div>
                 <div class="small text-muted">{{ current_user.email }}</div>
+                {% if email_verified %}
+                <span class="badge bg-success mt-1">Verified for notices</span>
+                {% else %}
+                <span class="badge bg-warning text-dark mt-1">Unverified</span>
+                {% endif %}
+            </div>
+
+            <div class="account-section">
+                <h2><i class="fas fa-envelope me-2" style="color:#c82828;"></i>Notice email</h2>
+                <p class="small text-muted mb-3">
+                    Live grade alerts and digital receipts go to a real inbox (Gmail, Yahoo, or school mail).
+                    Student IDs and placeholder addresses cannot receive them.
+                    If you change the address, confirm the new inbox before notices switch over.
+                </p>
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                    <strong>{{ current_user.email or 'No email on file' }}</strong>
+                    {% if email_verified %}
+                    <span class="badge bg-success">Verified</span>
+                    {% elif email_deliverable %}
+                    <span class="badge bg-warning text-dark">Unverified</span>
+                    {% else %}
+                    <span class="badge bg-danger">Placeholder / not a real inbox</span>
+                    {% endif %}
+                </div>
+                {% if pending_email %}
+                <div class="alert alert-info py-2 small mb-3">
+                    Confirmation sent to <strong>{{ pending_email }}</strong>. Open that message to switch notices over.
+                    You can still sign in with {{ current_user.email }}.
+                </div>
+                {% endif %}
+                {% if email_deliverable and not email_verified %}
+                <form method="POST" class="mb-3">
+                    {{ verify_current_form.hidden_tag() }}
+                    {{ verify_current_form.submit_verify_current(class="btn btn-outline-danger btn-sm") }}
+                </form>
+                {% endif %}
+                <form method="POST">
+                    {{ email_form.hidden_tag() }}
+                    <div class="mb-3">
+                        {{ email_form.new_email.label(class="form-label") }}
+                        {{ email_form.new_email(class="form-control", autocomplete="email", placeholder="name@gmail.com") }}
+                        <div class="form-text">Must be unique. Notices will not move until you click the link sent there.</div>
+                        {% if email_form.new_email.errors %}
+                        <div class="text-danger small mt-1">{% for error in email_form.new_email.errors %}{{ error }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+                    <div class="mb-3">
+                        {{ email_form.current_password.label(class="form-label") }}
+                        {{ email_form.current_password(class="form-control", autocomplete="current-password") }}
+                        <div class="form-text">Required so a shared computer cannot change your inbox.</div>
+                        {% if email_form.current_password.errors %}
+                        <div class="text-danger small mt-1">{% for error in email_form.current_password.errors %}{{ error }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+                    {{ email_form.submit_email(class="btn account-btn") }}
+                </form>
             </div>
 
             <div class="account-section">

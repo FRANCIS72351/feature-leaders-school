@@ -157,7 +157,7 @@ def init_export_routes(app):
     @app.route('/export/attendance')
     @login_required
     def export_attendance():
-        if not _export_role_allowed(ROLE_ADMIN, ROLE_TEACHER, 'principal', ROLE_REGISTRAR):
+        if not _export_role_allowed(ROLE_ADMIN, ROLE_TEACHER, 'principal', 'vpi', 'proprietor', ROLE_REGISTRAR):
             flash('Access denied.', 'danger')
             return redirect(url_for('dashboard'))
 
@@ -536,7 +536,7 @@ def init_export_routes(app):
                 flash('Access denied.', 'danger')
                 return redirect(url_for('dashboard'))
         elif not _export_role_allowed(
-            ROLE_ADMIN, ROLE_REGISTRAR, ROLE_BUSINESS, 'principal', 'vpi'
+            ROLE_ADMIN, ROLE_REGISTRAR, ROLE_BUSINESS, 'principal', 'vpi', 'proprietor'
         ):
             flash('Access denied.', 'danger')
             return redirect(url_for('dashboard'))
@@ -606,7 +606,7 @@ def init_export_routes(app):
                 flash('Access denied.', 'danger')
                 return redirect(url_for('dashboard'))
         elif not _export_role_allowed(
-            ROLE_ADMIN, ROLE_REGISTRAR, ROLE_BUSINESS, 'principal', 'vpi'
+            ROLE_ADMIN, ROLE_REGISTRAR, ROLE_BUSINESS, 'principal', 'vpi', 'proprietor'
         ):
             flash('Access denied.', 'danger')
             return redirect(url_for('dashboard'))
@@ -660,7 +660,7 @@ def init_export_routes(app):
             if not linked or linked.id != student.id:
                 flash('Access denied.', 'danger')
                 return redirect(url_for('dashboard'))
-        elif not _export_role_allowed(ROLE_ADMIN, ROLE_REGISTRAR, ROLE_BUSINESS, 'principal', 'vpi'):
+        elif not _export_role_allowed(ROLE_ADMIN, ROLE_REGISTRAR, ROLE_BUSINESS, 'principal', 'vpi', 'proprietor'):
             flash('Access denied.', 'danger')
             return redirect(url_for('dashboard'))
 

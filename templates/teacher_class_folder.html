@@ -274,35 +274,35 @@
 
   <div class="register-masthead">
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-3">
-      <div>
+        <div>
         <p class="register-kicker">Class register</p>
         <h1>{{ klass.name }}</h1>
         <p class="register-meta">
           Grade {{ klass.grade_level }}{% if klass.stream %} · {{ klass.stream }}{% endif %}
-        </p>
-        {% if active_year %}
+            </p>
+            {% if active_year %}
         <span class="register-session">{{ active_year.name }}</span>
-        {% endif %}
-      </div>
+            {% endif %}
+        </div>
       <div class="register-actions d-flex flex-wrap gap-2">
-        {% if is_sponsor %}
+            {% if is_sponsor %}
         <a href="{{ url_for('sponsor_class_hub', class_id=klass.id) }}" class="btn btn-warning text-dark">Sponsor</a>
-        {% endif %}
+            {% endif %}
         <a href="{{ url_for('teacher_dashboard', grade_class_id=klass.id) }}#grade-sheet" class="btn btn-primary">Grades</a>
         <a href="{{ url_for('teacher_class_attendance', class_id=klass.id) }}" class="btn btn-outline-navy">Attendance</a>
       </div>
+        </div>
     </div>
-  </div>
 
-  {% if subjects %}
+    {% if subjects %}
   <div class="register-subjects">
     <h2>Subjects you teach</h2>
-    <div class="d-flex flex-wrap gap-2">
-      {% for subject in subjects %}
+            <div class="d-flex flex-wrap gap-2">
+                {% for subject in subjects %}
       <a class="subject-chip" href="{{ url_for('teacher_dashboard', grade_class_id=klass.id, grade_subject=subject) }}#grade-sheet">{{ subject }}</a>
-      {% endfor %}
-    </div>
-  </div>
+                {% endfor %}
+            </div>
+        </div>
   {% endif %}
 
   <div class="register-board">
@@ -317,19 +317,19 @@
     </div>
 
     {% if students %}
-    <div class="table-responsive">
+            <div class="table-responsive">
       <table class="register-table">
-        <thead>
-          <tr>
+                    <thead>
+                        <tr>
             <th class="text-center">No.</th>
             <th>Student</th>
-            <th>Student ID</th>
+                            <th>Student ID</th>
             <th>Status</th>
             <th class="text-end">Record</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for s in students %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in students %}
           <tr class="register-row" data-find="{{ (s.full_name ~ ' ' ~ s.student_id)|lower }}">
             <td class="register-index">{{ '%02d'|format(loop.index) }}</td>
             <td>
@@ -340,8 +340,8 @@
                      width="42" height="42"
                      onerror="this.onerror=null;this.src='{{ default_avatar_url }}';">
                 <span class="register-name">{{ s.full_name }}</span>
-              </div>
-            </td>
+                                </div>
+                            </td>
             <td class="register-id">{{ s.student_id }}</td>
             <td class="roster-status-cell">
               {% with status_code=s.status %}{% include 'partials/roster_status_pill.html' %}{% endwith %}
@@ -350,17 +350,17 @@
               <a href="{{ url_for('staff_student_grade_sheet', student_id=s.id) }}" class="sheet-action" title="Open grade sheet">
                 <i class="fas fa-file-alt" aria-hidden="true"></i> Sheet
               </a>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
     <p id="registerNone" class="register-empty d-none">No student matches that name or ID.</p>
     {% else %}
     <p class="register-empty">No students are enrolled in this class for the current session.</p>
     {% endif %}
-  </div>
+    </div>
 </div>
 
 {% if students %}

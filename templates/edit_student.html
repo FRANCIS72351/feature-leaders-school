@@ -327,6 +327,9 @@
                 {% else %}
                 <a href="{{ url_for('register_student') }}" class="btn btn-outline-secondary">Cancel</a>
                 {% endif %}
+                <a href="{{ url_for('remove_registrar_student', student_id=student.id, return_to=return_to or 'class_roster') }}" class="btn btn-outline-danger">
+                    Remove / delete
+                </a>
             </div>
         </form>
     </div>

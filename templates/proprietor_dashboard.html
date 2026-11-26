@@ -337,18 +337,20 @@
             </div>
 
             <div class="prop-card prop-panel narrow">
-                <h3><i class="fas fa-door-open text-primary"></i> Open an office</h3>
+                <h3><i class="fas fa-landmark text-primary"></i> Proprietor seal</h3>
                 <div class="prop-actions">
                     <a class="prop-action" href="{{ url_for('proprietor_senior_grade_releases') }}"><i class="fas fa-landmark"></i> Senior High grades{% if snapshot.pending_senior_grades %} ({{ snapshot.pending_senior_grades }}){% endif %}</a>
                     <a class="prop-action" href="{{ url_for('proprietor_senior_transcript_releases') }}"><i class="fas fa-scroll"></i> Senior High transcripts{% if snapshot.pending_senior_transcripts %} ({{ snapshot.pending_senior_transcripts }}){% endif %}</a>
                     <a class="prop-action" href="{{ url_for('proprietor_audit_logs') }}"><i class="fas fa-clipboard-list"></i> Activity audit trail</a>
-                    <a class="prop-action" href="{{ url_for('principal_dashboard') }}"><i class="fas fa-user-shield"></i> Principal portal</a>
                     <a class="prop-action" href="{{ url_for('vpa_dashboard') }}"><i class="fas fa-graduation-cap"></i> VPA academics</a>
                     <a class="prop-action" href="{{ url_for('vpi_dashboard') }}"><i class="fas fa-coins"></i> VPI finance</a>
                     <a class="prop-action" href="{{ url_for('dean_dashboard') }}"><i class="fas fa-balance-scale"></i> Dean campus</a>
-                    <a class="prop-action" href="{{ url_for('attendance_overview') }}"><i class="fas fa-clipboard-list"></i> Attendance overview</a>
-                    <a class="prop-action" href="{{ url_for('financial_reports') }}"><i class="fas fa-chart-bar"></i> Financial reports</a>
                 </div>
+            </div>
+
+            <div class="prop-card" style="grid-column: span 12;">
+                {% set year_param = {'academic_year_id': display_year.id} if display_year else {} %}
+                {% include 'partials/principal_office_desk.html' %}
             </div>
 
             <div class="prop-card prop-panel" style="grid-column: span 12;">

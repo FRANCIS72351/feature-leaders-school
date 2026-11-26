@@ -1,4 +1,4 @@
-"""Senior High grade and transcript release is reserved for the School Proprietor."""
+"""Senior High grade and transcript release is reserved for the Proprietor and VPI."""
 import unittest
 import uuid
 from datetime import date
@@ -41,17 +41,24 @@ class SeniorGradeReleaseProprietorTestCase(unittest.TestCase):
                 role='vpa',
             )
             vpa.set_password('password')
+            vpi = User(
+                email=f'vpi-senior-{self.token}@test.com',
+                full_name='VPI Officer',
+                role='vpi',
+            )
+            vpi.set_password('password')
             admin = User(
                 email=f'admin-senior-{self.token}@test.com',
                 full_name='System Admin',
                 role='admin',
             )
             admin.set_password('password')
-            db.session.add_all([proprietor, vpa, admin])
+            db.session.add_all([proprietor, vpa, vpi, admin])
             db.session.flush()
-            self.created['users'].extend([proprietor.id, vpa.id, admin.id])
+            self.created['users'].extend([proprietor.id, vpa.id, vpi.id, admin.id])
             self.proprietor_id = proprietor.id
             self.vpa_id = vpa.id
+            self.vpi_id = vpi.id
             self.admin_id = admin.id
 
             senior = Class(name=f'SHS 11 {self.token}', grade_level=11)
@@ -186,6 +193,28 @@ class SeniorGradeReleaseProprietorTestCase(unittest.TestCase):
             '/proprietor/senior-transcript-releases', follow_redirects=False,
         )
         self.assertIn(transcripts.status_code, (302, 303))
+
+    def test_vpi_can_release_senior_high(self):
+        self._login(self.vpi_id)
+        desk = self.client.get(
+            f'/proprietor/senior-grade-releases?academic_year_id={self.year_id}'
+        )
+        self.assertEqual(desk.status_code, 200)
+        html = desk.get_data(as_text=True)
+        self.assertIn('Senior High Seal Desk', html)
+        self.assertIn('Grades per student', html)
+        self.assertIn(f'id="folder-{self.senior_class_id}"', html)
+        self.assertNotIn(f'id="folder-{self.junior_class_id}"', html)
+
+        approve = self.client.post(
+            f'/vpa/grade-releases/{self.release_id}/approve',
+            follow_redirects=True,
+        )
+        self.assertEqual(approve.status_code, 200)
+        self.assertIn(b'approved', approve.data.lower())
+        with self.app.app_context():
+            release = db.session.get(GradeRelease, self.release_id)
+            self.assertEqual(release.status, GradeRelease.STATUS_APPROVED)
 
     def test_proprietor_can_release_senior_high(self):
         self._login(self.proprietor_id)

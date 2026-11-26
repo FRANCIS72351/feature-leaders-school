@@ -7,7 +7,7 @@ from flask_login import current_user
 _REGISTRY_ALIASES = frozenset({'registry', 'registry officer'})
 _PROTECTED_ROLES = frozenset({
     'vpi', 'vpa', 'principal', 'admin', 'dean', 'teacher',
-    'business', 'student', 'parent', 'sponsor', 'proprietor', 'owner',
+    'business', 'business_manager', 'student', 'parent', 'sponsor', 'proprietor', 'owner',
 })
 _ROLE_HOME_ENDPOINTS = {
     'vpi': 'vpi_dashboard',
@@ -31,6 +31,8 @@ def _canonical_role_name(role):
     role = (role or '').strip().lower()
     if role in {'owner', 'school proprietor', 'school owner'}:
         return 'proprietor'
+    if role in {'business_manager', 'business manager', 'bursar'}:
+        return 'business'
     if role in _PROTECTED_ROLES:
         return 'proprietor' if role == 'owner' else role
     if role in _REGISTRY_ALIASES:

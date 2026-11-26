@@ -532,7 +532,7 @@ def resolve_school_logo_path(explicit=None):
                     return path
         except OSError:
             continue
-    return None
+        return None
 
 
 def image_reader_from_data_uri(uri):
@@ -603,7 +603,7 @@ def _draw_header_logo(c, x, y, size, logo):
     c.circle(x + size / 2.0, y + size / 2.0, size / 2.0, stroke=0, fill=1)
     if not logo:
         return
-    inset = 0.6 * mm
+        inset = 0.6 * mm
     _pdf_draw_image(c, logo, x + inset, y + inset, size - 2 * inset, size - 2 * inset)
 
 

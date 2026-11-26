@@ -148,6 +148,9 @@
         <a href="{{ url_for('edit_student', student_id=student.id, return_to='class_roster') }}" class="btn-folder-edit">
             <i class="fas fa-pen-to-square"></i> Edit
         </a>
+        <a href="{{ url_for('remove_registrar_student', student_id=student.id, return_to='class_roster') }}" class="btn-folder-remove">
+            <i class="fas fa-user-minus"></i> Remove
+        </a>
         {% if student.id_card_ready %}
         <a href="{{ url_for('print_student_id_card', student_id=student.id) }}" class="btn-folder-print" target="_blank" rel="noopener">
             <i class="fas fa-id-card"></i> Print ID card
